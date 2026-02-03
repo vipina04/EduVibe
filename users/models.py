@@ -19,6 +19,11 @@ class CustomUser(AbstractUser):
     otp = models.IntegerField(null=True)
     otp_created = models.DateTimeField(null=True)
 
+
+   
+
+
+
     def save(self, *args, **kwargs):
         if not self.unique_id and self.is_approved:
             self.unique_id = f"{self.role.upper()}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
