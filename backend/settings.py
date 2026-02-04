@@ -10,7 +10,8 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here-change-me')  # Change
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']  # For dev, change for production
+# ALLOWED_HOSTS = ['10.192.225.212']  # For dev, change for production
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.192.225.212']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
