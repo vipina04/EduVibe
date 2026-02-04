@@ -1,35 +1,167 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider } from './context/ThemeContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+
+// Pages
+import LandingPage from './pages/LandingPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+
+// Student Pages
+import StudentDashboard from './pages/student/StudentDashboard';
+import SubjectDetails from './pages/student/SubjectDetails';
+import ChapterTests from './pages/student/ChapterTests';
+import TakeTest from './pages/student/TakeTest';
+import TestResult from './pages/student/TestResult';
+import MyTests from './pages/student/MyTests';
+import MyAttendance from './pages/student/MyAttendance';
+import MyFees from './pages/student/MyFees';
+import MyAssignments from './pages/student/MyAssignments';
+import StudentDoubts from './pages/student/StudentDoubts';
+import StudentNotifications from './pages/student/StudentNotifications';
+
+// Teacher Pages
+import TeacherDashboard from './pages/teacher/TeacherDashboard';
+import TeacherSubjectClasses from './pages/teacher/TeacherSubjectClasses';
+import TeacherChapters from './pages/teacher/TeacherChapters';
+import TeacherTests from './pages/teacher/TeacherTests';
+import CreateTest from './pages/teacher/CreateTest';
+import TestManagement from './pages/teacher/TestManagement';
+import MarkAttendance from './pages/teacher/MarkAttendance';
+import AttendanceHistory from './pages/teacher/AttendanceHistory';
+import TeacherAssignments from './pages/teacher/TeacherAssignments';
+import TeacherDoubts from './pages/teacher/TeacherDoubts';
+
+// Admin Pages
+import AdminDashboard from './pages/admin/AdminDashboard';
+import ManageUsers from './pages/admin/ManageUsers';
+import ManageClasses from './pages/admin/ManageClasses';
+import ManageSubjects from './pages/admin/ManageSubjects';
+import ManageChapters from './pages/admin/ManageChapters';
+
+// Protected Route Component
+const ProtectedRoute = ({ children, allowedRoles }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <ThemeProvider>
+      <AuthProvider>
+        <Router>
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+            {/* Student Routes */}
+            <Route path="/student/dashboard" element={<ProtectedRoute allowedRoles={['student']}><StudentDashboard /></ProtectedRoute>} />
+            <Route path="/student/subject/:subjectId" element={<ProtectedRoute allowedRoles={['student']}><SubjectDetails /></ProtectedRoute>} />
+            <Route path="/student/chapter/:chapterId/tests" element={<ProtectedRoute allowedRoles={['student']}><ChapterTests /></ProtectedRoute>} />
+            <Route path="/student/test/:testId/take" element={<ProtectedRoute allowedRoles={['student']}><TakeTest /></ProtectedRoute>} />
+            <Route path="/student/test-attempt/:attemptId/result" element={<ProtectedRoute allowedRoles={['student']}><TestResult /></ProtectedRoute>} />
+            <Route path="/student/my-tests" element={<ProtectedRoute allowedRoles={['student']}><MyTests /></ProtectedRoute>} />
+            <Route path="/student/attendance" element={<ProtectedRoute allowedRoles={['student']}><MyAttendance /></ProtectedRoute>} />
+            <Route path="/student/fees" element={<ProtectedRoute allowedRoles={['student']}><MyFees /></ProtectedRoute>} />
+            <Route path="/student/assignments" element={<ProtectedRoute allowedRoles={['student']}><MyAssignments /></ProtectedRoute>} />
+            <Route path="/student/doubts" element={<ProtectedRoute allowedRoles={['student']}><StudentDoubts /></ProtectedRoute>} />
+            <Route path="/student/notifications" element={<ProtectedRoute allowedRoles={['student']}><StudentNotifications /></ProtectedRoute>} />
+
+            {/* Teacher Routes */}
+            <Route path="/teacher/dashboard" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDashboard /></ProtectedRoute>} />
+            <Route path="/teacher/subject/:subjectId/classes" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherSubjectClasses /></ProtectedRoute>} />
+            <Route path="/teacher/class/:classId/subject/:subjectId/chapters" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapters /></ProtectedRoute>} />
+            <Route path="/teacher/chapter/:chapterId/tests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherTests /></ProtectedRoute>} />
+            <Route path="/teacher/chapter/:chapterId/test/create" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} />
+            <Route path="/teacher/test/:testId/manage" element={<ProtectedRoute allowedRoles={['teacher']}><TestManagement /></ProtectedRoute>} />
+            <Route path="/teacher/class/:classId/subject/:subjectId/attendance" element={<ProtectedRoute allowedRoles={['teacher']}><MarkAttendance /></ProtectedRoute>} />
+            <Route path="/teacher/class/:classId/subject/:subjectId/attendance/history" element={<ProtectedRoute allowedRoles={['teacher']}><AttendanceHistory /></ProtectedRoute>} />
+            <Route path="/teacher/class/:classId/subject/:subjectId/assignments" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherAssignments /></ProtectedRoute>} />
+            <Route path="/teacher/class/:classId/subject/:subjectId/doubts" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDoubts /></ProtectedRoute>} />
+
+            {/* Admin Routes */}
+            <Route path="/admin/dashboard" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+            <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><ManageUsers /></ProtectedRoute>} />
+            <Route path="/admin/classes" element={<ProtectedRoute allowedRoles={['admin']}><ManageClasses /></ProtectedRoute>} />
+            <Route path="/admin/subjects" element={<ProtectedRoute allowedRoles={['admin']}><ManageSubjects /></ProtectedRoute>} />
+            <Route path="/admin/chapters" element={<ProtectedRoute allowedRoles={['admin']}><ManageChapters /></ProtectedRoute>} />
+
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </ThemeProvider>
+  );
 }
 
-export default App
+export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import { useState } from 'react'
+// import reactLogo from './assets/react.svg'
+// import viteLogo from '/vite.svg'
+// import './App.css'
+
+// function App() {
+//   const [count, setCount] = useState(0)
+
+//   return (
+//     <>
+//       <div>
+//         <a href="https://vite.dev" target="_blank">
+//           <img src={viteLogo} className="logo" alt="Vite logo" />
+//         </a>
+//         <a href="https://react.dev" target="_blank">
+//           <img src={reactLogo} className="logo react" alt="React logo" />
+//         </a>
+//       </div>
+//       <h1>Vite + React</h1>
+//       <div className="card">
+//         <button onClick={() => setCount((count) => count + 1)}>
+//           count is {count}
+//         </button>
+//         <p>
+//           Edit <code>src/App.jsx</code> and save to test HMR
+//         </p>
+//       </div>
+//       <p className="read-the-docs">
+//         Click on the Vite and React logos to learn more
+//       </p>
+//     </>
+//   )
+// }
+
+// export default App
