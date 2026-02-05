@@ -35,7 +35,12 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════
     path('register/', RegisterView.as_view(), name='register'),
     path('verify-registration-otp/', VerifyRegistrationOTPView.as_view(), name='verify-registration-otp'),
-    path('resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
+    path(
+    'resend-registration-otp/',
+    ResendOTPView.as_view(),
+    name='resend-registration-otp'
+),
+
     
     # ═══════════════════════════════════════════════════════════
     #  LOGIN & LOGOUT

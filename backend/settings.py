@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'admin_tasks',
     'teachers',
     'students',
+    'academics'
 ]
 
 MIDDLEWARE = [

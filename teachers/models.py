@@ -13,6 +13,11 @@ class Test(models.Model):
     chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, null=True)  # Or full subject
     marks = models.IntegerField()  # 10,20,50
     created_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE)  # Teacher
+    duration_minutes = models.IntegerField(default=0)
+    start_time = models.DateTimeField(null=True, blank=True)
+    end_time = models.DateTimeField(null=True, blank=True)
+
+
 
 class Question(models.Model):
     test = models.ForeignKey(Test, on_delete=models.CASCADE)
@@ -32,12 +37,18 @@ class Attendance(models.Model):
     date = models.DateField()
     time = models.TimeField()
     is_present = models.BooleanField(default=False)
+    class Meta:
+        unique_together = ('student', 'class_assigned', 'date')
+
+
 
 class Assignment(models.Model):
     teacher = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, null=True)
     description = models.TextField()
     file = models.FileField(upload_to='assignments/', blank=True)
+    due_date = models.DateTimeField(null=True, blank=True)
+
 
 class Doubt(models.Model):
     student = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='asked_doubts')
@@ -52,3 +63,19 @@ class DoubtReply(models.Model):
     text = models.TextField(blank=True)
     image = models.ImageField(upload_to='replies/', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+from academics.models import Subject
+
+class TeacherAcademicInfo(models.Model):
+    teacher = models.OneToOneField(
+        'users.CustomUser',
+        on_delete=models.CASCADE,
+        related_name='teacher_academic_info'
+    )
+    subjects = models.ManyToManyField(
+        Subject,
+        blank=True
+    )
+
+    def __str__(self):
+        return f"{self.teacher}"
