@@ -42,6 +42,9 @@ class CustomUserAdmin(BaseUserAdmin):
     )
     ordering = ('-date_joined',)
     date_hierarchy = 'date_joined'
+    model = CustomUser
+    list_per_page = 25
+
     
     # Actions
     actions = ['approve_users', 'reject_users', 'send_notification_email']

@@ -5,6 +5,10 @@ from django.utils import timezone
 
 class CustomUser(AbstractUser):
 
+    USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['email']
+
+
     ROLE_CHOICES = (
         ('student', 'Student'),
         ('teacher', 'Teacher'),
@@ -21,6 +25,9 @@ class CustomUser(AbstractUser):
         choices=ROLE_CHOICES,
         default='student'
     )
+
+
+    
 
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=15, blank=True)
@@ -40,13 +47,17 @@ class CustomUser(AbstractUser):
         'admin_tasks.Class',
         on_delete=models.SET_NULL,
         null=True,
-        blank=True
+        blank=True,
+        related_name='students',
+        db_constraint=False
     )
 
     # For teachers
     subjects = models.ManyToManyField(
         'admin_tasks.Subject',
-        blank=True
+        blank=True,
+        related_name='teachers',
+        db_constraint=False
     )
 
     # OTP fields
