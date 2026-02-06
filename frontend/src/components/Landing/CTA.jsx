@@ -6,22 +6,22 @@ const CTA = () => {
   const navigate = useNavigate();
 
   return (
-    <section className="py-20 bg-gradient-to-r from-blue-600 to-purple-600">
+    <section className="py-20 bg-gradient-to-b from-slate-600 to-slate-10000">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
         >
-          <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
+          {/* <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
             Ready to Transform Your Tuition Management?
-          </h2>
-          <p className="text-xl text-blue-100 mb-10">
+          </h2> */}
+          {/* <p className="text-xl text-blue-100 mb-10">
             Join thousands of educators already using EduVibe to simplify their workflow
-          </p>
+          </p> */}
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button
+            {/* <Button
               size="lg"
               variant="secondary"
               onClick={() => navigate('/register')}
@@ -35,12 +35,12 @@ const CTA = () => {
               className="border-white text-white hover:bg-white/10"
             >
               Schedule Demo
-            </Button>
+            </Button> */}
           </div>
 
-          <p className="mt-6 text-sm text-blue-100">
+          {/* <p className="mt-6 text-sm text-blue-100">
             No credit card required • 14-day free trial • Cancel anytime
-          </p>
+          </p> */}
         </motion.div>
       </div>
     </section>

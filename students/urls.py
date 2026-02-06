@@ -3,7 +3,7 @@
 Student Module URL Configuration
 EduVibe Platform - 2026
 """
-
+from .views_doubts import StudentDoubtListView, StudentDoubtReplyView
 from django.urls import path
 from .views import (
     # Home & Navigation
@@ -67,7 +67,8 @@ urlpatterns = [
     #  DOUBTS
     # ═══════════════════════════════════════════════════════════
     path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
-    
+    path('doubts/', StudentDoubtListView.as_view(), name='doubt-list'),
+    path('doubts/<int:doubt_id>/reply/', StudentDoubtReplyView.as_view(), name='doubt-reply'),
     # ═══════════════════════════════════════════════════════════
     #  NOTIFICATIONS
     # ═══════════════════════════════════════════════════════════

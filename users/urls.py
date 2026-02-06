@@ -3,6 +3,7 @@
 User Authentication & Profile URL Configuration
 EduVibe Platform - 2026
 """
+from .views_enhanced import GetRegistrationDataView
 
 from django.urls import path
 from .views import (
@@ -33,6 +34,7 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════
     #  REGISTRATION & OTP VERIFICATION
     # ═══════════════════════════════════════════════════════════
+    path('registration-data/', GetRegistrationDataView.as_view(), name='registration-data'),
     path('register/', RegisterView.as_view(), name='register'),
     path('verify-registration-otp/', VerifyRegistrationOTPView.as_view(), name='verify-registration-otp'),
     path(

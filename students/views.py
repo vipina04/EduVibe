@@ -683,8 +683,105 @@ class MyNotificationsView(APIView):
 #  SEARCH
 # ═══════════════════════════════════════════════════════════
 
+# class StudentSearchView(APIView):
+#     """Search for student's content"""
+#     permission_classes = [IsStudentRole]
+    
+#     def get(self, request):
+#         student = request.user
+#         query = request.GET.get('q', '').strip()
+        
+#         if not query or len(query) < 2:
+#             return Response({
+#                 'error': 'Search query must be at least 2 characters.'
+#             }, status=status.HTTP_400_BAD_REQUEST)
+        
+#         if not student.class_assigned:
+#             return Response({
+#                 'subjects': [],
+#                 'chapters': [],
+#                 'tests': [],
+#                 'assignments': [],
+#                 'doubts': []
+#             })
+        
+#         results = {
+#             'subjects': [],
+#             'chapters': [],
+#             'tests': [],
+#             'assignments': [],
+#             'doubts': []
+#         }
+        
+#         # Search subjects
+#         subjects = student.class_assigned.subject_set.filter(name__icontains=query)[:5]
+#         results['subjects'] = [
+#             {'id': s.id, 'name': s.name}
+#             for s in subjects
+#         ]
+        
+#         # Search chapters
+#         chapters = Chapter.objects.filter(
+#             class_assigned=student.class_assigned,
+#             name__icontains=query
+#         )[:5]
+#         results['chapters'] = [
+#             {'id': c.id, 'name': c.name, 'subject': c.subject.name}
+#             for c in chapters
+#         ]
+        
+#         # Search tests
+#         tests = Test.objects.filter(
+#             chapter__class_assigned=student.class_assigned,
+#             chapter__name__icontains=query
+#         ).select_related('chapter__subject')[:5]
+#         results['tests'] = [
+#             {
+#                 'id': t.id,
+#                 'chapter': t.chapter.name,
+#                 'subject': t.chapter.subject.name,
+#                 'marks': t.marks
+#             }
+#             for t in tests
+#         ]
+        
+#         # Search assignments
+#         assignments = Assignment.objects.filter(
+#             chapter__class_assigned=student.class_assigned,
+#             description__icontains=query
+#         ).select_related('chapter__subject')[:5]
+#         results['assignments'] = [
+#             {
+#                 'id': a.id,
+#                 'description': a.description[:100],
+#                 'subject': a.chapter.subject.name
+#             }
+#             for a in assignments
+#         ]
+        
+#         # Search doubts
+#         doubts = Doubt.objects.filter(
+#             student__class_assigned=student.class_assigned,
+#             text__icontains=query
+#         ).select_related('subject')[:5]
+#         results['doubts'] = [
+#             {
+#                 'id': d.id,
+#                 'text': d.text[:100],
+#                 'subject': d.subject.name
+#             }
+#             for d in doubts
+#         ]
+        
+#         return Response(results)
+
+
+
+
+# Find StudentSearchView in students/views.py and REPLACE it with this:
+
 class StudentSearchView(APIView):
-    """Search for student's content"""
+    """Enhanced search for student content"""
     permission_classes = [IsStudentRole]
     
     def get(self, request):
@@ -694,7 +791,7 @@ class StudentSearchView(APIView):
         if not query or len(query) < 2:
             return Response({
                 'error': 'Search query must be at least 2 characters.'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=400)
         
         if not student.class_assigned:
             return Response({
@@ -714,71 +811,80 @@ class StudentSearchView(APIView):
         }
         
         # Search subjects
-        subjects = student.class_assigned.subject_set.filter(name__icontains=query)[:5]
-        results['subjects'] = [
-            {'id': s.id, 'name': s.name}
-            for s in subjects
-        ]
+        subjects = student.class_assigned.subject_set.filter(
+            name__icontains=query
+        )[:5]
+        
+        for s in subjects:
+            results['subjects'].append({
+                'id': s.id,
+                'name': s.name,
+                'type': 'subject'
+            })
         
         # Search chapters
+        from admin_tasks.models import Chapter
         chapters = Chapter.objects.filter(
             class_assigned=student.class_assigned,
             name__icontains=query
-        )[:5]
-        results['chapters'] = [
-            {'id': c.id, 'name': c.name, 'subject': c.subject.name}
-            for c in chapters
-        ]
+        ).select_related('subject')[:5]
+        
+        for c in chapters:
+            results['chapters'].append({
+                'id': c.id,
+                'name': c.name,
+                'subject': c.subject.name,
+                'type': 'chapter'
+            })
         
         # Search tests
+        from teachers.models import Test
         tests = Test.objects.filter(
             chapter__class_assigned=student.class_assigned,
             chapter__name__icontains=query
         ).select_related('chapter__subject')[:5]
-        results['tests'] = [
-            {
+        
+        for t in tests:
+            results['tests'].append({
                 'id': t.id,
                 'chapter': t.chapter.name,
                 'subject': t.chapter.subject.name,
-                'marks': t.marks
-            }
-            for t in tests
-        ]
+                'marks': t.marks,
+                'type': 'test'
+            })
         
         # Search assignments
+        from teachers.models import Assignment
         assignments = Assignment.objects.filter(
             chapter__class_assigned=student.class_assigned,
             description__icontains=query
-        ).select_related('chapter__subject')[:5]
-        results['assignments'] = [
-            {
+        ).select_related('chapter__subject', 'teacher')[:5]
+        
+        for a in assignments:
+            results['assignments'].append({
                 'id': a.id,
                 'description': a.description[:100],
-                'subject': a.chapter.subject.name
-            }
-            for a in assignments
-        ]
+                'subject': a.chapter.subject.name,
+                'teacher': f'{a.teacher.first_name} {a.teacher.last_name}'.strip(),
+                'type': 'assignment'
+            })
         
         # Search doubts
         doubts = Doubt.objects.filter(
             student__class_assigned=student.class_assigned,
             text__icontains=query
-        ).select_related('subject')[:5]
-        results['doubts'] = [
-            {
+        ).select_related('subject', 'student')[:5]
+        
+        for d in doubts:
+            results['doubts'].append({
                 'id': d.id,
                 'text': d.text[:100],
-                'subject': d.subject.name
-            }
-            for d in doubts
-        ]
+                'subject': d.subject.name,
+                'student': f'{d.student.first_name} {d.student.last_name}'.strip(),
+                'type': 'doubt'
+            })
         
         return Response(results)
-
-
-
-
-
 
 
 
