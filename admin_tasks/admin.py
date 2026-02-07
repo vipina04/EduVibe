@@ -22,7 +22,7 @@ class ClassAdmin(admin.ModelAdmin):
     
     @admin.display(description='Subjects')
     def subject_count(self, obj):
-        count = obj.subject_set.count()
+        count = obj.subjects.all().count() 
         return format_html('<strong>{}</strong>', count)
     
     @admin.display(description='Actions')
