@@ -66,7 +66,7 @@ const Hero = () => {
             
             
             {/* <span className="text-blue-600 dark:text-blue-400"> */}
-            <span className="bg-gradient-to-r from-purple-900 via-indigo-500 to-teal-600 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-purple-950 via-indigo-600 to-teal-500 bg-clip-text text-transparent">
               
                       EDUCATE • ELEVATE • EXCEL
 
@@ -94,7 +94,7 @@ const Hero = () => {
             <Button 
               size="lg" 
               onClick={() => navigate('/register')}
-              className="group shadow-xl border-none text-white bg-gradient-to-r from-purple-900 via-indigo-500 to-teal-600 hover:opacity-90 transition-opacity"
+              className="group shadow-xl border-none text-white bg-gradient-to-r from-purple-950 via-indigo-600 to-teal-500 hover:opacity-90 transition-opacity"
 
             >
               Get Started 
@@ -138,6 +138,39 @@ const Hero = () => {
       </div>
 
       {/* Scroll Indicator */}
+      <motion.div
+  initial={{ opacity: 0 }}
+  animate={{ opacity: 1 }}
+  transition={{ delay: 1, duration: 1, repeat: Infinity, repeatType: 'reverse' }}
+  /* Added z-50 to ensure it's on top of everything */
+  className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50"
+>
+  <a 
+    href="#features" 
+    onClick={(e) => {
+      e.preventDefault();
+      document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });
+    }}
+    className="flex flex-col items-center group cursor-pointer"
+  >
+    {/* Added a hover effect for better UX */}
+    <span className="text-[10px] text-gray-500 uppercase tracking-widest mb-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      Scroll
+    </span>
+    <svg 
+      className="w-6 h-6 text-gray-600 dark:text-gray-400 group-hover:text-indigo-500 transition-colors" 
+      fill="none" 
+      stroke="currentColor" 
+      viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+    </svg>
+  </a>
+</motion.div>
+
+
+
+
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

@@ -62,10 +62,10 @@ const HowItWorks = () => {
               >
                 <div className="glass-light dark:glass-dark rounded-2xl p-8 text-center">
                   {/* Step Number */}
-                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-8 h-8 bg-gradient-to-r from-blue-600 to-green-600 rounded-full flex items-center justify-center text-white font-bold z-10">
+                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-8 h-8 bg-gradient-to-r from-purple-600 to-cyan-600 rounded-full flex items-center justify-center text-white font-bold z-10">
                     {index + 1}
                   </div>
-
+                     
                   {/* Icon */}
                   <div className={`w-20 h-20 mx-auto rounded-2xl ${step.bgColor} flex items-center justify-center mb-6`}>
                     <step.icon className={`w-10 h-10 ${step.color}`} />
