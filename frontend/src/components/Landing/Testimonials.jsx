@@ -1,5 +1,4 @@
-// In Features.jsx
-<section id="features" className="py-20"> ... </section>
+
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
