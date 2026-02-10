@@ -147,7 +147,11 @@ export const teacherAPI = {
   getChapters: (params) => api.get('/teachers/chapters/', { params }),
   createChapter: (data) => api.post('/teachers/chapters/create/', data),
   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
-  
+  getClassSubjects: (classId) =>
+  api.get(`/teachers/class/${classId}/subjects/`),
+
+
+
   // Tests
   getTests: (params) => api.get('/teachers/tests/', { params }),
   getChapterTests: (chapterId) => api.get(`/teachers/chapter/${chapterId}/tests/`),
@@ -201,6 +205,8 @@ export const adminAPI = {
   // Dashboard
   getDashboard: () => api.get('/admin/dashboard/stats/'),
   getStats: () => api.get('/admin/dashboard/stats/'),
+
+  
   
   // User Management
   getPendingUsers: () => api.get('/admin/users/pending/'),
