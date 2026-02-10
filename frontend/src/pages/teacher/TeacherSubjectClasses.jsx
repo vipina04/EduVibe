@@ -13,9 +13,19 @@ const TeacherSubjectClasses = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  // useEffect(() => {
+  //   fetchSubjectClasses();
+  // }, [subjectId]);
+
+
+useEffect(() => {
+  if (subjectId) {  // ✅ Add this check
     fetchSubjectClasses();
-  }, [subjectId]);
+  }
+}, [subjectId]);
+
+
+
 
   const fetchSubjectClasses = async () => {
     try {

@@ -18,9 +18,20 @@ const MarkAttendance = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
+  // useEffect(() => {
+  //   fetchStudents();
+  // }, [classId]);
+
+useEffect(() => {
+  if (classId) {  // ✅ Add this check
     fetchStudents();
-  }, [classId]);
+  }
+}, [classId]);
+
+
+
+
+
 
   const fetchStudents = async () => {
     try {

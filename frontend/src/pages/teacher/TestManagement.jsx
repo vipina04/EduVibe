@@ -63,7 +63,7 @@ const TestManagement = () => {
               </p>
             </div>
           </div>
-          <Button variant="primary" onClick={() => navigate(`/teacher/tests/${testId}/results`)}>
+          <Button variant="primary" onClick={() => navigate(`/teacher/TeacherAllTests/${testId}/results`)}>
             View Results
           </Button>
         </div>

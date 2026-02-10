@@ -8,8 +8,10 @@ import Button from '../../components/common/Button';
 import { teacherAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 
-const TeacherTests = () => {
+const TeacherChapterTests = () => {
   const { chapterId } = useParams();
+  console.log("chapterId =", chapterId);
+
   const [tests, setTests] = useState([]);
   const [chapterInfo, setChapterInfo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -135,6 +137,7 @@ const TeacherTests = () => {
 
                     <div className="ml-6 flex flex-col space-y-2">
                       <Link to={`/teacher/tests/${test.id}/results`}>
+                      {/* <Link to={`/teacher/TeacherAllTests/${test.id}/results`}> */}
                         <Button variant="secondary" size="sm">
                           <HiEye className="w-4 h-4 mr-2" />
                           View Results
@@ -158,7 +161,7 @@ const TeacherTests = () => {
   );
 };
 
-export default TeacherTests;
+export default TeacherChapterTests;
 
 
 

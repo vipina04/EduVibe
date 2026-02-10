@@ -14,9 +14,17 @@ const TeacherChapters = () => {
   const [classInfo, setClassInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // useEffect(() => {
+  //   fetchChapters();
+  // }, [classId, subjectId]);
+
+
   useEffect(() => {
+  if (classId && subjectId) {  // ✅ Add this check
     fetchChapters();
-  }, [classId, subjectId]);
+  }
+}, [classId, subjectId]);
+
 
   const fetchChapters = async () => {
     try {
@@ -49,7 +57,8 @@ const TeacherChapters = () => {
       <div className="p-6 max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center space-x-4 mb-8">
-          <Link to={`/teacher/subject/${subjectId}/classes`}>
+          <Link to={`/teacher/class/${classId}/subjects`}></Link> 
+          // <Link to={`/teacher/subject/${subjectId}/classes`}> */
             <Button variant="secondary" size="sm">
               <HiArrowLeft className="w-4 h-4 mr-2" />
               Back

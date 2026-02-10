@@ -135,6 +135,7 @@ export const studentAPI = {
 export const teacherAPI = {
   // Dashboard - NEW! This is what was missing for teachers
   getDashboard: () => api.get('/teachers/home/'),
+  getAllTests: () => api.get('/teachers/tests/all/'),
   
   // Home/Dashboard (alias for compatibility)
   getHome: () => api.get('/teachers/home/'),

@@ -10,6 +10,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 // Student Pages
 import StudentDashboard from './pages/student/StudentDashboard';
 import SubjectDetails from './pages/student/SubjectDetails';
+import TeacherAllTests from './pages/teacher/TeacherAllTests'; 
 import ChapterTests from './pages/student/ChapterTests';
 import TakeTest from './pages/student/TakeTest';
 import TestResult from './pages/student/TestResult';
@@ -26,7 +27,8 @@ import TeacherMyClasses from './pages/teacher/TeacherMyClasses';  // NEW - Step 
 import TeacherClassSubjects from './pages/teacher/TeacherClassSubjects';  // NEW - Step 2: Subjects for a class
 import TeacherSubjectClasses from './pages/teacher/TeacherSubjectClasses';
 import TeacherChapters from './pages/teacher/TeacherChapters';
-import TeacherTests from './pages/teacher/TeacherTests';
+import TeacherChapterTests from './pages/teacher/TeacherChapterTests';
+// import TeacherChapterTests from './pages/teacher/TeacherChapterTests';
 import CreateTest from './pages/teacher/CreateTest';
 import TestManagement from './pages/teacher/TestManagement';
 import MarkAttendance from './pages/teacher/MarkAttendance';
@@ -89,8 +91,11 @@ function App() {
       
       {/* Other Quick Action Routes */}
       <Route path="/teacher/chapters" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapters /></ProtectedRoute>} />
-      <Route path="/teacher/tests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherTests /></ProtectedRoute>} />
+      {/* <Route path="/teacher/TeacherAllTests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapterTests /></ProtectedRoute>} /> */}
+      {/* <Route path="/teacher/TeacherAllTests/create" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} /> */}
+      <Route path="/teacher/tests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherAllTests /></ProtectedRoute>} />
       <Route path="/teacher/tests/create" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} />
+      
       <Route path="/teacher/attendance" element={<ProtectedRoute allowedRoles={['teacher']}><MarkAttendance /></ProtectedRoute>} />
       <Route path="/teacher/attendance/history" element={<ProtectedRoute allowedRoles={['teacher']}><AttendanceHistory /></ProtectedRoute>} />
       <Route path="/teacher/assignments" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherAssignments /></ProtectedRoute>} />
@@ -98,7 +103,7 @@ function App() {
 
       {/* Legacy/Alternative Routes (for backward compatibility) */}
       <Route path="/teacher/subject/:subjectId/classes" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherSubjectClasses /></ProtectedRoute>} />
-      <Route path="/teacher/chapter/:chapterId/tests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherTests /></ProtectedRoute>} />
+      <Route path="/teacher/chapter/:chapterId/tests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapterTests /></ProtectedRoute>} />
       <Route path="/teacher/chapter/:chapterId/test/create" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} />
       <Route path="/teacher/test/:testId/manage" element={<ProtectedRoute allowedRoles={['teacher']}><TestManagement /></ProtectedRoute>} />
       <Route path="/teacher/class/:classId/subject/:subjectId/attendance" element={<ProtectedRoute allowedRoles={['teacher']}><MarkAttendance /></ProtectedRoute>} />

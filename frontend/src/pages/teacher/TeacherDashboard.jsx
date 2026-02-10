@@ -40,14 +40,32 @@ const TeacherDashboard = () => {
 
   // Define actions for searchability
   const quickActions = [
-    { id: 1, label: 'My Classes', icon: HiUsers, color: 'text-indigo-600', path: '/teacher/classes' },
-    { id: 2, label: 'Chapters', icon: HiDocumentText, color: 'text-green-600', path: '/teacher/chapters' },
-    { id: 3, label: 'All Tests', icon: HiClipboardList, color: 'text-blue-600', path: '/teacher/tests' },
-    { id: 4, label: 'Create Test', icon: HiPencilAlt, color: 'text-purple-600', path: '/teacher/tests/create' },
-    { id: 5, label: 'Attendance', icon: HiCalendar, color: 'text-orange-600', path: '/teacher/attendance' },
+    // { id: 1, label: 'My Classes', icon: HiUsers, color: 'text-indigo-600', path: '/teacher/classes' },
+    // { id: 2, label: 'Chapters', icon: HiDocumentText, color: 'text-green-600', path: '/teacher/chapters' },
+    // { id: 3, label: 'All Tests', icon: HiClipboardList, color: 'text-blue-600', path: '/teacher/TeacherAllTests' },
+   
+  //  { id: 3, label: 'All Tests', icon: HiClipboardList, color: 'text-blue-600', path: '/teacher/tests' },  
+  //  { id: 4, label: 'Create Test', icon: HiPencilAlt, color: 'text-purple-600', path: '/teacher/tests/create' },  
+   
+   
+  { id: 1, label: 'My Classes', icon: HiUsers, color: 'text-indigo-600', path: '/teacher/classes' },
+  { id: 2, label: 'All Tests', icon: HiClipboardList, color: 'text-blue-600', path: '/teacher/tests' },
+  { id: 3, label: 'Assignments', icon: HiBookOpen, color: 'text-pink-600', path: '/teacher/assignments' },
+  { id: 4, label: 'Student Doubts', icon: HiQuestionMarkCircle, color: 'text-red-600', path: '/teacher/doubts' },
+
+
+
+
+
+
+
+
+
+    // { id: 4, label: 'Create Test', icon: HiPencilAlt, color: 'text-purple-600', path: '/teacher/TeacherAllTests/create' },
+    // { id: 5, label: 'Attendance', icon: HiCalendar, color: 'text-orange-600', path: '/teacher/attendance' },
     { id: 6, label: 'Attendance History', icon: HiCalendar, color: 'text-teal-600', path: '/teacher/attendance/history' },
-    { id: 7, label: 'Assignments', icon: HiBookOpen, color: 'text-pink-600', path: '/teacher/assignments' },
-    { id: 8, label: 'Student Doubts', icon: HiQuestionMarkCircle, color: 'text-red-600', path: '/teacher/doubts' },
+    // { id: 7, label: 'Assignments', icon: HiBookOpen, color: 'text-pink-600', path: '/teacher/assignments' },
+    // { id: 8, label: 'Student Doubts', icon: HiQuestionMarkCircle, color: 'text-red-600', path: '/teacher/doubts' },
   ];
 
   // Filter actions based on search
