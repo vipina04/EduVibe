@@ -70,7 +70,7 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════
     path('chapters/', TeacherChaptersView.as_view(), name='chapters-list'),
     path('chapters/<int:chapter_id>/complete/', MarkChapterCompleteView.as_view(), name='mark-chapter-complete'),
-
+    path('class/<int:class_id>/subject/<int:subject_id>/chapters/',TeacherChaptersView.as_view(),name='class-subject-chapters'),
     # ═══════════════════════════════════════════════════════════
     #  TEST & QUESTION MANAGEMENT
     # ═══════════════════════════════════════════════════════════

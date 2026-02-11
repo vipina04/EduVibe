@@ -456,28 +456,46 @@ class ClassStudentsView(APIView):
 #  CHAPTER & TEST MANAGEMENT
 # ═══════════════════════════════════════════════════════════
 
+# 
 class TeacherChaptersView(APIView):
     """Get chapters for class-subject"""
     permission_classes = [IsTeacherRole]
     
-    def get(self, request):
-        class_id = request.GET.get('class_id')
-        subject_id = request.GET.get('subject_id')
+    def get(self, request, class_id=None, subject_id=None):
+        # Accept both URL params and query params
+        class_id = class_id or request.GET.get('class_id')
+        subject_id = subject_id or request.GET.get('subject_id')
         
         if not class_id or not subject_id:
-            return Response({'error': 'class_id and subject_id required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'class_id and subject_id required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
-        if not TeacherAssignment.objects.filter(teacher=request.user, class_assigned_id=class_id, subject_id=subject_id).exists():
-            return Response({'error': 'Not assigned to this class-subject.'}, status=status.HTTP_403_FORBIDDEN)
+        if not TeacherAssignment.objects.filter(
+            teacher=request.user,
+            class_assigned_id=class_id,
+            subject_id=subject_id
+        ).exists():
+            return Response(
+                {'error': 'Not assigned to this class-subject.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         
-        chapters = Chapter.objects.filter(class_assigned_id=class_id, subject_id=subject_id)
+        chapters = Chapter.objects.filter(
+            class_assigned_id=class_id,
+            subject_id=subject_id
+        )
+        
         chapters_data = [{
             'id': c.id,
             'name': c.name,
             'is_completed': c.is_completed,
             'tests_count': Test.objects.filter(chapter=c).count()
         } for c in chapters]
+        
         return Response(chapters_data)
+
 
 class MarkChapterCompleteView(APIView):
     permission_classes = [IsTeacherRole]

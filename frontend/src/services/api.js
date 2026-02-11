@@ -143,15 +143,14 @@ export const teacherAPI = {
   
   // Classes & Subjects
   getSubjects: (params) => api.get('/teachers/subjects/', { params }),
-  getSubjectClasses: (subjectId) => api.get(`/teachers/subject/${subjectId}/classes/`),
+  // FIXED LINE BELOW — this was causing the 404
+  getSubjectClasses: (subjectId) => api.get('/teachers/subject-classes/', { params: { subject_id: subjectId } }),
   getClassChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),
   getChapters: (params) => api.get('/teachers/chapters/', { params }),
   createChapter: (data) => api.post('/teachers/chapters/create/', data),
   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
   getClassSubjects: (classId) =>
-  api.get(`/teachers/class/${classId}/subjects/`),
-
-
+    api.get(`/teachers/class/${classId}/subjects/`),
 
   // Tests
   getTests: (params) => api.get('/teachers/tests/', { params }),
@@ -198,8 +197,6 @@ export const teacherAPI = {
   // Search
   search: (query) => api.get(`/teachers/search/?q=${query}`),
 };
-
-
 
 // ============ ADMIN APIs ============
 export const adminAPI = {
@@ -269,8 +266,6 @@ export const utilityAPI = {
 };
 
 export { api };
-
-
 
 
 
