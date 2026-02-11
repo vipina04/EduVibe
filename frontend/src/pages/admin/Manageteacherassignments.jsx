@@ -9,7 +9,7 @@ import {
   HiSearch,
   HiFilter
 } from 'react-icons/hi';
-// import DashboardLayout from '../../components/layout/DashboardLayout';
+import DashboardLayout from '../../components/layout/DashboardLayout';
 import Card from '../../components/common/Card';
 import Loading from '../../components/common/Loading';
 import Button from '../../components/common/Button';
