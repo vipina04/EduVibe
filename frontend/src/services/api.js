@@ -96,6 +96,19 @@ export const studentAPI = {
   getMyTests: () => api.get('/students/my-test-attempts/'), // Alias
   
   // Attendance
+ // Get classes assigned to teacher
+  getClasses: () => api.get('/api/teachers/classes/'),
+  
+  // Get subjects for a specific class
+  getClassSubjects: (classId) => api.get(`/api/teachers/class/${classId}/subjects/`),
+  
+  // Get students in a class
+  getClassStudents: (classId) => api.get(`/api/teachers/class/${classId}/students/`),
+  
+  // Mark attendance
+  markAttendance: (data) => api.post('/api/teachers/attendance/mark/', data),
+
+
   getAttendance: () => api.get('/students/my-attendance/'),
   getMyAttendance: () => api.get('/students/my-attendance/'), // Alias
   
@@ -142,6 +155,7 @@ export const teacherAPI = {
   getClasses: () => api.get('/teachers/classes/'), 
   
   // Classes & Subjects
+  getAssignedClasses: () => api.get('/teachers/assigned-classes/'),
   getSubjects: (params) => api.get('/teachers/subjects/', { params }),
   // FIXED LINE BELOW — this was causing the 404
   getSubjectClasses: (subjectId) => api.get('/teachers/subject-classes/', { params: { subject_id: subjectId } }),

@@ -21,6 +21,8 @@ import StudentDoubts from './pages/student/StudentDoubts';
 import StudentNotifications from './pages/student/StudentNotifications';
 
 // Teacher Pages
+
+
 import TeacherDashboard from './pages/teacher/TeacherDashboard';
 import TeacherMyClasses from './pages/teacher/TeacherMyClasses';
 import TeacherClassSubjects from './pages/teacher/TeacherClassSubjects';
@@ -30,10 +32,19 @@ import TeacherChapterTests from './pages/teacher/TeacherChapterTests';
 import TeacherAllTests from './pages/teacher/TeacherAllTests'; 
 import CreateTest from './pages/teacher/CreateTest';
 import TestManagement from './pages/teacher/TestManagement';
+import AttendanceSheet from './pages/teacher/AttendanceSheet';
 import MarkAttendance from './pages/teacher/MarkAttendance';
+
 import AttendanceHistory from './pages/teacher/AttendanceHistory';
 import TeacherAssignments from './pages/teacher/TeacherAssignments';
 import TeacherDoubts from './pages/teacher/TeacherDoubts';
+
+
+
+import TeacherSubjects from './pages/teacher/TeacherSubjects';
+import TeacherStudents from './pages/teacher/TeacherStudents';
+
+
 
 // NEW - Test Creation Flow Components
 import TeacherTestSelection from './pages/teacher/TeacherTestSelection';
@@ -82,35 +93,45 @@ function App() {
       <Route path="/student/notifications" element={<ProtectedRoute allowedRoles={['student']}><StudentNotifications /></ProtectedRoute>} />
 
       {/* Teacher Routes */}
-      <Route path="/teacher/dashboard" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDashboard /></ProtectedRoute>} />
 
-      {/* ✅ 3-STEP FLOW FOR MY CLASSES (Class -> Subject -> Chapters) */}
-      <Route path="/teacher/classes" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherMyClasses /></ProtectedRoute>} />
-      <Route path="/teacher/class/:classId/subjects" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherClassSubjects /></ProtectedRoute>} />
-      <Route path="/teacher/class/:classId/subject/:subjectId/chapters" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapters /></ProtectedRoute>} />
-      
-      {/* ✅ NEW CREATE TEST FLOW (Selection -> Chapter -> Form) */}
-      <Route path="/teacher/test/create" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherTestSelection /></ProtectedRoute>} />
-      <Route path="/teacher/test/select-chapter" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapterSelection /></ProtectedRoute>} />
-      <Route path="/teacher/test/create/:chapterId" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} />
+      {/* Teacher Routes */}
+// Teacher routes
+<Route path="/teacher/attendance/mark" element={<MarkAttendance />} />
+<Route path="/teacher/attendance/mark/:classId/:subjectId" element={<AttendanceSheet />} />      
+<Route path="/teacher/dashboard" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDashboard /></ProtectedRoute>} />
+<Route path="/teacher/subjects" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherSubjects /></ProtectedRoute>} /> 
+<Route path="/teacher/students" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherStudents /></ProtectedRoute>} />
+<Route path="/teacher/assignments" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherAssignments /></ProtectedRoute>} />
+<Route path="/teacher/doubts" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDoubts /></ProtectedRoute>} />
 
-      {/* Other Teacher Actions */}
-      <Route path="/teacher/chapters" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapters /></ProtectedRoute>} />
-      <Route path="/teacher/tests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherAllTests /></ProtectedRoute>} />
-      <Route path="/teacher/attendance" element={<ProtectedRoute allowedRoles={['teacher']}><MarkAttendance /></ProtectedRoute>} />
-      <Route path="/teacher/attendance/history" element={<ProtectedRoute allowedRoles={['teacher']}><AttendanceHistory /></ProtectedRoute>} />
-      <Route path="/teacher/assignments" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherAssignments /></ProtectedRoute>} />
-      <Route path="/teacher/doubts" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDoubts /></ProtectedRoute>} />
+{/* ✅ 3-STEP FLOW FOR MY CLASSES (Class -> Subject -> Chapters) */}
+<Route path="/teacher/classes" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherMyClasses /></ProtectedRoute>} />
+<Route path="/teacher/class/:classId/subjects" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherClassSubjects /></ProtectedRoute>} />
+<Route path="/teacher/class/:classId/subject/:subjectId/chapters" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapters /></ProtectedRoute>} />
 
-      {/* Legacy/Specific Routes (Maintained for full functionality) */}
-      <Route path="/teacher/subject/:subjectId/classes" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherSubjectClasses /></ProtectedRoute>} />
-      <Route path="/teacher/chapter/:chapterId/tests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapterTests /></ProtectedRoute>} />
-      <Route path="/teacher/chapter/:chapterId/test/create" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} />
-      <Route path="/teacher/test/:testId/manage" element={<ProtectedRoute allowedRoles={['teacher']}><TestManagement /></ProtectedRoute>} />
-      <Route path="/teacher/class/:classId/subject/:subjectId/attendance" element={<ProtectedRoute allowedRoles={['teacher']}><MarkAttendance /></ProtectedRoute>} />
-      <Route path="/teacher/class/:classId/subject/:subjectId/attendance/history" element={<ProtectedRoute allowedRoles={['teacher']}><AttendanceHistory /></ProtectedRoute>} />
-      <Route path="/teacher/class/:classId/subject/:subjectId/assignments" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherAssignments /></ProtectedRoute>} />
-      <Route path="/teacher/class/:classId/subject/:subjectId/doubts" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDoubts /></ProtectedRoute>} />
+{/* ✅ NEW CREATE TEST FLOW (Selection -> Chapter -> Form) */}
+<Route path="/teacher/test/create" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherTestSelection /></ProtectedRoute>} />
+<Route path="/teacher/test/select-chapter" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapterSelection /></ProtectedRoute>} />
+<Route path="/teacher/test/create/:chapterId" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} />
+
+{/* Other Teacher Actions */}
+<Route path="/teacher/chapters" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapters /></ProtectedRoute>} />
+<Route path="/teacher/tests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherAllTests /></ProtectedRoute>} />
+<Route path="/teacher/attendance" element={<ProtectedRoute allowedRoles={['teacher']}><MarkAttendance /></ProtectedRoute>} />
+<Route path="/teacher/attendance/history" element={<ProtectedRoute allowedRoles={['teacher']}><AttendanceHistory /></ProtectedRoute>} />
+
+{/* Legacy/Specific Routes (Maintained for full functionality) */}
+<Route path="/teacher/subject/:subjectId/classes" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherSubjectClasses /></ProtectedRoute>} />
+<Route path="/teacher/chapter/:chapterId/tests" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapterTests /></ProtectedRoute>} />
+<Route path="/teacher/chapter/:chapterId/test/create" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} />
+<Route path="/teacher/test/:testId/manage" element={<ProtectedRoute allowedRoles={['teacher']}><TestManagement /></ProtectedRoute>} />
+<Route path="/teacher/class/:classId/subject/:subjectId/attendance" element={<ProtectedRoute allowedRoles={['teacher']}><MarkAttendance /></ProtectedRoute>} />
+<Route path="/teacher/class/:classId/subject/:subjectId/attendance/history" element={<ProtectedRoute allowedRoles={['teacher']}><AttendanceHistory /></ProtectedRoute>} />
+<Route path="/teacher/class/:classId/subject/:subjectId/assignments" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherAssignments /></ProtectedRoute>} />
+<Route path="/teacher/class/:classId/subject/:subjectId/doubts" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDoubts /></ProtectedRoute>} />
+
+
+
 
       {/* Admin Routes */}
       <Route path="/admin/dashboard" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />

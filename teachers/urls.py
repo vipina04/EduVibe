@@ -17,6 +17,8 @@ from .views import (
     TeacherSubjectClassesView,
     TeacherSearchView,
     ClassStudentsView,
+    TeacherClassStudentsView,
+    AttendanceMarkView,  
     
     # Curriculum
     TeacherChaptersView,
@@ -65,7 +67,8 @@ urlpatterns = [
     path('subject-classes/', TeacherSubjectClassesView.as_view(), name='subject-classes'),
     path('search/', TeacherSearchView.as_view(), name='teacher-search'),
     path('class/<int:class_id>/students/', ClassStudentsView.as_view(), name='class-students'),
-
+    # Students
+     path('assigned-classes/', views.get_assigned_classes, name='assigned_classes'),
     # ═══════════════════════════════════════════════════════════
     #  CHAPTERS & CURRICULUM
     # ═══════════════════════════════════════════════════════════
@@ -93,6 +96,13 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════
     #  ATTENDANCE
     # ═══════════════════════════════════════════════════════════
+     path('classes/', TeacherClassesListView.as_view(), name='teacher-classes'),
+    path('class/<int:class_id>/subjects/', TeacherClassSubjectsView.as_view(), name='teacher-class-subjects'),
+    path('class/<int:class_id>/students/', TeacherClassStudentsView.as_view(), name='teacher-class-students'),
+    
+    # Attendance marking
+    path('attendance/mark/', AttendanceMarkView.as_view(), name='mark-attendance'),
+
     path('attendance/mark/', AttendanceMarkView.as_view(), name='attendance-mark'),
     path('attendance/list/', AttendanceListView.as_view(), name='attendance-list'),
     path('students/<int:student_id>/attendance/', StudentAttendanceHistoryView.as_view(), name='student-attendance-history'),

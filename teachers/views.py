@@ -15,6 +15,7 @@ from .models import Test, Question, Option
 
 
 
+
 # ═══════════════════════════════════════════════════════════
 #  IMPORTS
 # ═══════════════════════════════════════════════════════════
@@ -1130,12 +1131,210 @@ def create_test(request):
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# @api_view(['GET'])
+# @permission_classes([IsAuthenticated])
+# def get_assigned_classes(request):
+#     """Get all classes assigned to the teacher"""
+#     try:
+#         # Get teacher's assigned class-subjects
+#         from admin_tasks.models import ClassSubject
+        
+#         teacher = request.user
+        
+#         # Get all class-subjects assigned to this teacher
+#         assigned_class_subjects = ClassSubject.objects.filter(
+#             teacher=teacher
+#         ).select_related('class_name', 'subject')
+        
+#         # Group by class
+#         classes_dict = {}
+#         for cs in assigned_class_subjects:
+#             class_id = cs.class_name.id
+#             if class_id not in classes_dict:
+#                 classes_dict[class_id] = {
+#                     'id': cs.class_name.id,
+#                     'name': cs.class_name.name,
+#                     'subjects': [],
+#                     'student_count': cs.class_name.students.count() if hasattr(cs.class_name, 'students') else 0
+#                 }
+            
+#             classes_dict[class_id]['subjects'].append({
+#                 'id': cs.subject.id,
+#                 'name': cs.subject.name,
+#             })
+        
+#         classes = list(classes_dict.values())
+        
+#         return Response({
+#             'classes': classes,
+#             'total_classes': len(classes)
+#         }, status=status.HTTP_200_OK)
+        
+#     except Exception as e:
+#         print("Error fetching assigned classes:", str(e))
+#         import traceback
+#         print("Traceback:", traceback.format_exc())
+#         return Response({
+#             'error': 'Failed to fetch assigned classes',
+#             'details': str(e)
+#         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)      
 
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_assigned_classes(request):
+    """Get all classes assigned to the teacher"""
+    try:
+        from admin_tasks.models import Class
+        
+        # For now, return all classes
+        # We'll make this filter by teacher once we know your database structure
+        classes = Class.objects.all()
+        
+        classes_data = []
+        for cls in classes:
+            classes_data.append({
+                'id': cls.id,
+                'name': cls.name,
+                'subjects': [],  # We'll add subjects later
+                'student_count': 0  # We'll add student count later
+            })
+        
+        return Response({
+            'classes': classes_data,
+            'total_classes': len(classes_data)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print("Error fetching assigned classes:", str(e))
+        import traceback
+        print("Traceback:", traceback.format_exc())
+        return Response({
+            'error': 'Failed to fetch assigned classes',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+# ═══════════════════════════════════════════════════════════
+#  ATTENDANCE MANAGEMENT VIEWS
+# ═══════════════════════════════════════════════════════════
 
+class TeacherClassStudentsView(APIView):
+    """Get all students in a specific class"""
+    permission_classes = [IsTeacherRole]
+    
+    def get(self, request, class_id):
+        # Verify teacher is assigned to this class
+        if not TeacherAssignment.objects.filter(
+            teacher=request.user,
+            class_assigned_id=class_id
+        ).exists():
+            return Response({
+                'error': 'You are not assigned to this class.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Get all students in the class
+        students = CustomUser.objects.filter(
+            role='student',
+            class_assigned_id=class_id,
+            is_approved=True
+        ).order_by('first_name', 'last_name')
+        
+        students_data = [{
+            'id': student.id,
+            'first_name': student.first_name,
+            'last_name': student.last_name,
+            'email': student.email,
+            'unique_id': student.unique_id
+        } for student in students]
+        
+        return Response(students_data)
+
+
+class AttendanceMarkView(APIView):
+    """Mark attendance for students"""
+    permission_classes = [IsTeacherRole]
+    
+    def post(self, request):
+        class_id = request.data.get('class_id')
+        subject_id = request.data.get('subject_id')
+        date_str = request.data.get('date')
+        student_ids = request.data.get('student_ids', [])
+        
+        if not all([class_id, subject_id, date_str]):
+            return Response({
+                'error': 'class_id, subject_id, and date are required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Verify teacher assignment
+            TeacherAssignment.objects.get(
+                teacher=request.user,
+                class_assigned_id=class_id,
+                subject_id=subject_id
+            )
+            
+            # Parse date
+            attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+            # Validate date is not in the future
+            if attendance_date > timezone.now().date():
+                return Response({
+                    'error': 'Cannot mark attendance for future dates.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get all students in class
+            all_students = CustomUser.objects.filter(
+                role='student',
+                class_assigned_id=class_id,
+                is_approved=True
+            )
+            
+            if not all_students.exists():
+                return Response({
+                    'error': 'No students found in this class.'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Mark attendance for each student
+            marked_count = 0
+            for student in all_students:
+                # Check if already marked for this date
+                attendance, created = Attendance.objects.update_or_create(
+                    teacher=request.user,
+                    student=student,
+                    class_assigned_id=class_id,
+                    date=attendance_date,
+                    defaults={
+                        'is_present': student.id in student_ids,
+                        'time': timezone.now().time()
+                    }
+                )
+                marked_count += 1
+            
+            present_count = len(student_ids)
+            absent_count = marked_count - present_count
+            
+            return Response({
+                'message': f'Attendance marked successfully for {marked_count} students!',
+                'date': date_str,
+                'total_students': marked_count,
+                'present_count': present_count,
+                'absent_count': absent_count
+            }, status=status.HTTP_201_CREATED)
+        
+        except TeacherAssignment.DoesNotExist:
+            return Response({
+                'error': 'You are not assigned to this class-subject combination.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        except ValueError:
+            return Response({
+                'error': 'Invalid date format. Use YYYY-MM-DD.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'error': f'An error occurred: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
