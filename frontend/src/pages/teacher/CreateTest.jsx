@@ -130,24 +130,31 @@ const CreateTest = () => {
     setSubmitting(true);
     try {
       // Create test first
+      console.log('Sending test data:', {
+        chapter: chapterId,
+        ...testData
+      });
+      
       const testResponse = await teacherAPI.createTest({
         chapter: chapterId,
         ...testData
       });
 
-      // console.log('Test created:', testResponse.data);
-      // const testId = testResponse.data.id;
-      console.log('Test created:', testResponse.data);
-      console.log('Test ID:', testResponse.data.id);
-      const testId = testResponse.data.id;
+      console.log('Full API Response:', testResponse);
+      console.log('Response data:', testResponse.data);
+      
+      // Try to get test ID from different possible locations
+      let testId = testResponse.data?.id || testResponse.data?.test?.id || testResponse.id;
+      
+      console.log('Extracted Test ID:', testId);
 
-// Check if testId is valid
-         if (!testId) {
-             toast.error('Failed to get test ID from response');
-             console.error('testResponse.data:', testResponse.data);
-             setSubmitting(false);
-             return;
-             }
+      // Check if testId is valid
+      if (!testId) {
+        toast.error('Failed to get test ID from response');
+        console.error('Full response structure:', JSON.stringify(testResponse, null, 2));
+        setSubmitting(false);
+        return;
+      }
 
       // Add questions one by one
       for (const question of questions) {
@@ -174,9 +181,10 @@ const CreateTest = () => {
       }
 
       toast.success('Test created successfully!');
-      navigate(`/teacher/tests`); // Changed navigation
+      navigate(`/teacher/tests`);
     } catch (error) {
       console.error('Failed to create test:', error);
+      console.error('Error response:', error.response);
       console.error('Error details:', error.response?.data);
       
       // Show specific error message
@@ -215,10 +223,12 @@ const CreateTest = () => {
               </h2>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label htmlFor="test-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Test Name *
                 </label>
                 <input
+                  id="test-name"
+                  name="test-name"
                   type="text"
                   value={testData.name}
                   onChange={(e) => setTestData({ ...testData, name: e.target.value })}
@@ -228,10 +238,12 @@ const CreateTest = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label htmlFor="test-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Description
                 </label>
                 <textarea
+                  id="test-description"
+                  name="test-description"
                   value={testData.description}
                   onChange={(e) => setTestData({ ...testData, description: e.target.value })}
                   rows={3}
@@ -241,10 +253,12 @@ const CreateTest = () => {
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label htmlFor="test-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Test Type *
                   </label>
                   <select
+                    id="test-type"
+                    name="test-type"
                     value={testData.type}
                     onChange={(e) => setTestData({ ...testData, type: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
@@ -255,10 +269,12 @@ const CreateTest = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label htmlFor="test-marks" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Total Marks *
                   </label>
                   <input
+                    id="test-marks"
+                    name="test-marks"
                     type="number"
                     value={testData.marks}
                     onChange={(e) => setTestData({ ...testData, marks: parseInt(e.target.value) })}
@@ -269,10 +285,12 @@ const CreateTest = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label htmlFor="test-duration" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Duration (minutes) *
                   </label>
                   <input
+                    id="test-duration"
+                    name="test-duration"
                     type="number"
                     value={testData.duration_minutes}
                     onChange={(e) => setTestData({ ...testData, duration_minutes: parseInt(e.target.value) })}
@@ -324,10 +342,12 @@ const CreateTest = () => {
 
                       <div className="space-y-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          <label htmlFor={`question-text-${question.id}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Question Text *
                           </label>
                           <textarea
+                            id={`question-text-${question.id}`}
+                            name={`question-text-${question.id}`}
                             value={question.question_text}
                             onChange={(e) => updateQuestion(question.id, 'question_text', e.target.value)}
                             rows={3}
@@ -337,10 +357,12 @@ const CreateTest = () => {
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          <label htmlFor={`question-image-${question.id}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Question Image (Optional)
                           </label>
                           <input
+                            id={`question-image-${question.id}`}
+                            name={`question-image-${question.id}`}
                             type="file"
                             accept="image/*"
                             onChange={(e) => handleImageChange(question.id, e.target.files[0])}
@@ -352,10 +374,12 @@ const CreateTest = () => {
                           <>
                             {[1, 2, 3, 4].map((num) => (
                               <div key={num}>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                <label htmlFor={`option${num}-${question.id}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                   Option {num} *
                                 </label>
                                 <input
+                                  id={`option${num}-${question.id}`}
+                                  name={`option${num}-${question.id}`}
                                   type="text"
                                   value={question[`option${num}`]}
                                   onChange={(e) => updateQuestion(question.id, `option${num}`, e.target.value)}
@@ -366,10 +390,12 @@ const CreateTest = () => {
                             ))}
 
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                              <label htmlFor={`correct-option-${question.id}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                 Correct Option *
                               </label>
                               <select
+                                id={`correct-option-${question.id}`}
+                                name={`correct-option-${question.id}`}
                                 value={question.correct_option}
                                 onChange={(e) => updateQuestion(question.id, 'correct_option', parseInt(e.target.value))}
                                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
@@ -385,10 +411,12 @@ const CreateTest = () => {
                         )}
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          <label htmlFor={`explanation-${question.id}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Explanation (Optional)
                           </label>
                           <textarea
+                            id={`explanation-${question.id}`}
+                            name={`explanation-${question.id}`}
                             value={question.explanation}
                             onChange={(e) => updateQuestion(question.id, 'explanation', e.target.value)}
                             rows={2}
