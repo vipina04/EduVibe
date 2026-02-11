@@ -23,7 +23,8 @@ class Test(models.Model):
 
 
 class Question(models.Model):
-    test = models.ForeignKey(Test, on_delete=models.CASCADE)
+    # test = models.ForeignKey(Test, on_delete=models.CASCADE)
+    test = models.ForeignKey(Test, on_delete=models.CASCADE, related_name='questions')
     question_text = models.TextField(blank=True)
     question_image = models.ImageField(upload_to='questions/', blank=True)
     option1 = models.CharField(max_length=255, blank=True)
@@ -32,6 +33,15 @@ class Question(models.Model):
     option4 = models.CharField(max_length=255, blank=True)
     correct_option = models.IntegerField(null=True)  # 1-4 for MCQ
     explanation = models.TextField(blank=True)
+
+class Option(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='options')
+    option_text = models.CharField(max_length=500)
+    is_correct = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return self.option_text
+
 
 class Attendance(models.Model):
     teacher = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='teacher_attendances')

@@ -6,7 +6,7 @@ EduVibe Platform - 2026
 ✅ All endpoints included (Home, Tests, Questions, Attendance, Assignments, Doubts)
 ✅ Added new test-related endpoints
 """
-
+from . import views
 from django.urls import path
 from .views import (
     # Core & Utility
@@ -23,6 +23,7 @@ from .views import (
     MarkChapterCompleteView,
     
     # Test Management
+
     TestListView,
     TestCreateView,
     TestDetailView,
@@ -84,11 +85,11 @@ urlpatterns = [
     
     # ✅ NEW: Get results for specific test (for TestResults.jsx)
     path('tests/<int:test_id>/results-detail/', get_test_results, name='get_test_results'),
-    
+    path('questions/create/', QuestionCreateView.as_view(), name='question-create-simple'),
     path('tests/<int:test_id>/questions/create/', QuestionCreateView.as_view(), name='question-create'),
     path('questions/<int:question_id>/update/', QuestionUpdateView.as_view(), name='question-update'),
     path('questions/<int:question_id>/delete/', QuestionDeleteView.as_view(), name='question-delete'),
-
+    path('questions/create/', views.create_question, name='create_question'),
     # ═══════════════════════════════════════════════════════════
     #  ATTENDANCE
     # ═══════════════════════════════════════════════════════════

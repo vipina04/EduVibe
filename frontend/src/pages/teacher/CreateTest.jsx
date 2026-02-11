@@ -56,13 +56,75 @@ const CreateTest = () => {
       q.id === id ? { ...q, question_image: file } : q
     ));
   };
+  
+
+  // const handleSubmit = async (e) => {
+  //   e.preventDefault();
+    
+  //   if (questions.length === 0) {
+  //     toast.error('Please add at least one question');
+  //     return;
+  //   }
+
+  //   setSubmitting(true);
+  //   try {
+  //     // Create test first
+  //     const testResponse = await teacherAPI.createTest({
+  //       chapter: chapterId,
+  //       ...testData
+  //     });
+
+  //     const testId = testResponse.data.id;
+
+  //     // Add questions
+  //     for (const question of questions) {
+  //       const formData = new FormData();
+  //       formData.append('test', testId);
+  //       formData.append('question_text', question.question_text);
+  //       if (question.question_image) {
+  //         formData.append('question_image', question.question_image);
+  //       }
+  //       if (testData.type === 'mcq') {
+  //         formData.append('option1', question.option1);
+  //         formData.append('option2', question.option2);
+  //         formData.append('option3', question.option3);
+  //         formData.append('option4', question.option4);
+  //         formData.append('correct_option', question.correct_option);
+  //       }
+  //       formData.append('explanation', question.explanation);
+
+  //       await teacherAPI.createQuestion(formData);
+  //     }
+
+  //     toast.success('Test created successfully!');
+  //     navigate(`/teacher/test/${testId}/manage`);
+  //   } catch (error) {
+  //     console.error('Failed to create test:', error);
+  //     toast.error('Failed to create test');
+  //   } finally {
+  //     setSubmitting(false);
+  //   }
+  // };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Validation
     if (questions.length === 0) {
       toast.error('Please add at least one question');
       return;
+    }
+
+    // Validate MCQ questions
+    if (testData.type === 'mcq') {
+      for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        if (!q.option1 || !q.option2 || !q.option3 || !q.option4) {
+          toast.error(`Question ${i + 1} must have all 4 options filled`);
+          return;
+        }
+      }
     }
 
     setSubmitting(true);
@@ -73,33 +135,58 @@ const CreateTest = () => {
         ...testData
       });
 
+      // console.log('Test created:', testResponse.data);
+      // const testId = testResponse.data.id;
+      console.log('Test created:', testResponse.data);
+      console.log('Test ID:', testResponse.data.id);
       const testId = testResponse.data.id;
 
-      // Add questions
+// Check if testId is valid
+         if (!testId) {
+             toast.error('Failed to get test ID from response');
+             console.error('testResponse.data:', testResponse.data);
+             setSubmitting(false);
+             return;
+             }
+
+      // Add questions one by one
       for (const question of questions) {
         const formData = new FormData();
         formData.append('test', testId);
         formData.append('question_text', question.question_text);
+        
         if (question.question_image) {
           formData.append('question_image', question.question_image);
         }
+        
         if (testData.type === 'mcq') {
-          formData.append('option1', question.option1);
-          formData.append('option2', question.option2);
-          formData.append('option3', question.option3);
-          formData.append('option4', question.option4);
+          formData.append('option1', question.option1 || '');
+          formData.append('option2', question.option2 || '');
+          formData.append('option3', question.option3 || '');
+          formData.append('option4', question.option4 || '');
           formData.append('correct_option', question.correct_option);
         }
-        formData.append('explanation', question.explanation);
+        
+        formData.append('explanation', question.explanation || '');
 
+        console.log('Creating question:', question);
         await teacherAPI.createQuestion(formData);
       }
 
       toast.success('Test created successfully!');
-      navigate(`/teacher/test/${testId}/manage`);
+      navigate(`/teacher/tests`); // Changed navigation
     } catch (error) {
       console.error('Failed to create test:', error);
-      toast.error('Failed to create test');
+      console.error('Error details:', error.response?.data);
+      
+      // Show specific error message
+      if (error.response?.data?.error) {
+        toast.error(error.response.data.error);
+      } else if (error.response?.data?.details) {
+        toast.error(error.response.data.details);
+      } else {
+        toast.error('Failed to create test. Please check console for details.');
+      }
     } finally {
       setSubmitting(false);
     }

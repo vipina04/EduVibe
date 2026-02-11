@@ -7,6 +7,13 @@ EduVibe Platform - 2026
 ✅ All functionality preserved
 ✅ Added new function-based views for tests
 """
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Test, Question, Option
+
+
 
 # ═══════════════════════════════════════════════════════════
 #  IMPORTS
@@ -20,13 +27,13 @@ from rest_framework.decorators import api_view, permission_classes  # ✅ ADDED 
 from django.db.models import Count, Q, Avg, Max, Min  # ✅ ADDED Max, Min
 from django.utils import timezone
 from datetime import date
+from django.db import transaction
+import traceback
 
 from users.models import CustomUser
 from admin_tasks.models import Class, Subject, Chapter
 from .models import (
-    TeacherAssignment, Test, Question, Attendance,
-    Assignment, Doubt, DoubtReply
-)
+TeacherAssignment, Test, Question, Attendance,Assignment, Doubt, DoubtReply,Test, Question, Option)
 from students.models import TestAttempt, StudentAnswer
 
 # ═══════════════════════════════════════════════════════════
@@ -45,6 +52,10 @@ class IsTeacherRole(IsAuthenticated):
 # ═══════════════════════════════════════════════════════════
 #  NEW FUNCTION-BASED VIEWS FOR TESTS
 # ═══════════════════════════════════════════════════════════
+
+# 
+
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -108,6 +119,16 @@ def get_all_teacher_tests(request):
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -519,23 +540,138 @@ class TestListView(APIView):
         tests = Test.objects.filter(created_by=request.user).select_related('chapter')
         return Response([{'id': t.id, 'chapter': t.chapter.name, 'type': t.type, 'marks': t.marks} for t in tests])
 
+# class TestCreateView(APIView):
+#     permission_classes = [IsTeacherRole]
+    
+#     def post(self, request):
+#         test_type = request.data.get('type')
+#         chapter_id = request.data.get('chapter_id')
+#         marks = request.data.get('marks')
+        
+#         if test_type not in ['mcq', 'descriptive'] or not marks or int(marks) not in [10, 20, 50]:
+#             return Response({'error': 'Invalid data.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+#         try:
+#             chapter = Chapter.objects.get(id=chapter_id)
+#             test = Test.objects.create(type=test_type, chapter=chapter, marks=int(marks), created_by=request.user)
+#             return Response({'message': 'Test created!', 'test': {'id': test.id, 'type': test.type}}, status=status.HTTP_201_CREATED)
+#         except Chapter.DoesNotExist:
+#             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
 class TestCreateView(APIView):
     permission_classes = [IsTeacherRole]
     
     def post(self, request):
+        """
+        Create a new test
+        Expected payload:
+        {
+            "name": "Test Name",
+            "description": "Test Description",
+            "type": "mcq" or "descriptive",
+            "marks": 10,
+            "duration_minutes": 30,
+            "chapter": chapter_id
+        }
+        """
+        # Get data from request
+        name = request.data.get('name')
+        description = request.data.get('description', '')
         test_type = request.data.get('type')
-        chapter_id = request.data.get('chapter_id')
         marks = request.data.get('marks')
+        duration_minutes = request.data.get('duration_minutes')
+        chapter_id = request.data.get('chapter') or request.data.get('chapter_id')  # Support both field names
         
-        if test_type not in ['mcq', 'descriptive'] or not marks or int(marks) not in [10, 20, 50]:
-            return Response({'error': 'Invalid data.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Validate required fields
+        if not name:
+            return Response({
+                'error': 'Test name is required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if test_type not in ['mcq', 'descriptive']:
+            return Response({
+                'error': 'Invalid test type. Must be "mcq" or "descriptive".'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not marks or int(marks) <= 0:
+            return Response({
+                'error': 'Valid marks required (must be greater than 0).'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not duration_minutes or int(duration_minutes) <= 0:
+            return Response({
+                'error': 'Valid duration required (must be greater than 0).'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not chapter_id:
+            return Response({
+                'error': 'Chapter is required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
+            # Verify chapter exists
             chapter = Chapter.objects.get(id=chapter_id)
-            test = Test.objects.create(type=test_type, chapter=chapter, marks=int(marks), created_by=request.user)
-            return Response({'message': 'Test created!', 'test': {'id': test.id, 'type': test.type}}, status=status.HTTP_201_CREATED)
+            
+            # Verify teacher is assigned to this subject and class
+            assignment_exists = TeacherAssignment.objects.filter(
+                teacher=request.user,
+                subject=chapter.subject,
+                class_assigned=chapter.class_assigned
+            ).exists()
+            
+            if not assignment_exists:
+                return Response({
+                    'error': 'You are not assigned to teach this subject in this class.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Create test
+            test = Test.objects.create(
+                name=name,
+                description=description,
+                type=test_type,
+                chapter=chapter,
+                marks=int(marks),
+                duration_minutes=int(duration_minutes),
+                created_by=request.user
+            )
+            
+            return Response({
+                'message': 'Test created successfully!',
+                'test': {
+                    'id': test.id,
+                    'name': test.name,
+                    'type': test.type,
+                    'marks': test.marks,
+                    'duration_minutes': test.duration_minutes,
+                    'chapter_id': test.chapter.id,
+                    'chapter_name': test.chapter.name
+                }
+            }, status=status.HTTP_201_CREATED)
+            
         except Chapter.DoesNotExist:
-            return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({
+                'error': 'Chapter not found.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            # Log the error for debugging
+            import traceback
+            print(f"Error creating test: {str(e)}")
+            print(traceback.format_exc())
+            
+            return Response({
+                'error': f'Failed to create test: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+
+
+
+
+
+
 
 class TestDetailView(APIView):
     permission_classes = [IsTeacherRole]
@@ -563,11 +699,127 @@ class TestResultsView(APIView):
 #  QUESTION MANAGEMENT
 # ═══════════════════════════════════════════════════════════
 
+# class QuestionCreateView(APIView):
+#     permission_classes = [IsTeacherRole]
+    
+#     def post(self, request, test_id):
+#         return Response({'message': 'Question endpoint placeholder'}, status=201)
+
 class QuestionCreateView(APIView):
     permission_classes = [IsTeacherRole]
     
-    def post(self, request, test_id):
-        return Response({'message': 'Question endpoint placeholder'}, status=201)
+    def post(self, request, test_id=None):
+        """
+        Create a new question for a test
+        Expected payload (FormData):
+        {
+            "test": test_id,
+            "question_text": "Question text here",
+            "question_image": <file> (optional),
+            "option1": "Option 1" (for MCQ),
+            "option2": "Option 2" (for MCQ),
+            "option3": "Option 3" (for MCQ),
+            "option4": "Option 4" (for MCQ),
+            "correct_option": 1-4 (for MCQ),
+            "explanation": "Explanation text" (optional)
+        }
+        """
+        # Get test_id from URL param or from request body
+        test_id = test_id or request.data.get('test')
+        
+        if not test_id:
+            return Response({
+                'error': 'Test ID is required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Verify test exists and belongs to this teacher
+            test = Test.objects.get(id=test_id, created_by=request.user)
+            
+            # Get question data
+            question_text = request.data.get('question_text', '')
+            
+            if not question_text:
+                return Response({
+                    'error': 'Question text is required.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create question
+            question = Question.objects.create(
+                test=test,
+                question_text=question_text,
+                explanation=request.data.get('explanation', '')
+            )
+            
+            # For MCQ tests, add options
+            if test.type == 'mcq':
+                option1 = request.data.get('option1', '')
+                option2 = request.data.get('option2', '')
+                option3 = request.data.get('option3', '')
+                option4 = request.data.get('option4', '')
+                correct_option = request.data.get('correct_option')
+                
+                if not all([option1, option2, option3, option4, correct_option]):
+                    question.delete()  # Delete the question if options are incomplete
+                    return Response({
+                        'error': 'All options and correct option are required for MCQ.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                try:
+                    correct_option = int(correct_option)
+                    if correct_option not in [1, 2, 3, 4]:
+                        question.delete()
+                        return Response({
+                            'error': 'Correct option must be between 1 and 4.'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                except (ValueError, TypeError):
+                    question.delete()
+                    return Response({
+                        'error': 'Invalid correct option value.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                question.option1 = option1
+                question.option2 = option2
+                question.option3 = option3
+                question.option4 = option4
+                question.correct_option = correct_option
+                question.save()
+            
+            # Handle image upload if present
+            if request.FILES.get('question_image'):
+                question.question_image = request.FILES['question_image']
+                question.save()
+            
+            return Response({
+                'message': 'Question created successfully!',
+                'question': {
+                    'id': question.id,
+                    'question_text': question.question_text,
+                    'has_image': bool(question.question_image)
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Test.DoesNotExist:
+            return Response({
+                'error': 'Test not found or you do not have permission to add questions to this test.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            # Log the error for debugging
+            import traceback
+            print(f"Error creating question: {str(e)}")
+            print(traceback.format_exc())
+            
+            return Response({
+                'error': f'Failed to create question: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+
+
+
 
 class QuestionUpdateView(APIView):
     permission_classes = [IsTeacherRole]
@@ -744,7 +996,127 @@ class DoubtReplyCreateView(APIView):
 
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_question(request):
+    """Create a new question for a test"""
+    try:
+        # Get data from FormData
+        test_id = request.data.get('test')
+        question_text = request.data.get('question_text', '')
+        question_image = request.FILES.get('question_image', None)
+        option1 = request.data.get('option1', '')
+        option2 = request.data.get('option2', '')
+        option3 = request.data.get('option3', '')
+        option4 = request.data.get('option4', '')
+        correct_option = request.data.get('correct_option', None)
+        explanation = request.data.get('explanation', '')
+        
+        # Validate test exists
+        try:
+            test = Test.objects.get(id=test_id)
+        except Test.DoesNotExist:
+            return Response(
+                {'error': f'Test with id {test_id} does not exist'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if user is the creator of the test
+        if test.created_by != request.user:
+            return Response(
+                {'error': 'You are not authorized to add questions to this test'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Create question
+        question = Question.objects.create(
+            test=test,
+            question_text=question_text,
+            question_image=question_image,
+            option1=option1,
+            option2=option2,
+            option3=option3,
+            option4=option4,
+            correct_option=int(correct_option) if correct_option else None,
+            explanation=explanation
+        )
+        
+        return Response({
+            'message': 'Question created successfully',
+            'question_id': question.id,
+            'question': {
+                'id': question.id,
+                'question_text': question.question_text,
+                'option1': question.option1,
+                'option2': question.option2,
+                'option3': question.option3,
+                'option4': question.option4,
+                'correct_option': question.correct_option,
+            }
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        print("Error creating question:", str(e))
+        import traceback
+        print("Traceback:", traceback.format_exc())
+        return Response({
+            'error': 'Failed to create question',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_test(request):
+    """Create a new test"""
+    try:
+        data = request.data
+        print("Received data for test creation:", data)  # Debug
+        
+        # Validate required fields
+        required_fields = ['chapter', 'name', 'type', 'marks', 'duration_minutes']
+        for field in required_fields:
+            if field not in data:
+                return Response(
+                    {'error': f'Missing required field: {field}'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Create the test
+        test = Test.objects.create(
+            chapter_id=data['chapter'],
+            name=data['name'],
+            description=data.get('description', ''),
+            type=data['type'],
+            marks=data['marks'],
+            duration_minutes=data['duration_minutes'],
+            created_by=request.user
+        )
+        
+        print(f"Test created successfully with ID: {test.id}")  # Debug
+        
+        # Return response with ID
+        return Response({
+            'id': test.id,  # THIS IS THE IMPORTANT PART!
+            'message': 'Test created successfully',
+            'test': {
+                'id': test.id,
+                'name': test.name,
+                'description': test.description,
+                'type': test.type,
+                'marks': test.marks,
+                'duration_minutes': test.duration_minutes,
+                'chapter': test.chapter_id
+            }
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        print("Error creating test:", str(e))
+        import traceback
+        print("Traceback:", traceback.format_exc())
+        return Response({
+            'error': 'Failed to create test',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
 
 
 
