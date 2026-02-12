@@ -90,6 +90,7 @@ urlpatterns = [
     path('questions/<int:question_id>/delete/', QuestionDeleteView.as_view(), name='question-delete'),
     
     # NEW: Function-based views for questions and tests
+    path('class/<int:class_id>/subject/<int:subject_id>/chapters/', views.TeacherChaptersView.as_view(), name='teacher-chapters'),
     path('create-test/', views.create_test, name='create-test'),
     path('create-question/', views.create_question, name='create-question'),
     

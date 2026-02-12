@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { authAPI } from '../services/api';
+import GoogleAuthButton from '../components/common/GoogleAuthButton';
 
 const RegisterPage = () => {
   const navigate = useNavigate();
@@ -527,6 +528,28 @@ const RegisterPage = () => {
               >
                 {loading ? 'Verifying...' : 'Verify OTP'}
               </button>
+              <div className="space-y-4">
+
+  {/* ...your existing register form... */}
+
+  {/* Divider */}
+  <div className="relative my-4">
+    <div className="absolute inset-0 flex items-center">
+      <div className="w-full border-t border-slate-700" />
+    </div>
+    <div className="relative flex justify-center">
+      <span className="px-4 bg-slate-900 text-slate-500 text-sm">or sign up with</span>
+    </div>
+  </div>
+
+  {/* role comes from your existing role state / formData.role */}
+  <GoogleAuthButton role={role} />
+
+</div>
+
+              
+
+              
 
               <div className="text-center space-y-2">
                 <button

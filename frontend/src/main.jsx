@@ -6,47 +6,63 @@ import './index.css'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { GoogleOAuthProvider } from '@react-oauth/google'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter 
-      future={{ 
-        v7_startTransition: true, 
-        v7_relativeSplatPath: true 
-      }}
-    >
-      <ThemeProvider>
-        <AuthProvider>
-          <App />
-          <Toaster 
-            position="top-right"
-            toastOptions={{
-              duration: 4000,
-              style: {
-                background: '#363636',
-                color: '#fff',
-              },
-              success: {
-                duration: 3000,
-                iconTheme: {
-                  primary: '#10b981',
-                  secondary: '#fff',
-                },
-              },
-              error: {
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
+      <BrowserRouter
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true
+        }}
+      >
+        <ThemeProvider>
+          <AuthProvider>
+            <App />
+            <Toaster
+              position="top-right"
+              toastOptions={{
                 duration: 4000,
-                iconTheme: {
-                  primary: '#ef4444',
-                  secondary: '#fff',
+                style: {
+                  background: '#363636',
+                  color: '#fff',
                 },
-              },
-            }}
-          />
-        </AuthProvider>
-      </ThemeProvider>
-    </BrowserRouter>
+                success: {
+                  duration: 3000,
+                  iconTheme: {
+                    primary: '#10b981',
+                    secondary: '#fff',
+                  },
+                },
+                error: {
+                  duration: 4000,
+                  iconTheme: {
+                    primary: '#ef4444',
+                    secondary: '#fff',
+                  },
+                },
+              }}
+            />
+          </AuthProvider>
+        </ThemeProvider>
+      </BrowserRouter>
+    </GoogleOAuthProvider>
   </React.StrictMode>,
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -67,14 +83,47 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // import { Toaster } from 'react-hot-toast'
 // import { AuthProvider } from './context/AuthContext'
 // import { ThemeProvider } from './context/ThemeContext'
+// import { GoogleOAuthProvider } from '@react-oauth/google';
+
+// <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
+//   <App />
+// </GoogleOAuthProvider>
 
 // ReactDOM.createRoot(document.getElementById('root')).render(
 //   <React.StrictMode>
-//     <BrowserRouter>
+//     <BrowserRouter 
+//       future={{ 
+//         v7_startTransition: true, 
+//         v7_relativeSplatPath: true 
+//       }}
+//     >
 //       <ThemeProvider>
 //         <AuthProvider>
 //           <App />
-//           <Toaster position="top-right" />
+//           <Toaster 
+//             position="top-right"
+//             toastOptions={{
+//               duration: 4000,
+//               style: {
+//                 background: '#363636',
+//                 color: '#fff',
+//               },
+//               success: {
+//                 duration: 3000,
+//                 iconTheme: {
+//                   primary: '#10b981',
+//                   secondary: '#fff',
+//                 },
+//               },
+//               error: {
+//                 duration: 4000,
+//                 iconTheme: {
+//                   primary: '#ef4444',
+//                   secondary: '#fff',
+//                 },
+//               },
+//             }}
+//           />
 //         </AuthProvider>
 //       </ThemeProvider>
 //     </BrowserRouter>
@@ -92,44 +141,22 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 
 
 
-
-
-
-
-
-
-
-
-
-
 // // import React from 'react'
 // // import ReactDOM from 'react-dom/client'
-// // import { BrowserRouter } from 'react-router-dom' // Added
+// // import { BrowserRouter } from 'react-router-dom'
 // // import App from './App.jsx'
 // // import './index.css'
 // // import { Toaster } from 'react-hot-toast'
-// // import { AuthProvider } from './context/AuthContext' // Added
-// // import { ThemeProvider } from './context/ThemeContext' // Added
+// // import { AuthProvider } from './context/AuthContext'
+// // import { ThemeProvider } from './context/ThemeContext'
 
 // // ReactDOM.createRoot(document.getElementById('root')).render(
 // //   <React.StrictMode>
-// //     {/* 1. Wrap with BrowserRouter for Navigation */}
 // //     <BrowserRouter>
-// //       {/* 2. Wrap with ThemeProvider for Dark/Light mode */}
 // //       <ThemeProvider>
-// //         {/* 3. Wrap with AuthProvider for Login functionality */}
 // //         <AuthProvider>
 // //           <App />
-// //           <Toaster 
-// //             position="top-right"
-// //             toastOptions={{
-// //               duration: 4000,
-// //               style: {
-// //                 background: '#363636',
-// //                 color: '#fff',
-// //               },
-// //             }}
-// //           />
+// //           <Toaster position="top-right" />
 // //         </AuthProvider>
 // //       </ThemeProvider>
 // //     </BrowserRouter>
@@ -151,41 +178,50 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 
 
 
+
+
+
+
+
+
 // // // import React from 'react'
 // // // import ReactDOM from 'react-dom/client'
+// // // import { BrowserRouter } from 'react-router-dom' // Added
 // // // import App from './App.jsx'
 // // // import './index.css'
 // // // import { Toaster } from 'react-hot-toast'
+// // // import { AuthProvider } from './context/AuthContext' // Added
+// // // import { ThemeProvider } from './context/ThemeContext' // Added
 
 // // // ReactDOM.createRoot(document.getElementById('root')).render(
 // // //   <React.StrictMode>
-// // //     <App />
-// // //     <Toaster 
-// // //       position="top-right"
-// // //       toastOptions={{
-// // //         duration: 4000,
-// // //         style: {
-// // //           background: '#363636',
-// // //           color: '#fff',
-// // //         },
-// // //         success: {
-// // //           duration: 3000,
-// // //           iconTheme: {
-// // //             primary: '#10b981',
-// // //             secondary: '#fff',
-// // //           },
-// // //         },
-// // //         error: {
-// // //           duration: 4000,
-// // //           iconTheme: {
-// // //             primary: '#ef4444',
-// // //             secondary: '#fff',
-// // //           },
-// // //         },
-// // //       }}
-// // //     />
+// // //     {/* 1. Wrap with BrowserRouter for Navigation */}
+// // //     <BrowserRouter>
+// // //       {/* 2. Wrap with ThemeProvider for Dark/Light mode */}
+// // //       <ThemeProvider>
+// // //         {/* 3. Wrap with AuthProvider for Login functionality */}
+// // //         <AuthProvider>
+// // //           <App />
+// // //           <Toaster 
+// // //             position="top-right"
+// // //             toastOptions={{
+// // //               duration: 4000,
+// // //               style: {
+// // //                 background: '#363636',
+// // //                 color: '#fff',
+// // //               },
+// // //             }}
+// // //           />
+// // //         </AuthProvider>
+// // //       </ThemeProvider>
+// // //     </BrowserRouter>
 // // //   </React.StrictMode>,
 // // // )
+
+
+
+
+
 
 
 
@@ -242,16 +278,42 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 
 
 
-// // // // // import React from 'react';
-// // // // // import ReactDOM from 'react-dom/client';
-// // // // // import App from './App.jsx';
-// // // // // import './index.css'; // <-- Tailwind CSS imported
+
+// // // // // import React from 'react'
+// // // // // import ReactDOM from 'react-dom/client'
+// // // // // import App from './App.jsx'
+// // // // // import './index.css'
+// // // // // import { Toaster } from 'react-hot-toast'
 
 // // // // // ReactDOM.createRoot(document.getElementById('root')).render(
 // // // // //   <React.StrictMode>
 // // // // //     <App />
-// // // // //   </React.StrictMode>
-// // // // // );
+// // // // //     <Toaster 
+// // // // //       position="top-right"
+// // // // //       toastOptions={{
+// // // // //         duration: 4000,
+// // // // //         style: {
+// // // // //           background: '#363636',
+// // // // //           color: '#fff',
+// // // // //         },
+// // // // //         success: {
+// // // // //           duration: 3000,
+// // // // //           iconTheme: {
+// // // // //             primary: '#10b981',
+// // // // //             secondary: '#fff',
+// // // // //           },
+// // // // //         },
+// // // // //         error: {
+// // // // //           duration: 4000,
+// // // // //           iconTheme: {
+// // // // //             primary: '#ef4444',
+// // // // //             secondary: '#fff',
+// // // // //           },
+// // // // //         },
+// // // // //       }}
+// // // // //     />
+// // // // //   </React.StrictMode>,
+// // // // // )
 
 
 
@@ -262,14 +324,34 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 
 
 
+// // // // // // import React from 'react';
+// // // // // // import ReactDOM from 'react-dom/client';
+// // // // // // import App from './App.jsx';
+// // // // // // import './index.css'; // <-- Tailwind CSS imported
 
-// // // // // // import { StrictMode } from 'react'
-// // // // // // import { createRoot } from 'react-dom/client'
-// // // // // // import './index.css'
-// // // // // // import App from './App.jsx'
-
-// // // // // // createRoot(document.getElementById('root')).render(
-// // // // // //   <StrictMode>
+// // // // // // ReactDOM.createRoot(document.getElementById('root')).render(
+// // // // // //   <React.StrictMode>
 // // // // // //     <App />
-// // // // // //   </StrictMode>,
-// // // // // // )
+// // // // // //   </React.StrictMode>
+// // // // // // );
+
+
+
+
+
+
+
+
+
+
+
+// // // // // // // import { StrictMode } from 'react'
+// // // // // // // import { createRoot } from 'react-dom/client'
+// // // // // // // import './index.css'
+// // // // // // // import App from './App.jsx'
+
+// // // // // // // createRoot(document.getElementById('root')).render(
+// // // // // // //   <StrictMode>
+// // // // // // //     <App />
+// // // // // // //   </StrictMode>,
+// // // // // // // )

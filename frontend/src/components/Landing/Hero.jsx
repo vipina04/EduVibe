@@ -80,8 +80,7 @@ const Hero = () => {
             transition={{ delay: 0.4 }}
             className="text-xl md:text-2xl text-gray-700 dark:text-gray-300 mb-5 max-w-3xl mx-auto leading-relaxed"
           >
-            Manage classes, teachers, and students effortlessly with EduVibe.
-            The complete solution for modern tuition centers.
+            Guiding every student towards confidence, clarity and success.
           </motion.p>
 
           {/* CTA Buttons */}
@@ -93,7 +92,7 @@ const Hero = () => {
           >
             <Button 
               size="lg" 
-              onClick={() => navigate('/register')}
+              onClick={() => navigate('/Login')}
               className="group shadow-xl border-none text-white bg-gradient-to-r from-purple-950 via-indigo-600 to-teal-500 hover:opacity-90 transition-opacity"
 
             >

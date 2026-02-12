@@ -93,7 +93,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = True
 
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '365907479337-5f5d278fbrds7epnj385c7o6msmt154p.apps.googleusercontent.com')
 
+GOOGLE_CLIENT_ID = "365907479337-5f5d278fbrds7epnj385c7o6msmt154p.apps.googleusercontent.com"
 
 # ✅ EMAIL (FIXED PROPERLY)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

@@ -4,7 +4,7 @@ User Authentication & Profile URL Configuration
 EduVibe Platform - 2026
 """
 from .views_enhanced import GetRegistrationDataView
-
+from .views import GoogleAuthView
 from django.urls import path
 from .views import (
     # Registration & OTP
@@ -66,4 +66,10 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════
     path('classes/', GetClassListView.as_view(), name='class-list'),
     path('subjects/', GetSubjectListView.as_view(), name='subject-list'),
+
+     path('auth/google/', GoogleAuthView.as_view(), name='google-auth'),
 ]
+
+
+from .views import GoogleAuthView
+

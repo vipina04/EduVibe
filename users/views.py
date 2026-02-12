@@ -310,7 +310,89 @@ class GetSubjectListView(APIView):
     def get(self, request):
         return Response(list(Subject.objects.values('id', 'name')))
 
+# Add to top imports
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+import os
 
+class GoogleAuthView(APIView):
+    """Handle Google Sign-In for both login and registration"""
+
+    def post(self, request):
+        credential = request.data.get('credential')  # Google JWT token from frontend
+        role = request.data.get('role', 'student')    # Only needed for new registrations
+
+        if not credential:
+            return Response({'error': 'Google credential required.'}, status=400)
+
+        try:
+            # Verify the Google token
+            google_client_id = os.environ.get('GOOGLE_CLIENT_ID')
+            idinfo = id_token.verify_oauth2_token(
+                credential,
+                google_requests.Request(),
+                google_client_id
+            )
+
+            email = idinfo.get('email')
+            first_name = idinfo.get('given_name', '')
+            last_name = idinfo.get('family_name', '')
+
+            if not email:
+                return Response({'error': 'Could not retrieve email from Google.'}, status=400)
+
+            # Check if user already exists
+            user = CustomUser.objects.filter(email=email).first()
+
+            if user:
+                # Existing user — just log them in
+                token, _ = Token.objects.get_or_create(user=user)
+                return Response({
+                    'token': token.key,
+                    'user': {
+                        'email': user.email,
+                        'role': user.role,
+                        'first_name': user.first_name,
+                        'last_name': user.last_name,
+                        'unique_id': user.unique_id,
+                        'is_approved': user.is_approved,
+                    }
+                })
+            else:
+                # New user — create account
+                # Note: phone, dob, class/subjects still needed for full profile
+                # Google signup creates a partial account pending completion
+                if role not in ['student', 'teacher']:
+                    return Response({'error': 'Invalid role.'}, status=400)
+
+                user = CustomUser(
+                    username=email,
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                    role=role,
+                    is_approved=False,
+                )
+                user.set_unusable_password()  # No password needed for Google users
+                user.save()
+
+                token, _ = Token.objects.get_or_create(user=user)
+                return Response({
+                    'token': token.key,
+                    'is_new_user': True,   # Frontend can redirect to complete profile
+                    'user': {
+                        'email': user.email,
+                        'role': user.role,
+                        'first_name': user.first_name,
+                        'last_name': user.last_name,
+                        'is_approved': user.is_approved,
+                    }
+                }, status=201)
+
+        except ValueError as e:
+            return Response({'error': f'Invalid Google token: {str(e)}'}, status=400)
+        except Exception as e:
+            return Response({'error': 'Google authentication failed.'}, status=500)
 
 
 
