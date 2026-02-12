@@ -1431,159 +1431,362 @@ class DoubtReplyCreateView(APIView):
 
 # UPDATED TeacherAttendanceHistoryView - Add this to teachers/views.py
 
+# class TeacherAttendanceHistoryView(APIView):
+#     """Get teacher's attendance history with time tracking"""
+#     permission_classes = [IsTeacherRole]
+    
+#     def get(self, request):
+#         try:
+#             teacher = request.user
+            
+#             # Get query parameters
+#             class_id = request.GET.get('class_id')
+#             subject_id = request.GET.get('subject_id')
+#             start_date = request.GET.get('start_date')
+#             end_date = request.GET.get('end_date')
+            
+#             # Base query
+#             attendance_records = Attendance.objects.filter(
+#                 teacher=teacher
+#             ).select_related(
+#                 'class_assigned',
+#                 'subject',
+#                 'student'
+#             ).order_by('-date', '-from_time')
+            
+#             # Apply filters
+#             if class_id:
+#                 attendance_records = attendance_records.filter(class_assigned_id=int(class_id))
+#             if subject_id:
+#                 attendance_records = attendance_records.filter(subject_id=int(subject_id))
+#             if start_date:
+#                 attendance_records = attendance_records.filter(date__gte=start_date)
+#             if end_date:
+#                 attendance_records = attendance_records.filter(date__lte=end_date)
+            
+#             # Group by session
+#             from collections import defaultdict
+#             sessions_dict = defaultdict(lambda: {
+#                 'students': [],
+#                 'present_count': 0,
+#                 'absent_count': 0
+#             })
+            
+#             for record in attendance_records:
+#                 session_key = (
+#                     str(record.date),
+#                     record.class_assigned_id,
+#                     record.subject_id
+#                 )
+                
+#                 session = sessions_dict[session_key]
+#                 session['date'] = str(record.date)
+#                 session['class_id'] = record.class_assigned_id
+#                 session['class_name'] = record.class_assigned.name
+#                 # session['subject_id'] = record.subject_id
+#                 session['subject_id'] = record.subject_id if record.subject_id else 0
+#                 # session['subject_name'] = record.subject.name
+#                 session['subject_name'] = record.subject.name if record.subject else 'Unknown'
+#                 session['from_time'] = record.from_time
+#                 session['to_time'] = record.to_time
+#                 session['duration_minutes'] = record.duration_minutes
+                
+#                 session['students'].append(record.student_id)
+#                 if record.is_present:
+#                     session['present_count'] += 1
+#                 else:
+#                     session['absent_count'] += 1
+            
+#             # Convert to list
+#             sessions_list = []
+#             for session_key, session_data in sessions_dict.items():
+#                 sessions_list.append({
+#                     'date': session_data['date'],
+#                     'class_id': session_data['class_id'],
+#                     'class_name': session_data['class_name'],
+#                     'subject_id': session_data['subject_id'],
+#                     'subject_name': session_data['subject_name'],
+#                     'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
+#                     'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
+#                     'duration_minutes': session_data['duration_minutes'] or 0,
+#                     'total_students': len(session_data['students']),
+#                     'present': session_data['present_count'],
+#                     'absent': session_data['absent_count']
+#                 })
+            
+#             sessions_list.sort(key=lambda x: x['date'], reverse=True)
+            
+#             return Response({
+#                 'sessions': sessions_list
+#             })
+            
+#         except Exception as e:
+#             import traceback
+#             print(f"Error: {str(e)}")
+#             print(traceback.format_exc())
+#             return Response({
+#                 'error': str(e)
+#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 class TeacherAttendanceHistoryView(APIView):
-    """Get teacher's attendance history with time tracking - UPDATED TO INCLUDE SUBJECT"""
+    """Get teacher's attendance history with time tracking"""
     permission_classes = [IsTeacherRole]
     
     def get(self, request):
-        teacher = request.user
-        
-        # Get query parameters
-        class_id = request.GET.get('class_id')
-        subject_id = request.GET.get('subject_id')
-        start_date = request.GET.get('start_date')
-        end_date = request.GET.get('end_date')
-        
-        # Base query - all attendance marked by this teacher
-        attendance_records = Attendance.objects.filter(
-            teacher=teacher
-        ).select_related(
-            'class_assigned',
-            'subject',  # ✅ NEW: Added subject to select_related
-            'student'
-        ).order_by('-date', '-time')
-        
-        # Apply filters
-        if class_id:
-            attendance_records = attendance_records.filter(class_assigned_id=class_id)
-        
-        if subject_id:  # ✅ NEW: Can now filter by subject properly!
-            attendance_records = attendance_records.filter(subject_id=subject_id)
-        
-        if start_date:
-            attendance_records = attendance_records.filter(date__gte=start_date)
-        
-        if end_date:
-            attendance_records = attendance_records.filter(date__lte=end_date)
-        
-        # Group by date, class, and subject
-        from collections import defaultdict
-        
-        sessions_by_key = defaultdict(lambda: {
-            'students': set(),
-            'present_students': set(),
-            'from_time': None,
-            'to_time': None,
-            'duration_minutes': None
-        })
-        
-        # ✅ UPDATED: Group by date + class + subject (not just date + class)
-        for record in attendance_records:
-            # Create unique key for each session (date + class + subject)
-            session_key = f"{record.date}_{record.class_assigned_id}_{record.subject_id}"
+        try:
+            teacher = request.user
             
-            session = sessions_by_key[session_key]
-            session['date'] = record.date
-            session['class_id'] = record.class_assigned.id
-            session['class_name'] = record.class_assigned.name
-            session['subject_id'] = record.subject.id  # ✅ NEW
-            session['subject_name'] = record.subject.name  # ✅ NEW
+            # Get query parameters
+            class_id = request.GET.get('class_id')
+            subject_id = request.GET.get('subject_id')
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
             
-            # Store time info (same for all students in this session)
-            if record.from_time and not session['from_time']:
+            # Base query
+            attendance_records = Attendance.objects.filter(
+                teacher=teacher
+            ).select_related(
+                'class_assigned',
+                'subject',
+                'student'
+            ).order_by('-date', '-from_time')
+            
+            # Apply filters
+            if class_id:
+                attendance_records = attendance_records.filter(class_assigned_id=int(class_id))
+            if subject_id:
+                attendance_records = attendance_records.filter(subject_id=int(subject_id))
+            if start_date:
+                attendance_records = attendance_records.filter(date__gte=start_date)
+            if end_date:
+                attendance_records = attendance_records.filter(date__lte=end_date)
+            
+            # Group by session
+            from collections import defaultdict
+            sessions_dict = defaultdict(lambda: {
+                'students': [],
+                'present_count': 0,
+                'absent_count': 0
+            })
+            
+            for record in attendance_records:
+                session_key = (
+                    str(record.date),
+                    record.class_assigned_id,
+                    record.subject_id
+                )
+                
+                session = sessions_dict[session_key]
+                session['date'] = str(record.date)
+                session['class_id'] = record.class_assigned_id
+                session['class_name'] = record.class_assigned.name
+                session['subject_id'] = record.subject_id if record.subject_id else 0
+                session['subject_name'] = record.subject.name if record.subject else 'Unknown'
                 session['from_time'] = record.from_time
-            if record.to_time and not session['to_time']:
                 session['to_time'] = record.to_time
-            if record.duration_minutes and not session['duration_minutes']:
                 session['duration_minutes'] = record.duration_minutes
+                
+                session['students'].append(record.student_id)
+                if record.is_present:
+                    session['present_count'] += 1
+                else:
+                    session['absent_count'] += 1
             
-            # Track students
-            session['students'].add(record.student.id)
-            if record.is_present:
-                session['present_students'].add(record.student.id)
-        
-        # Convert to list format
-        sessions_list = []
-        for session_key, session_data in sessions_by_key.items():
-            total_students = len(session_data['students'])
-            present_count = len(session_data['present_students'])
-            
-            sessions_list.append({
-                'date': session_data['date'],
-                'class_id': session_data['class_id'],
-                'class_name': session_data['class_name'],
-                'subject_id': session_data['subject_id'],  # ✅ NEW
-                'subject_name': session_data['subject_name'],  # ✅ NEW
-                'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
-                'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
-                'duration_minutes': session_data['duration_minutes'] or 0,
-                'total_students': total_students,
-                'present': present_count,
-                'absent': total_students - present_count
-            })
-        
-        # Sort by date (newest first)
-        sessions_list.sort(key=lambda x: x['date'], reverse=True)
-        
-        # Calculate statistics by class and subject
-        stats_by_class = defaultdict(lambda: {
-            'total_sessions': 0,
-            'total_duration': 0,
-            'subjects': defaultdict(lambda: {
-                'sessions': 0,
-                'duration': 0
-            })
-        })
-        
-        for session in sessions_list:
-            class_id_val = session['class_id']
-            subject_id_val = session['subject_id']  # ✅ NEW
-            duration = session['duration_minutes'] or 0
-            
-            stats_by_class[class_id_val]['class_name'] = session['class_name']
-            stats_by_class[class_id_val]['total_sessions'] += 1
-            stats_by_class[class_id_val]['total_duration'] += duration
-            
-            # ✅ UPDATED: Now properly tracks by subject
-            stats_by_class[class_id_val]['subjects'][subject_id_val]['subject_name'] = session['subject_name']
-            stats_by_class[class_id_val]['subjects'][subject_id_val]['sessions'] += 1
-            stats_by_class[class_id_val]['subjects'][subject_id_val]['duration'] += duration
-        
-        # Format statistics
-        stats_formatted = []
-        for class_id_val, class_data in stats_by_class.items():
-            subjects_list = []
-            for subject_id_val, subject_data in class_data['subjects'].items():
-                subjects_list.append({
-                    'subject_id': subject_id_val,
-                    'subject_name': subject_data['subject_name'],
-                    'sessions': subject_data['sessions'],
-                    'duration_minutes': subject_data['duration'],
-                    'duration_hours': round(subject_data['duration'] / 60, 2)
+            # Convert to list
+            sessions_list = []
+            for session_key, session_data in sessions_dict.items():
+                sessions_list.append({
+                    'date': session_data['date'],
+                    'class_id': session_data['class_id'],
+                    'class_name': session_data['class_name'],
+                    'subject_id': session_data['subject_id'],
+                    'subject_name': session_data['subject_name'],
+                    'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
+                    'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
+                    'duration_minutes': session_data['duration_minutes'] or 0,
+                    'total_students': len(session_data['students']),
+                    'present': session_data['present_count'],
+                    'absent': session_data['absent_count']
                 })
             
-            stats_formatted.append({
-                'class_id': class_id_val,
-                'class_name': class_data['class_name'],
-                'total_sessions': class_data['total_sessions'],
-                'total_duration_minutes': class_data['total_duration'],
-                'total_duration_hours': round(class_data['total_duration'] / 60, 2),
-                'subjects': subjects_list
+            sessions_list.sort(key=lambda x: x['date'], reverse=True)
+            
+            # ✅ FIXED: Calculate overall statistics
+            total_sessions = len(sessions_list)
+            total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
+            
+            # ✅ FIXED: Return with overall_stats
+            return Response({
+                'overall_stats': {
+                    'total_sessions': total_sessions,
+                    'total_duration_minutes': total_duration,
+                    'total_duration_hours': round(total_duration / 60, 2) if total_duration > 0 else 0
+                },
+                'sessions': sessions_list
             })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error: {str(e)}")
+            print(traceback.format_exc())
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+# class TeacherAttendanceHistoryView(APIView):
+#     """Get teacher's attendance history with time tracking - UPDATED TO INCLUDE SUBJECT"""
+#     permission_classes = [IsTeacherRole]
+    
+#     def get(self, request):
+#         teacher = request.user
         
-        # Overall statistics
-        total_sessions = len(sessions_list)
-        total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
+#         # Get query parameters
+#         class_id = request.GET.get('class_id')
+#         subject_id = request.GET.get('subject_id')
+#         start_date = request.GET.get('start_date')
+#         end_date = request.GET.get('end_date')
         
-        return Response({
-            'overall_stats': {
-                'total_sessions': total_sessions,
-                'total_duration_minutes': total_duration,
-                'total_duration_hours': round(total_duration / 60, 2)
-            },
-            'stats_by_class': stats_formatted,
-            'sessions': sessions_list
-        })
+#         # Base query - all attendance marked by this teacher
+#         attendance_records = Attendance.objects.filter(
+#             teacher=teacher
+#         ).select_related(
+#             'class_assigned',
+#             'subject',  # ✅ NEW: Added subject to select_related
+#             'student'
+#         ).order_by('-date', '-time')
+        
+#         # Apply filters
+#         if class_id:
+#             attendance_records = attendance_records.filter(class_assigned_id=class_id)
+        
+#         if subject_id:  # ✅ NEW: Can now filter by subject properly!
+#             attendance_records = attendance_records.filter(subject_id=subject_id)
+        
+#         if start_date:
+#             attendance_records = attendance_records.filter(date__gte=start_date)
+        
+#         if end_date:
+#             attendance_records = attendance_records.filter(date__lte=end_date)
+        
+#         # Group by date, class, and subject
+#         from collections import defaultdict
+        
+#         sessions_by_key = defaultdict(lambda: {
+#             'students': set(),
+#             'present_students': set(),
+#             'from_time': None,
+#             'to_time': None,
+#             'duration_minutes': None
+#         })
+        
+#         # ✅ UPDATED: Group by date + class + subject (not just date + class)
+#         for record in attendance_records:
+#             # Create unique key for each session (date + class + subject)
+#             session_key = f"{record.date}_{record.class_assigned_id}_{record.subject_id}"
+            
+#             session = sessions_by_key[session_key]
+#             session['date'] = record.date
+#             session['class_id'] = record.class_assigned.id
+#             session['class_name'] = record.class_assigned.name
+#             session['subject_id'] = record.subject.id  # ✅ NEW
+#             session['subject_name'] = record.subject.name  # ✅ NEW
+            
+#             # Store time info (same for all students in this session)
+#             if record.from_time and not session['from_time']:
+#                 session['from_time'] = record.from_time
+#             if record.to_time and not session['to_time']:
+#                 session['to_time'] = record.to_time
+#             if record.duration_minutes and not session['duration_minutes']:
+#                 session['duration_minutes'] = record.duration_minutes
+            
+#             # Track students
+#             session['students'].add(record.student.id)
+#             if record.is_present:
+#                 session['present_students'].add(record.student.id)
+        
+#         # Convert to list format
+#         sessions_list = []
+#         for session_key, session_data in sessions_by_key.items():
+#             total_students = len(session_data['students'])
+#             present_count = len(session_data['present_students'])
+            
+#             sessions_list.append({
+#                 'date': session_data['date'],
+#                 'class_id': session_data['class_id'],
+#                 'class_name': session_data['class_name'],
+#                 'subject_id': session_data['subject_id'],  # ✅ NEW
+#                 'subject_name': session_data['subject_name'],  # ✅ NEW
+#                 'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
+#                 'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
+#                 'duration_minutes': session_data['duration_minutes'] or 0,
+#                 'total_students': total_students,
+#                 'present': present_count,
+#                 'absent': total_students - present_count
+#             })
+        
+#         # Sort by date (newest first)
+#         sessions_list.sort(key=lambda x: x['date'], reverse=True)
+        
+#         # Calculate statistics by class and subject
+#         stats_by_class = defaultdict(lambda: {
+#             'total_sessions': 0,
+#             'total_duration': 0,
+#             'subjects': defaultdict(lambda: {
+#                 'sessions': 0,
+#                 'duration': 0
+#             })
+#         })
+        
+#         for session in sessions_list:
+#             class_id_val = session['class_id']
+#             subject_id_val = session['subject_id']  # ✅ NEW
+#             duration = session['duration_minutes'] or 0
+            
+#             stats_by_class[class_id_val]['class_name'] = session['class_name']
+#             stats_by_class[class_id_val]['total_sessions'] += 1
+#             stats_by_class[class_id_val]['total_duration'] += duration
+            
+#             # ✅ UPDATED: Now properly tracks by subject
+#             stats_by_class[class_id_val]['subjects'][subject_id_val]['subject_name'] = session['subject_name']
+#             stats_by_class[class_id_val]['subjects'][subject_id_val]['sessions'] += 1
+#             stats_by_class[class_id_val]['subjects'][subject_id_val]['duration'] += duration
+        
+#         # Format statistics
+#         stats_formatted = []
+#         for class_id_val, class_data in stats_by_class.items():
+#             subjects_list = []
+#             for subject_id_val, subject_data in class_data['subjects'].items():
+#                 subjects_list.append({
+#                     'subject_id': subject_id_val,
+#                     'subject_name': subject_data['subject_name'],
+#                     'sessions': subject_data['sessions'],
+#                     'duration_minutes': subject_data['duration'],
+#                     'duration_hours': round(subject_data['duration'] / 60, 2)
+#                 })
+            
+#             stats_formatted.append({
+#                 'class_id': class_id_val,
+#                 'class_name': class_data['class_name'],
+#                 'total_sessions': class_data['total_sessions'],
+#                 'total_duration_minutes': class_data['total_duration'],
+#                 'total_duration_hours': round(class_data['total_duration'] / 60, 2),
+#                 'subjects': subjects_list
+#             })
+        
+#         # Overall statistics
+#         total_sessions = len(sessions_list)
+#         total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
+        
+#         return Response({
+#             'overall_stats': {
+#                 'total_sessions': total_sessions,
+#                 'total_duration_minutes': total_duration,
+#                 'total_duration_hours': round(total_duration / 60, 2)
+#             },
+#             'stats_by_class': stats_formatted,
+#             'sessions': sessions_list
+#         })
 
 
 

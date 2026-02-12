@@ -47,7 +47,8 @@ class Attendance(models.Model):
     teacher = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='teacher_attendances')
     student = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='student_attendances')
     class_assigned = models.ForeignKey(Class, on_delete=models.CASCADE)
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    # subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, null=True, blank=True)
     date = models.DateField()
     time = models.TimeField()  # Keep for backward compatibility
     from_time = models.TimeField(null=True, blank=True)  # NEW: Class start time
