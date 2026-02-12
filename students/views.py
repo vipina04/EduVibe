@@ -9,8 +9,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Q, Count, Avg, Sum
+from django.db.models import Q, Count, Avg, Sum, Case, When, IntegerField
 from django.utils import timezone
+
 
 from users.models import CustomUser
 from admin_tasks.models import Class, Subject, Chapter, FeePayment, Notification
@@ -206,6 +207,130 @@ class StudentHomeView(APIView):
         })
 
 
+
+
+
+
+
+
+
+
+
+class MyAttendanceView(APIView):
+    """Get student's attendance records"""
+    permission_classes = [IsStudentRole]
+    
+    def get(self, request):
+        student = request.user
+        
+        # Get query parameters for filtering
+        subject_id = request.GET.get('subject_id')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        # Base query
+        attendance_records = Attendance.objects.filter(
+            student=student
+        ).select_related(
+            'teacher',
+            'class_assigned'
+        ).order_by('-date', '-time')
+        
+        # Apply filters
+        if subject_id:
+            # Note: We need to get attendance for a specific subject
+            # Since Attendance doesn't have subject directly, we filter by teacher assignments
+            from teachers.models import TeacherAssignment
+            teacher_ids = TeacherAssignment.objects.filter(
+                subject_id=subject_id,
+                class_assigned=student.class_assigned
+            ).values_list('teacher_id', flat=True)
+            
+            attendance_records = attendance_records.filter(teacher_id__in=teacher_ids)
+        
+        if start_date:
+            attendance_records = attendance_records.filter(date__gte=start_date)
+        
+        if end_date:
+            attendance_records = attendance_records.filter(date__lte=end_date)
+        
+        # Get subjects for this student's class
+        subjects_data = []
+        if student.class_assigned:
+            subjects = Subject.objects.filter(
+                classes=student.class_assigned
+            ).distinct()
+            
+            for subject in subjects:
+                # Get teacher assignments for this subject
+                teacher_ids = TeacherAssignment.objects.filter(
+                    subject=subject,
+                    class_assigned=student.class_assigned
+                ).values_list('teacher_id', flat=True)
+                
+                # Get attendance for this subject
+                subject_attendance = Attendance.objects.filter(
+                    student=student,
+                    teacher_id__in=teacher_ids
+                )
+                
+                total_classes = subject_attendance.count()
+                present_count = subject_attendance.filter(is_present=True).count()
+                absent_count = total_classes - present_count
+                
+                attendance_percentage = (present_count / total_classes * 100) if total_classes > 0 else 0
+                
+                subjects_data.append({
+                    'id': subject.id,
+                    'name': subject.name,
+                    'total_classes': total_classes,
+                    'present': present_count,
+                    'absent': absent_count,
+                    'percentage': round(attendance_percentage, 2)
+                })
+        
+        # Format attendance records
+        records_data = []
+        for record in attendance_records:
+            # Get subject name from teacher assignment
+            from teachers.models import TeacherAssignment
+            teacher_assignment = TeacherAssignment.objects.filter(
+                teacher=record.teacher,
+                class_assigned=record.class_assigned
+            ).select_related('subject').first()
+            
+            subject_name = teacher_assignment.subject.name if teacher_assignment else 'Unknown'
+            
+            records_data.append({
+                'id': record.id,
+                'date': record.date,
+                'time': record.time,
+                'from_time': record.from_time,
+                'to_time': record.to_time,
+                'duration_minutes': record.duration_minutes,
+                'is_present': record.is_present,
+                'status': 'Present' if record.is_present else 'Absent',
+                'subject': subject_name,
+                'teacher_name': record.teacher.get_full_name() or record.teacher.username,
+                'class_name': record.class_assigned.name
+            })
+        
+        # Calculate overall statistics
+        total_records = len(records_data)
+        present_total = sum(1 for r in records_data if r['is_present'])
+        absent_total = total_records - present_total
+        overall_percentage = (present_total / total_records * 100) if total_records > 0 else 0
+        
+        return Response({
+            'overall_stats': {
+                'total_classes': total_records,
+                'present': present_total,
+                'absent': absent_total,
+                'percentage': round(overall_percentage, 2)
+            },
+            'subjects': subjects_data,
+            'records': records_data
+        })
 # ═══════════════════════════════════════════════════════════
 #  SUBJECT & CHAPTER VIEWS - PRESERVED
 # ═══════════════════════════════════════════════════════════

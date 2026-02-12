@@ -187,7 +187,8 @@ export const teacherAPI = {
   // Attendance
   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
   getAttendance: (params) => api.get('/teachers/attendance/', { params }),
-  getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/attendance/history/`, { params: { classId, subjectId } }),
+   getAttendanceHistory: (params) => api.get('/teachers/attendance/history/', { params }),
+  // getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/attendance/history/`, { params: { classId, subjectId } }),
   getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
   
   // Assignments

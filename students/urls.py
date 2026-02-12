@@ -2,7 +2,10 @@
 """
 Student Module URL Configuration
 EduVibe Platform - 2026
+
 """
+
+
 from .views_doubts import StudentDoubtListView, StudentDoubtReplyView
 from django.urls import path
 from .views import (
