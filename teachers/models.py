@@ -47,6 +47,7 @@ class Attendance(models.Model):
     teacher = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='teacher_attendances')
     student = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='student_attendances')
     class_assigned = models.ForeignKey(Class, on_delete=models.CASCADE)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
     date = models.DateField()
     time = models.TimeField()  # Keep for backward compatibility
     from_time = models.TimeField(null=True, blank=True)  # NEW: Class start time
@@ -55,7 +56,7 @@ class Attendance(models.Model):
     is_present = models.BooleanField(default=False)
     
     class Meta:
-        unique_together = ('student', 'class_assigned', 'date')
+        unique_together = ('student', 'class_assigned', 'subject', 'date')
     
     def __str__(self):
         return f"{self.student.get_full_name()} - {self.date} - {'Present' if self.is_present else 'Absent'}"

@@ -875,11 +875,137 @@ class ClassStudentsView(APIView):
         return Response(students_data)
 
 
+# class AttendanceMarkView(APIView):
+#     """Mark attendance for students"""
+#     permission_classes = [IsTeacherRole]
+    
+#     def post(self, request):  # ✅ FIXED INDENTATION HERE
+#         class_id = request.data.get('class_id')
+#         subject_id = request.data.get('subject_id')
+#         date_str = request.data.get('date')
+#         student_ids = request.data.get('student_ids', [])
+#         from_time_str = request.data.get('from_time')
+#         to_time_str = request.data.get('to_time')
+        
+#         if not all([class_id, subject_id, date_str]):
+#             return Response({
+#                 'error': 'class_id, subject_id, and date are required.'
+#             }, status=status.HTTP_400_BAD_REQUEST)
+        
+#         try:
+#             # Verify teacher assignment
+#             TeacherAssignment.objects.get(
+#                 teacher=request.user,
+#                 class_assigned_id=class_id,
+#                 subject_id=subject_id
+#             )
+            
+#             # Parse date
+#             attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+#             # Validate date is not in the future
+#             if attendance_date > timezone.now().date():
+#                 return Response({
+#                     'error': 'Cannot mark attendance for future dates.'
+#                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+#             # Parse time fields
+#             from_time = None
+#             to_time = None
+#             duration_minutes = None
+            
+#             if from_time_str and to_time_str:
+#                 try:
+#                     from_time = timezone.datetime.strptime(from_time_str, '%H:%M').time()
+#                     to_time = timezone.datetime.strptime(to_time_str, '%H:%M').time()
+                    
+#                     # Calculate duration
+#                     from_datetime = timezone.datetime.combine(attendance_date, from_time)
+#                     to_datetime = timezone.datetime.combine(attendance_date, to_time)
+#                     duration_minutes = int((to_datetime - from_datetime).total_seconds() / 60)
+                    
+#                     if duration_minutes < 0:
+#                         return Response({
+#                             'error': 'End time must be after start time.'
+#                         }, status=status.HTTP_400_BAD_REQUEST)
+                        
+#                 except ValueError:
+#                     return Response({
+#                         'error': 'Invalid time format. Use HH:MM (24-hour format).'
+#                     }, status=status.HTTP_400_BAD_REQUEST)
+            
+#             # Get all students in class
+#             all_students = CustomUser.objects.filter(
+#                 role='student',
+#                 class_assigned_id=class_id,
+#                 is_approved=True
+#             )
+            
+#             if not all_students.exists():
+#                 return Response({
+#                     'error': 'No students found in this class.'
+#                 }, status=status.HTTP_404_NOT_FOUND)
+            
+#             # Mark attendance for each student
+#             marked_count = 0
+#             for student in all_students:
+#                 # Check if already marked for this date
+#                 attendance, created = Attendance.objects.update_or_create(
+#                     teacher=request.user,
+#                     student=student,
+#                     class_assigned_id=class_id,
+#                     date=attendance_date,
+#                     defaults={
+#                         'is_present': student.id in student_ids,
+#                         'time': timezone.now().time(),
+#                         'from_time': from_time,
+#                         'to_time': to_time,
+#                         'duration_minutes': duration_minutes
+#                     }
+#                 )
+#                 marked_count += 1
+            
+#             present_count = len(student_ids)
+#             absent_count = marked_count - present_count
+            
+#             response_data = {
+#                 'message': f'Attendance marked successfully for {marked_count} students!',
+#                 'date': date_str,
+#                 'total_students': marked_count,
+#                 'present_count': present_count,
+#                 'absent_count': absent_count
+#             }
+            
+#             # Add time info if provided
+#             if from_time and to_time:
+#                 response_data.update({
+#                     'from_time': from_time_str,
+#                     'to_time': to_time_str,
+#                     'duration_minutes': duration_minutes
+#                 })
+            
+#             return Response(response_data, status=status.HTTP_201_CREATED)
+        
+#         except TeacherAssignment.DoesNotExist:
+#             return Response({
+#                 'error': 'You are not assigned to this class-subject combination.'
+#             }, status=status.HTTP_403_FORBIDDEN)
+#         except ValueError:
+#             return Response({
+#                 'error': 'Invalid date format. Use YYYY-MM-DD.'
+#             }, status=status.HTTP_400_BAD_REQUEST)
+#         except Exception as e:
+#             return Response({
+#                 'error': f'An error occurred: {str(e)}'
+#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# UPDATED AttendanceMarkView - Add this to teachers/views.py
+
 class AttendanceMarkView(APIView):
     """Mark attendance for students"""
     permission_classes = [IsTeacherRole]
     
-    def post(self, request):  # ✅ FIXED INDENTATION HERE
+    def post(self, request):
         class_id = request.data.get('class_id')
         subject_id = request.data.get('subject_id')
         date_str = request.data.get('date')
@@ -894,7 +1020,7 @@ class AttendanceMarkView(APIView):
         
         try:
             # Verify teacher assignment
-            TeacherAssignment.objects.get(
+            assignment = TeacherAssignment.objects.get(
                 teacher=request.user,
                 class_assigned_id=class_id,
                 subject_id=subject_id
@@ -949,11 +1075,12 @@ class AttendanceMarkView(APIView):
             # Mark attendance for each student
             marked_count = 0
             for student in all_students:
-                # Check if already marked for this date
+                # ✅ UPDATED: Now includes subject_id in update_or_create
                 attendance, created = Attendance.objects.update_or_create(
                     teacher=request.user,
                     student=student,
                     class_assigned_id=class_id,
+                    subject_id=subject_id,  # ✅ NEW: Added subject to unique lookup
                     date=attendance_date,
                     defaults={
                         'is_present': student.id in student_ids,
@@ -971,6 +1098,7 @@ class AttendanceMarkView(APIView):
             response_data = {
                 'message': f'Attendance marked successfully for {marked_count} students!',
                 'date': date_str,
+                'subject': assignment.subject.name,  # ✅ NEW: Include subject name in response
                 'total_students': marked_count,
                 'present_count': present_count,
                 'absent_count': absent_count
@@ -995,9 +1123,12 @@ class AttendanceMarkView(APIView):
                 'error': 'Invalid date format. Use YYYY-MM-DD.'
             }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
+            import traceback
+            print("Error in attendance marking:")
+            print(traceback.format_exc())
             return Response({
                 'error': f'An error occurred: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)            
 
 
 class AttendanceListView(APIView):
@@ -1143,8 +1274,165 @@ class DoubtReplyCreateView(APIView):
 
 
 
+# class TeacherAttendanceHistoryView(APIView):
+#     """Get teacher's attendance history with time tracking"""
+#     permission_classes = [IsTeacherRole]
+    
+#     def get(self, request):
+#         teacher = request.user
+        
+#         # Get query parameters
+#         class_id = request.GET.get('class_id')
+#         subject_id = request.GET.get('subject_id')
+#         start_date = request.GET.get('start_date')
+#         end_date = request.GET.get('end_date')
+        
+#         # Base query - all attendance marked by this teacher
+#         attendance_records = Attendance.objects.filter(
+#             teacher=teacher
+#         ).select_related(
+#             'class_assigned',
+#             'student'
+#         ).order_by('-date', '-time')
+        
+#         # Apply filters
+#         if class_id:
+#             attendance_records = attendance_records.filter(class_assigned_id=class_id)
+        
+#         if start_date:
+#             attendance_records = attendance_records.filter(date__gte=start_date)
+        
+#         if end_date:
+#             attendance_records = attendance_records.filter(date__lte=end_date)
+        
+#         # Group by date, class, and subject
+#         from collections import defaultdict
+#         from datetime import datetime
+        
+#         sessions_by_date = defaultdict(list)
+        
+#         # Get unique sessions (date + class combination)
+#         unique_sessions = attendance_records.values(
+#             'date', 'class_assigned_id', 'from_time', 'to_time', 'duration_minutes'
+#         ).distinct()
+        
+#         for session in unique_sessions:
+#             date = session['date']
+#             class_id_val = session['class_assigned_id']
+            
+#             # Get class and subject info
+#             from admin_tasks.models import Class
+#             class_obj = Class.objects.get(id=class_id_val)
+            
+#             # Get subject from teacher assignment
+#             if subject_id:
+#                 assignment = TeacherAssignment.objects.filter(
+#                     teacher=teacher,
+#                     class_assigned_id=class_id_val,
+#                     subject_id=subject_id
+#                 ).select_related('subject').first()
+#             else:
+#                 assignment = TeacherAssignment.objects.filter(
+#                     teacher=teacher,
+#                     class_assigned_id=class_id_val
+#                 ).select_related('subject').first()
+            
+#             if assignment:
+#                 # Get attendance count for this session
+#                 session_attendance = attendance_records.filter(
+#                     date=date,
+#                     class_assigned_id=class_id_val
+#                 )
+                
+#                 total_students = session_attendance.count()
+#                 present_count = session_attendance.filter(is_present=True).count()
+#                 absent_count = total_students - present_count
+                
+#                 sessions_by_date[str(date)].append({
+#                     'date': date,
+#                     'class_id': class_id_val,
+#                     'class_name': class_obj.name,
+#                     'subject_id': assignment.subject.id,
+#                     'subject_name': assignment.subject.name,
+#                     'from_time': session['from_time'],
+#                     'to_time': session['to_time'],
+#                     'duration_minutes': session['duration_minutes'],
+#                     'total_students': total_students,
+#                     'present': present_count,
+#                     'absent': absent_count
+#                 })
+        
+#         # Convert to list and sort
+#         sessions_list = []
+#         for date_str, sessions in sessions_by_date.items():
+#             sessions_list.extend(sessions)
+        
+#         sessions_list.sort(key=lambda x: x['date'], reverse=True)
+        
+#         # Calculate statistics by class and subject
+#         stats_by_class = defaultdict(lambda: {
+#             'total_sessions': 0,
+#             'total_duration': 0,
+#             'subjects': defaultdict(lambda: {
+#                 'sessions': 0,
+#                 'duration': 0
+#             })
+#         })
+        
+#         for session in sessions_list:
+#             class_id_val = session['class_id']
+#             subject_id_val = session['subject_id']
+#             duration = session['duration_minutes'] or 0
+            
+#             stats_by_class[class_id_val]['class_name'] = session['class_name']
+#             stats_by_class[class_id_val]['total_sessions'] += 1
+#             stats_by_class[class_id_val]['total_duration'] += duration
+            
+#             stats_by_class[class_id_val]['subjects'][subject_id_val]['subject_name'] = session['subject_name']
+#             stats_by_class[class_id_val]['subjects'][subject_id_val]['sessions'] += 1
+#             stats_by_class[class_id_val]['subjects'][subject_id_val]['duration'] += duration
+        
+#         # Format statistics
+#         stats_formatted = []
+#         for class_id_val, class_data in stats_by_class.items():
+#             subjects_list = []
+#             for subject_id_val, subject_data in class_data['subjects'].items():
+#                 subjects_list.append({
+#                     'subject_id': subject_id_val,
+#                     'subject_name': subject_data['subject_name'],
+#                     'sessions': subject_data['sessions'],
+#                     'duration_minutes': subject_data['duration'],
+#                     'duration_hours': round(subject_data['duration'] / 60, 2)
+#                 })
+            
+#             stats_formatted.append({
+#                 'class_id': class_id_val,
+#                 'class_name': class_data['class_name'],
+#                 'total_sessions': class_data['total_sessions'],
+#                 'total_duration_minutes': class_data['total_duration'],
+#                 'total_duration_hours': round(class_data['total_duration'] / 60, 2),
+#                 'subjects': subjects_list
+#             })
+        
+#         # Overall statistics
+#         total_sessions = len(sessions_list)
+#         total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
+        
+#         return Response({
+#             'overall_stats': {
+#                 'total_sessions': total_sessions,
+#                 'total_duration_minutes': total_duration,
+#                 'total_duration_hours': round(total_duration / 60, 2)
+#             },
+#             'stats_by_class': stats_formatted,
+#             'sessions': sessions_list
+#         })
+
+
+# UPDATED TeacherAttendanceHistoryView - Add this to teachers/views.py
+
 class TeacherAttendanceHistoryView(APIView):
-    """Get teacher's attendance history with time tracking"""
+    """Get teacher's attendance history with time tracking - UPDATED TO INCLUDE SUBJECT"""
     permission_classes = [IsTeacherRole]
     
     def get(self, request):
@@ -1161,12 +1449,16 @@ class TeacherAttendanceHistoryView(APIView):
             teacher=teacher
         ).select_related(
             'class_assigned',
+            'subject',  # ✅ NEW: Added subject to select_related
             'student'
         ).order_by('-date', '-time')
         
         # Apply filters
         if class_id:
             attendance_records = attendance_records.filter(class_assigned_id=class_id)
+        
+        if subject_id:  # ✅ NEW: Can now filter by subject properly!
+            attendance_records = attendance_records.filter(subject_id=subject_id)
         
         if start_date:
             attendance_records = attendance_records.filter(date__gte=start_date)
@@ -1176,66 +1468,61 @@ class TeacherAttendanceHistoryView(APIView):
         
         # Group by date, class, and subject
         from collections import defaultdict
-        from datetime import datetime
         
-        sessions_by_date = defaultdict(list)
+        sessions_by_key = defaultdict(lambda: {
+            'students': set(),
+            'present_students': set(),
+            'from_time': None,
+            'to_time': None,
+            'duration_minutes': None
+        })
         
-        # Get unique sessions (date + class combination)
-        unique_sessions = attendance_records.values(
-            'date', 'class_assigned_id', 'from_time', 'to_time', 'duration_minutes'
-        ).distinct()
-        
-        for session in unique_sessions:
-            date = session['date']
-            class_id_val = session['class_assigned_id']
+        # ✅ UPDATED: Group by date + class + subject (not just date + class)
+        for record in attendance_records:
+            # Create unique key for each session (date + class + subject)
+            session_key = f"{record.date}_{record.class_assigned_id}_{record.subject_id}"
             
-            # Get class and subject info
-            from admin_tasks.models import Class
-            class_obj = Class.objects.get(id=class_id_val)
+            session = sessions_by_key[session_key]
+            session['date'] = record.date
+            session['class_id'] = record.class_assigned.id
+            session['class_name'] = record.class_assigned.name
+            session['subject_id'] = record.subject.id  # ✅ NEW
+            session['subject_name'] = record.subject.name  # ✅ NEW
             
-            # Get subject from teacher assignment
-            if subject_id:
-                assignment = TeacherAssignment.objects.filter(
-                    teacher=teacher,
-                    class_assigned_id=class_id_val,
-                    subject_id=subject_id
-                ).select_related('subject').first()
-            else:
-                assignment = TeacherAssignment.objects.filter(
-                    teacher=teacher,
-                    class_assigned_id=class_id_val
-                ).select_related('subject').first()
+            # Store time info (same for all students in this session)
+            if record.from_time and not session['from_time']:
+                session['from_time'] = record.from_time
+            if record.to_time and not session['to_time']:
+                session['to_time'] = record.to_time
+            if record.duration_minutes and not session['duration_minutes']:
+                session['duration_minutes'] = record.duration_minutes
             
-            if assignment:
-                # Get attendance count for this session
-                session_attendance = attendance_records.filter(
-                    date=date,
-                    class_assigned_id=class_id_val
-                )
-                
-                total_students = session_attendance.count()
-                present_count = session_attendance.filter(is_present=True).count()
-                absent_count = total_students - present_count
-                
-                sessions_by_date[str(date)].append({
-                    'date': date,
-                    'class_id': class_id_val,
-                    'class_name': class_obj.name,
-                    'subject_id': assignment.subject.id,
-                    'subject_name': assignment.subject.name,
-                    'from_time': session['from_time'],
-                    'to_time': session['to_time'],
-                    'duration_minutes': session['duration_minutes'],
-                    'total_students': total_students,
-                    'present': present_count,
-                    'absent': absent_count
-                })
+            # Track students
+            session['students'].add(record.student.id)
+            if record.is_present:
+                session['present_students'].add(record.student.id)
         
-        # Convert to list and sort
+        # Convert to list format
         sessions_list = []
-        for date_str, sessions in sessions_by_date.items():
-            sessions_list.extend(sessions)
+        for session_key, session_data in sessions_by_key.items():
+            total_students = len(session_data['students'])
+            present_count = len(session_data['present_students'])
+            
+            sessions_list.append({
+                'date': session_data['date'],
+                'class_id': session_data['class_id'],
+                'class_name': session_data['class_name'],
+                'subject_id': session_data['subject_id'],  # ✅ NEW
+                'subject_name': session_data['subject_name'],  # ✅ NEW
+                'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
+                'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
+                'duration_minutes': session_data['duration_minutes'] or 0,
+                'total_students': total_students,
+                'present': present_count,
+                'absent': total_students - present_count
+            })
         
+        # Sort by date (newest first)
         sessions_list.sort(key=lambda x: x['date'], reverse=True)
         
         # Calculate statistics by class and subject
@@ -1250,13 +1537,14 @@ class TeacherAttendanceHistoryView(APIView):
         
         for session in sessions_list:
             class_id_val = session['class_id']
-            subject_id_val = session['subject_id']
+            subject_id_val = session['subject_id']  # ✅ NEW
             duration = session['duration_minutes'] or 0
             
             stats_by_class[class_id_val]['class_name'] = session['class_name']
             stats_by_class[class_id_val]['total_sessions'] += 1
             stats_by_class[class_id_val]['total_duration'] += duration
             
+            # ✅ UPDATED: Now properly tracks by subject
             stats_by_class[class_id_val]['subjects'][subject_id_val]['subject_name'] = session['subject_name']
             stats_by_class[class_id_val]['subjects'][subject_id_val]['sessions'] += 1
             stats_by_class[class_id_val]['subjects'][subject_id_val]['duration'] += duration
@@ -1296,9 +1584,6 @@ class TeacherAttendanceHistoryView(APIView):
             'stats_by_class': stats_formatted,
             'sessions': sessions_list
         })
-
-
-
 
 
 
