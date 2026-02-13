@@ -50,7 +50,7 @@ const GoogleAuthButton = ({ role = 'student' }) => {
             buttonDiv,
             {
               type: 'standard',
-              theme: 'filled_black',
+              theme: 'outline',
               size: 'large',
               text: 'continue_with',
               shape: 'rectangular',

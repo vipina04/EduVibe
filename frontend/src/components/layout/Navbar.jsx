@@ -22,10 +22,10 @@ const Navbar = () => {
   }, []);
 
   const navLinks = [
-    { name: 'Home', href: '#home' },
+    // { name: 'Home', href: '#home' },
     { name: 'About', href: '#about' },
-    { name: 'Features', href: '#features' },
-    { name: 'Pricing', href: '#pricing' },
+    { name: 'Help', href: '#help' },
+    // { name: 'Pricing', href: '#pricing' },
     { name: 'Contact', href: '#contact' },
   ];
 
@@ -74,12 +74,12 @@ const Navbar = () => {
             {/* Auth Buttons (Dashboard removed) */}
             {!user && (
               <>
-                <Button variant="ghost" onClick={() => navigate('/login')}>
+                {/* <Button variant="ghost" onClick={() => navigate('/login')}>
                   Login
-                </Button>
-                <Button onClick={() => navigate('/register')}>
+                </Button> */}
+                {/* <Button onClick={() => navigate('/register')}>
                   Get Started
-                </Button>
+                </Button> */}
               </>
             )}
           </div>

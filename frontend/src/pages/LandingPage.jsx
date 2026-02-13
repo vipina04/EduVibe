@@ -1,8 +1,8 @@
 import Navbar from '../components/layout/Navbar';
-import Hero from '../components/Landing/Hero';
-import Features from '../components/Landing/Features';
+import Hero from '../components/landing/Hero';
+import Features from '../components/landing/Features';
 import HowItWorks from '../components/Landing/HowItWorks';
-import Testimonials from '../components/Landing/Testimonials';
+// import Testimonials from '../components/Landing/Testimonials';
 // import CTA from '../components/Landing/CTA';
 import Footer from '../components/Landing/Footer';
 
@@ -13,7 +13,7 @@ const LandingPage = () => {
       <Hero />
       <Features />
       <HowItWorks />
-      <Testimonials />
+      {/* <Testimonials /> */}
       {/* <CTA /> */}
       <Footer />
     </div>
