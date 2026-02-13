@@ -9,6 +9,8 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import CompleteProfilePage from './pages/CompleteProfilePage';
 
 // Student Pages
+
+import SubjectTests from './pages/student/SubjectTests';
 import StudentDashboard from './pages/student/StudentDashboard';
 import SubjectDetails from './pages/student/SubjectDetails';
 import ChapterTests from './pages/student/ChapterTests';
@@ -75,12 +77,17 @@ function App() {
       <Route path="/student/chapter/:chapterId/tests"         element={<ProtectedRoute allowedRoles={['student']}><ChapterTests /></ProtectedRoute>} />
       <Route path="/student/test/:testId/take"                element={<ProtectedRoute allowedRoles={['student']}><TakeTest /></ProtectedRoute>} />
       <Route path="/student/test-attempt/:attemptId/result"   element={<ProtectedRoute allowedRoles={['student']}><TestResult /></ProtectedRoute>} />
-      <Route path="/student/my-tests"                         element={<ProtectedRoute allowedRoles={['student']}><MyTests /></ProtectedRoute>} />
+      {/* <Route path="/student/my-tests"                         element={<ProtectedRoute allowedRoles={['student']}><MyTests /></ProtectedRoute>} /> */}
       <Route path="/student/attendance"                       element={<ProtectedRoute allowedRoles={['student']}><MyAttendance /></ProtectedRoute>} />
       <Route path="/student/fees"                             element={<ProtectedRoute allowedRoles={['student']}><MyFees /></ProtectedRoute>} />
       <Route path="/student/assignments"                      element={<ProtectedRoute allowedRoles={['student']}><MyAssignments /></ProtectedRoute>} />
       <Route path="/student/doubts"                           element={<ProtectedRoute allowedRoles={['student']}><StudentDoubts /></ProtectedRoute>} />
       <Route path="/student/notifications"                    element={<ProtectedRoute allowedRoles={['student']}><StudentNotifications /></ProtectedRoute>} />
+      {/* Student Routes */}
+      <Route path="/student/my-tests" element={<ProtectedRoute allowedRoles={['student']}><MyTests /></ProtectedRoute>} />
+      <Route path="/student/subject/:subjectId/tests" element={<ProtectedRoute allowedRoles={['student']}><SubjectTests /></ProtectedRoute>} />
+      <Route path="/student/test/:testId/take" element={<ProtectedRoute allowedRoles={['student']}><TakeTest /></ProtectedRoute>} />
+      <Route path="/student/test-attempt/:attemptId/result" element={<ProtectedRoute allowedRoles={['student']}><TestResult /></ProtectedRoute>} />
 
       {/* ── Teacher ── */}
       <Route path="/teacher/dashboard"    element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDashboard /></ProtectedRoute>} />

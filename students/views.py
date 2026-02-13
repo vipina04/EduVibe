@@ -832,27 +832,148 @@ class MyAssignmentsView(APIView):
 #  DOUBTS - PRESERVED
 # ═══════════════════════════════════════════════════════════
 
+# class EnrolledSubjectsView(APIView):
+#     """Get subjects enrolled for student's class"""
+#     permission_classes = [IsStudentRole]
+    
+#     def get(self, request):
+#         student = request.user
+        
+#         if not student.class_assigned:
+#             return Response({
+#                 'error': 'No class assigned.'
+#             }, status=status.HTTP_400_BAD_REQUEST)
+        
+#         # Get all subjects for the student's class
+#         subjects = student.class_assigned.subjects.all()
+        
+#         subjects_data = [{
+#             'id': subject.id,
+#             'name': subject.name
+#         } for subject in subjects]
+        
+#         return Response(subjects_data, status=status.HTTP_200_OK)
+# students/views.py - ADD THIS UPDATED VIEW
+
+# REPLACE THE EnrolledSubjectsView in your students/views.py
+# Find it around line 835 and replace the entire class
+
 class EnrolledSubjectsView(APIView):
     """Get subjects enrolled for student's class"""
     permission_classes = [IsStudentRole]
     
     def get(self, request):
-        student = request.user
-        
-        if not student.class_assigned:
+        try:
+            student = request.user
+            print(f"[DEBUG] Student: {student.username}, Class: {student.class_assigned}")
+            
+            # Check if student has a class assigned
+            if not student.class_assigned:
+                print("[DEBUG] No class assigned")
+                return Response({
+                    'message': 'No class assigned. Please contact admin.',
+                    'subjects': []
+                }, status=status.HTTP_200_OK)
+            
+            # Get subjects for the student's class
+            # Try multiple methods to find the relationship
+            subjects_list = []
+            
+            try:
+                # Method 1: ManyToMany relationship 'subjects'
+                from admin_tasks.models import Subject
+                subjects_list = list(Subject.objects.filter(classes=student.class_assigned))
+                print(f"[DEBUG] Found {len(subjects_list)} subjects using Method 1")
+            except Exception as e1:
+                print(f"[DEBUG] Method 1 failed: {e1}")
+                
+                try:
+                    # Method 2: Check if class has subjects attribute
+                    if hasattr(student.class_assigned, 'subjects'):
+                        subjects_list = list(student.class_assigned.subjects.all())
+                        print(f"[DEBUG] Found {len(subjects_list)} subjects using Method 2")
+                except Exception as e2:
+                    print(f"[DEBUG] Method 2 failed: {e2}")
+                    
+                    try:
+                        # Method 3: Reverse relationship
+                        subjects_list = list(student.class_assigned.subject_set.all())
+                        print(f"[DEBUG] Found {len(subjects_list)} subjects using Method 3")
+                    except Exception as e3:
+                        print(f"[DEBUG] Method 3 failed: {e3}")
+            
+            # If no subjects found
+            if not subjects_list:
+                print("[DEBUG] No subjects found for this class")
+                return Response({
+                    'message': 'No subjects available for your class.',
+                    'subjects': []
+                }, status=status.HTTP_200_OK)
+            
+            # Build response data with test statistics
+            subjects_data = []
+            
+            for subject in subjects_list:
+                try:
+                    # Get chapters
+                    chapters = Chapter.objects.filter(
+                        subject=subject,
+                        class_assigned=student.class_assigned
+                    )
+                    
+                    # Get tests
+                    tests = Test.objects.filter(chapter__in=chapters)
+                    total_tests = tests.count()
+                    
+                    # Get student's attempts
+                    attempts = TestAttempt.objects.filter(
+                        student=student,
+                        test__in=tests
+                    )
+                    attempted = attempts.count()
+                    
+                    # Calculate average score
+                    avg_score = 0
+                    if attempts.exists():
+                        scores = [a.score for a in attempts]
+                        marks = [a.test.marks for a in attempts]
+                        total_score = sum(scores)
+                        total_marks = sum(marks)
+                        if total_marks > 0:
+                            avg_score = round((total_score / total_marks * 100), 2)
+                    
+                    subjects_data.append({
+                        'id': subject.id,
+                        'name': subject.name,
+                        'total_tests': total_tests,
+                        'attempted_tests': attempted,
+                        'pending_tests': total_tests - attempted,
+                        'average_score': avg_score,
+                        'chapters_count': chapters.count()
+                    })
+                    
+                except Exception as subject_error:
+                    print(f"[DEBUG] Error processing subject {subject.id}: {subject_error}")
+                    continue
+            
+            print(f"[DEBUG] Returning {len(subjects_data)} subjects")
+            return Response(subjects_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            # Detailed error logging
+            import traceback
+            error_trace = traceback.format_exc()
+            print("=" * 80)
+            print("[ERROR] in EnrolledSubjectsView:")
+            print(f"Error: {str(e)}")
+            print(error_trace)
+            print("=" * 80)
+            
+            # Return empty list with 200 to prevent frontend crash
             return Response({
-                'error': 'No class assigned.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Get all subjects for the student's class
-        subjects = student.class_assigned.subjects.all()
-        
-        subjects_data = [{
-            'id': subject.id,
-            'name': subject.name
-        } for subject in subjects]
-        
-        return Response(subjects_data, status=status.HTTP_200_OK)
+                'error': str(e),
+                'subjects': []
+            }, status=status.HTTP_200_OK)
 
 
 class DoubtCreateView(APIView):
@@ -1039,6 +1160,179 @@ class StudentSearchView(APIView):
         
         return Response(results)
 
+# # students/views.py
+# REPLACE your EnrolledSubjectsView with this (around line 835)
+
+class EnrolledSubjectsView(APIView):
+    """Get subjects enrolled for student's class - FINAL BULLETPROOF VERSION"""
+    permission_classes = [IsStudentRole]
+    
+    def get(self, request):
+        """
+        Returns list of subjects for the student's class with test statistics
+        """
+        student = request.user
+        
+        # Log for debugging
+        print(f"\n{'='*60}")
+        print(f"[EnrolledSubjectsView] User: {student.username}")
+        print(f"[EnrolledSubjectsView] Role: {student.role}")
+        print(f"[EnrolledSubjectsView] Class: {student.class_assigned}")
+        
+        # Check if student has a class assigned
+        if not student.class_assigned:
+            print("[EnrolledSubjectsView] ERROR: No class assigned")
+            print(f"{'='*60}\n")
+            return Response([], status=status.HTTP_200_OK)
+        
+        try:
+            # Get subjects using the ManyToMany relationship
+            # Based on model: Subject.classes = ManyToManyField(Class, related_name='subjects')
+            # So reverse is: Class.subjects.all()
+            subjects = student.class_assigned.subjects.all()
+            print(f"[EnrolledSubjectsView] Found {subjects.count()} subjects")
+            
+            if not subjects.exists():
+                print("[EnrolledSubjectsView] No subjects found for this class")
+                print(f"{'='*60}\n")
+                return Response([], status=status.HTTP_200_OK)
+            
+            # Build response data
+            subjects_data = []
+            
+            for subject in subjects:
+                print(f"  Processing subject: {subject.name}")
+                
+                # Get chapters for this subject and class
+                chapters = Chapter.objects.filter(
+                    subject=subject,
+                    class_assigned=student.class_assigned
+                )
+                chapters_count = chapters.count()
+                print(f"    - Chapters: {chapters_count}")
+                
+                # Get tests for these chapters
+                tests = Test.objects.filter(chapter__in=chapters)
+                total_tests = tests.count()
+                print(f"    - Total tests: {total_tests}")
+                
+                # Get student's test attempts
+                attempts = TestAttempt.objects.filter(
+                    student=student,
+                    test__in=tests
+                )
+                attempted_tests = attempts.count()
+                print(f"    - Attempted tests: {attempted_tests}")
+                
+                # Calculate average score
+                avg_score = 0.0
+                if attempts.exists():
+                    total_score = 0
+                    total_marks = 0
+                    for attempt in attempts:
+                        total_score += attempt.score
+                        total_marks += attempt.test.marks
+                    
+                    if total_marks > 0:
+                        avg_score = round((total_score / total_marks * 100), 2)
+                print(f"    - Average score: {avg_score}%")
+                
+                subjects_data.append({
+                    'id': subject.id,
+                    'name': subject.name,
+                    'total_tests': total_tests,
+                    'attempted_tests': attempted_tests,
+                    'pending_tests': total_tests - attempted_tests,
+                    'average_score': avg_score,
+                    'chapters_count': chapters_count
+                })
+            
+            print(f"[EnrolledSubjectsView] SUCCESS: Returning {len(subjects_data)} subjects")
+            print(f"{'='*60}\n")
+            
+            return Response(subjects_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            # Detailed error logging
+            import traceback
+            print(f"\n{'!'*60}")
+            print(f"[EnrolledSubjectsView] EXCEPTION OCCURRED")
+            print(f"Error Type: {type(e).__name__}")
+            print(f"Error Message: {str(e)}")
+            print(f"\nFull Traceback:")
+            print(traceback.format_exc())
+            print(f"{'!'*60}\n")
+            
+            # Return empty list with 200 status to prevent frontend crash
+            return Response([], status=status.HTTP_200_OK)
+
+
+            
+class SubjectTestsView(APIView):
+    """Get all tests for a specific subject"""
+    permission_classes = [IsStudentRole]
+    
+    def get(self, request, subject_id):
+        try:
+            student = request.user
+            student_class = student.enrolled_class
+            
+            if not student_class:
+                return Response({
+                    'error': 'You are not enrolled in any class.'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Verify subject belongs to student's class
+            try:
+                subject = Subject.objects.get(
+                    id=subject_id,
+                    class_level=student_class
+                )
+            except Subject.DoesNotExist:
+                return Response({
+                    'error': 'Subject not found for your class.'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Get all tests for this subject
+            tests = Test.objects.filter(
+                chapter__subject=subject,
+                chapter__subject__class_level=student_class
+            ).select_related('chapter').order_by('-created_at')
+            
+            tests_data = []
+            for test in tests:
+                # Check if student has attempted this test
+                attempt = TestAttempt.objects.filter(
+                    student=student,
+                    test=test
+                ).first()
+                
+                test_info = {
+                    'id': test.id,
+                    'type': test.get_type_display(),
+                    'type_code': test.type,
+                    'marks': test.marks,
+                    'duration_minutes': test.duration_minutes,
+                    'chapter_name': test.chapter.name,
+                    'created_at': test.created_at,
+                    'attempted': attempt is not None,
+                    'score': attempt.score if attempt else None,
+                    'percentage': round((attempt.score / test.marks) * 100, 2) if attempt and test.marks > 0 else None,
+                    'attempt_id': attempt.id if attempt else None
+                }
+                
+                tests_data.append(test_info)
+            
+            return Response({
+                'subject_name': subject.name,
+                'total_tests': len(tests_data),
+                'tests': tests_data
+            })
+            
+        except Exception as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
@@ -1052,8 +1346,113 @@ class StudentSearchView(APIView):
 
 
 
+# PASTE THIS AT THE END OF YOUR students/views.py file (after all other classes)
 
-
+class DiagnosticView(APIView):
+    """Diagnostic view to check what's wrong"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            from admin_tasks.models import Subject, Class, Chapter
+            from teachers.models import Test
+            
+            user = request.user
+            
+            info = {
+                'user': {
+                    'username': user.username,
+                    'email': user.email,
+                    'role': user.role,
+                    'has_class': user.class_assigned is not None,
+                    'class_id': user.class_assigned.id if user.class_assigned else None,
+                    'class_name': user.class_assigned.name if user.class_assigned else None,
+                }
+            }
+            
+            # Check class model
+            if user.class_assigned:
+                class_obj = user.class_assigned
+                info['class_info'] = {
+                    'id': class_obj.id,
+                    'name': class_obj.name,
+                    'has_subjects_attr': hasattr(class_obj, 'subjects'),
+                    'has_subject_set_attr': hasattr(class_obj, 'subject_set'),
+                }
+                
+                # Try to get subjects different ways
+                subjects_methods = []
+                
+                # Method 1
+                try:
+                    s1 = list(class_obj.subjects.all())
+                    subjects_methods.append({
+                        'method': 'class_obj.subjects.all()',
+                        'count': len(s1),
+                        'worked': True,
+                        'subjects': [{'id': s.id, 'name': s.name} for s in s1[:3]]
+                    })
+                except Exception as e:
+                    subjects_methods.append({
+                        'method': 'class_obj.subjects.all()',
+                        'worked': False,
+                        'error': str(e)
+                    })
+                
+                # Method 2
+                try:
+                    s2 = list(class_obj.subject_set.all())
+                    subjects_methods.append({
+                        'method': 'class_obj.subject_set.all()',
+                        'count': len(s2),
+                        'worked': True,
+                        'subjects': [{'id': s.id, 'name': s.name} for s in s2[:3]]
+                    })
+                except Exception as e:
+                    subjects_methods.append({
+                        'method': 'class_obj.subject_set.all()',
+                        'worked': False,
+                        'error': str(e)
+                    })
+                
+                # Method 3
+                try:
+                    s3 = list(Subject.objects.filter(classes=class_obj))
+                    subjects_methods.append({
+                        'method': 'Subject.objects.filter(classes=class_obj)',
+                        'count': len(s3),
+                        'worked': True,
+                        'subjects': [{'id': s.id, 'name': s.name} for s in s3[:3]]
+                    })
+                except Exception as e:
+                    subjects_methods.append({
+                        'method': 'Subject.objects.filter(classes=class_obj)',
+                        'worked': False,
+                        'error': str(e)
+                    })
+                
+                info['subjects_methods'] = subjects_methods
+            
+            # Check all classes
+            all_classes = Class.objects.all()
+            info['all_classes'] = [
+                {'id': c.id, 'name': c.name} for c in all_classes
+            ]
+            
+            # Check all subjects
+            all_subjects = Subject.objects.all()
+            info['all_subjects'] = [
+                {'id': s.id, 'name': s.name} for s in all_subjects[:5]
+            ]
+            
+            return Response(info, status=200)
+            
+        except Exception as e:
+            import traceback
+            return Response({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }, status=200)
 
 
 

@@ -1,260 +1,159 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { 
-  HiArrowLeft, 
-  HiClipboardList, 
-  HiClock, 
-  HiCheckCircle,
-  HiXCircle,
-  HiChartBar 
-} from 'react-icons/hi';
-// Added HiTrophy from hi2 to fix the "requested module does not provide an export" error
-import { HiTrophy } from 'react-icons/hi2'; 
-import DashboardLayout from '../../components/layout/DashboardLayout';
-import Card from '../../components/common/Card';
-import Loading from '../../components/common/Loading';
-import Button from '../../components/common/Button';
-import { studentAPI } from '../../services/api';
-import toast from 'react-hot-toast';
+// src/pages/student/MyTests.jsx
+// FIXED VERSION - Replace your existing MyTests.jsx with this
+
+import React, { useState, useEffect } from 'react';
+import { getEnrolledSubjects } from '../../services/api';
+import { useNavigate } from 'react-router-dom';
+import './MyTests.css';
 
 const MyTests = () => {
-  const [attempts, setAttempts] = useState([]);
+  const navigate = useNavigate();
+  const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all'); // all, passed, failed
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchMyAttempts();
+    fetchEnrolledSubjects();
   }, []);
 
-  const fetchMyAttempts = async () => {
+  const fetchEnrolledSubjects = async () => {
     try {
-      const response = await studentAPI.getMyAttempts();
-      setAttempts(response.data || []);
-    } catch (error) {
-      console.error('Failed to load test attempts:', error);
-      toast.error('Failed to load your tests');
+      setLoading(true);
+      setError('');
+      
+      const response = await getEnrolledSubjects();
+      console.log('✅ Subjects API response:', response.data);
+      
+      // Handle the response - it's already an array
+      if (Array.isArray(response.data)) {
+        setSubjects(response.data);
+        console.log(`✅ Loaded ${response.data.length} subjects`);
+      } else {
+        // Fallback if wrapped in an object
+        setSubjects([]);
+        console.warn('⚠️ Unexpected response format:', response.data);
+      }
+      
+    } catch (err) {
+      console.error('❌ Failed to fetch subjects:', err);
+      setError(err.response?.data?.error || 'Unable to load subjects. Please try again.');
+      setSubjects([]);
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) return <Loading fullScreen />;
-
-  const filteredAttempts = attempts.filter(attempt => {
-    if (filter === 'all') return true;
-    const percentage = (attempt.score / attempt.test.marks) * 100;
-    if (filter === 'passed') return percentage >= 40;
-    if (filter === 'failed') return percentage < 40;
-    return true;
-  });
-
-  const stats = {
-    total: attempts.length,
-    passed: attempts.filter(a => (a.score / a.test.marks) * 100 >= 40).length,
-    failed: attempts.filter(a => (a.score / a.test.marks) * 100 < 40).length,
-    average: attempts.length > 0 
-      ? (attempts.reduce((sum, a) => sum + (a.score / a.test.marks) * 100, 0) / attempts.length).toFixed(1)
-      : 0
+  const handleSubjectClick = (subjectId) => {
+    navigate(`/student/subjects/${subjectId}`);
   };
 
-  return (
-    <DashboardLayout>
-      <div className="p-6 max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-4">
-            <Link to="/student/dashboard">
-              <Button variant="secondary" size="sm">
-                <HiArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                My Tests
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                View all your test attempts and results
-              </p>
-            </div>
-          </div>
-          {/* Trophy Icon added here as a visual milestone if user has passed tests */}
-          {stats.passed > 0 && (
-            <div className="flex items-center bg-yellow-100 dark:bg-yellow-900/30 px-4 py-2 rounded-lg border border-yellow-200 dark:border-yellow-800">
-              <HiTrophy className="w-6 h-6 text-yellow-600 mr-2" />
-              <span className="font-bold text-yellow-700 dark:text-yellow-500">{stats.passed} Passed!</span>
-            </div>
-          )}
+  if (loading) {
+    return (
+      <div className="my-tests-container">
+        <div className="loading-state">
+          <div className="spinner"></div>
+          <p>Loading subjects...</p>
         </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-100 mb-1">Total Tests</p>
-                <p className="text-3xl font-bold">{stats.total}</p>
-              </div>
-              <HiClipboardList className="w-10 h-10 opacity-80" />
-            </div>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-green-100 mb-1">Passed</p>
-                <p className="text-3xl font-bold">{stats.passed}</p>
-              </div>
-              <HiCheckCircle className="w-10 h-10 opacity-80" />
-            </div>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-red-100 mb-1">Failed</p>
-                <p className="text-3xl font-bold">{stats.failed}</p>
-              </div>
-              <HiXCircle className="w-10 h-10 opacity-80" />
-            </div>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-purple-100 mb-1">Average Score</p>
-                <p className="text-3xl font-bold">{stats.average}%</p>
-              </div>
-              <HiChartBar className="w-10 h-10 opacity-80" />
-            </div>
-          </Card>
-        </div>
-
-        {/* Filters */}
-        <div className="flex space-x-4 mb-6">
-          <Button
-            variant={filter === 'all' ? 'primary' : 'secondary'}
-            onClick={() => setFilter('all')}
-            size="sm"
-          >
-            All Tests ({attempts.length})
-          </Button>
-          <Button
-            variant={filter === 'passed' ? 'primary' : 'secondary'}
-            onClick={() => setFilter('passed')}
-            size="sm"
-          >
-            Passed ({stats.passed})
-          </Button>
-          <Button
-            variant={filter === 'failed' ? 'primary' : 'secondary'}
-            onClick={() => setFilter('failed')}
-            size="sm"
-          >
-            Failed ({stats.failed})
-          </Button>
-        </div>
-
-        {/* Test Attempts List */}
-        {filteredAttempts.length === 0 ? (
-          <Card className="bg-white dark:bg-gray-800 p-12 text-center">
-            <HiClipboardList className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              {filter === 'all' ? 'No Tests Taken Yet' : `No ${filter} tests`}
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              {filter === 'all' 
-                ? "You haven't taken any tests yet. Check available tests in your subjects."
-                : `You don't have any ${filter} tests.`}
-            </p>
-            <Link to="/student/dashboard">
-              <Button variant="primary">
-                Browse Subjects
-              </Button>
-            </Link>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {filteredAttempts.map((attempt) => {
-              const percentage = ((attempt.score / attempt.test.marks) * 100).toFixed(1);
-              const isPassed = percentage >= 40;
-
-              return (
-                <Card 
-                  key={attempt.id}
-                  className="bg-white dark:bg-gray-800 hover:shadow-xl transition-all"
-                >
-                  <div className="flex items-center justify-between p-6">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                          {attempt.test.name || 'Test'}
-                        </h3>
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          isPassed 
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
-                        }`}>
-                          {isPassed ? 'Passed' : 'Failed'}
-                        </span>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                        <div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">Type</p>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">
-                            {attempt.test.type || 'MCQ'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">Score</p>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">
-                            {attempt.score} / {attempt.test.marks}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">Percentage</p>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">
-                            {percentage}%
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">Attempted On</p>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">
-                            {new Date(attempt.attempted_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="mt-4">
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full transition-all ${
-                              isPassed ? 'bg-green-500' : 'bg-red-500'
-                            }`}
-                            style={{ width: `${percentage}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="ml-6 flex flex-col space-y-2">
-                      <Link to={`/student/test-attempt/${attempt.id}/result`}>
-                        <Button variant="primary" size="sm">
-                          View Result & Solutions
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        )}
       </div>
-    </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="my-tests-container">
+        <div className="error-state">
+          <div className="error-icon">⚠️</div>
+          <h3>Unable to Load Subjects</h3>
+          <p>{error}</p>
+          <button onClick={fetchEnrolledSubjects} className="retry-btn">
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (subjects.length === 0) {
+    return (
+      <div className="my-tests-container">
+        <div className="empty-state">
+          <div className="empty-icon">📚</div>
+          <h3>No Subjects Available</h3>
+          <p>You don't have any subjects assigned yet.</p>
+          <p className="help-text">Please contact your administrator.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-tests-container">
+      <div className="page-header">
+        <h1>My Tests</h1>
+        <p className="subtitle">Select a subject to view and take tests</p>
+      </div>
+
+      <div className="subjects-grid">
+        {subjects.map((subject) => (
+          <div
+            key={subject.id}
+            className="subject-card"
+            onClick={() => handleSubjectClick(subject.id)}
+          >
+            <div className="subject-header">
+              <h3>{subject.name}</h3>
+              <div className="subject-icon">📖</div>
+            </div>
+
+            <div className="subject-stats">
+              <div className="stat-item">
+                <span className="stat-label">Chapters</span>
+                <span className="stat-value">{subject.chapters_count || 0}</span>
+              </div>
+              
+              <div className="stat-item">
+                <span className="stat-label">Total Tests</span>
+                <span className="stat-value">{subject.total_tests || 0}</span>
+              </div>
+              
+              <div className="stat-item">
+                <span className="stat-label">Attempted</span>
+                <span className="stat-value success">{subject.attempted_tests || 0}</span>
+              </div>
+              
+              <div className="stat-item">
+                <span className="stat-label">Pending</span>
+                <span className="stat-value warning">{subject.pending_tests || 0}</span>
+              </div>
+            </div>
+
+            {subject.attempted_tests > 0 && (
+              <div className="subject-score">
+                <div className="score-label">Average Score</div>
+                <div className={`score-value ${getScoreClass(subject.average_score)}`}>
+                  {subject.average_score}%
+                </div>
+              </div>
+            )}
+
+            <div className="subject-footer">
+              <button className="view-tests-btn">
+                View Tests →
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
+};
+
+// Helper function to get score class
+const getScoreClass = (score) => {
+  if (score >= 80) return 'excellent';
+  if (score >= 60) return 'good';
+  if (score >= 40) return 'average';
+  return 'poor';
 };
 
 export default MyTests;
@@ -289,16 +188,11 @@ export default MyTests;
 
 
 
+
+
 // import { useState, useEffect } from 'react';
-// import { Link } from 'react-router-dom';
-// import { 
-//   HiArrowLeft, 
-//   HiClipboardList, 
-//   HiClock, 
-//   HiCheckCircle,
-//   HiXCircle,
-//   HiChartBar 
-// } from 'react-icons/hi';
+// import { useNavigate } from 'react-router-dom';
+// import { HiBookOpen, HiClipboardList, HiCheckCircle, HiClock } from 'react-icons/hi';
 // import DashboardLayout from '../../components/layout/DashboardLayout';
 // import Card from '../../components/common/Card';
 // import Loading from '../../components/common/Loading';
@@ -306,233 +200,112 @@ export default MyTests;
 // import { studentAPI } from '../../services/api';
 // import toast from 'react-hot-toast';
 
-
 // const MyTests = () => {
-//   const [attempts, setAttempts] = useState([]);
+//   const navigate = useNavigate();
+//   const [subjects, setSubjects] = useState([]);
+//   const [className, setClassName] = useState('');
 //   const [loading, setLoading] = useState(true);
-//   const [filter, setFilter] = useState('all'); // all, passed, failed
 
 //   useEffect(() => {
-//     fetchMyAttempts();
+//     fetchEnrolledSubjects();
 //   }, []);
 
-//   const fetchMyAttempts = async () => {
+//   const fetchEnrolledSubjects = async () => {
 //     try {
-//       const response = await studentAPI.getMyAttempts();
-//       setAttempts(response.data || []);
+//       const response = await studentAPI.getEnrolledSubjects();
+//       setSubjects(response.data.subjects);
+//       setClassName(response.data.class_name);
 //     } catch (error) {
-//       console.error('Failed to load test attempts:', error);
-//       toast.error('Failed to load your tests');
+//       console.error('Failed to fetch subjects:', error);
+//       toast.error(error.response?.data?.error || 'Failed to load subjects');
 //     } finally {
 //       setLoading(false);
 //     }
 //   };
 
-//   if (loading) return <Loading fullScreen />;
-
-//   const filteredAttempts = attempts.filter(attempt => {
-//     if (filter === 'all') return true;
-//     const percentage = (attempt.score / attempt.test.marks) * 100;
-//     if (filter === 'passed') return percentage >= 40;
-//     if (filter === 'failed') return percentage < 40;
-//     return true;
-//   });
-
-//   const stats = {
-//     total: attempts.length,
-//     passed: attempts.filter(a => (a.score / a.test.marks) * 100 >= 40).length,
-//     failed: attempts.filter(a => (a.score / a.test.marks) * 100 < 40).length,
-//     average: attempts.length > 0 
-//       ? (attempts.reduce((sum, a) => sum + (a.score / a.test.marks) * 100, 0) / attempts.length).toFixed(1)
-//       : 0
+//   const handleSubjectClick = (subjectId) => {
+//     navigate(`/student/subject/${subjectId}/tests`);
 //   };
+
+//   if (loading) {
+//     return (
+//       <DashboardLayout>
+//         <Loading />
+//       </DashboardLayout>
+//     );
+//   }
 
 //   return (
 //     <DashboardLayout>
-//       <div className="p-6 max-w-7xl mx-auto">
+//       <div className="max-w-6xl mx-auto">
 //         {/* Header */}
-//         <div className="flex items-center justify-between mb-8">
-//           <div className="flex items-center space-x-4">
-//             <Link to="/student/dashboard">
-//               <Button variant="secondary" size="sm">
-//                 <HiArrowLeft className="w-4 h-4 mr-2" />
-//                 Back
-//               </Button>
-//             </Link>
-//             <div>
-//               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-//                 My Tests
-//               </h1>
-//               <p className="text-gray-600 dark:text-gray-400 mt-1">
-//                 View all your test attempts and results
-//               </p>
-//             </div>
-//           </div>
+//         <div className="mb-8">
+//           <h1 className="text-3xl font-bold text-gray-800 mb-2">My Tests</h1>
+//           <p className="text-gray-600">Class: {className}</p>
 //         </div>
 
-//         {/* Stats Cards */}
-//         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-//           <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg p-6">
-//             <div className="flex items-center justify-between">
-//               <div>
-//                 <p className="text-blue-100 mb-1">Total Tests</p>
-//                 <p className="text-3xl font-bold">{stats.total}</p>
-//               </div>
-//               <HiClipboardList className="w-10 h-10 opacity-80" />
+//         {/* Subjects Grid */}
+//         {subjects.length === 0 ? (
+//           <Card>
+//             <div className="p-8 text-center">
+//               <HiBookOpen className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+//               <p className="text-gray-600">No subjects available for your class.</p>
 //             </div>
-//           </Card>
-
-//           <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg p-6">
-//             <div className="flex items-center justify-between">
-//               <div>
-//                 <p className="text-green-100 mb-1">Passed</p>
-//                 <p className="text-3xl font-bold">{stats.passed}</p>
-//               </div>
-//               <HiCheckCircle className="w-10 h-10 opacity-80" />
-//             </div>
-//           </Card>
-
-//           <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg p-6">
-//             <div className="flex items-center justify-between">
-//               <div>
-//                 <p className="text-red-100 mb-1">Failed</p>
-//                 <p className="text-3xl font-bold">{stats.failed}</p>
-//               </div>
-//               <HiXCircle className="w-10 h-10 opacity-80" />
-//             </div>
-//           </Card>
-
-//           <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg p-6">
-//             <div className="flex items-center justify-between">
-//               <div>
-//                 <p className="text-purple-100 mb-1">Average Score</p>
-//                 <p className="text-3xl font-bold">{stats.average}%</p>
-//               </div>
-//               <HiChartBar className="w-10 h-10 opacity-80" />
-//             </div>
-//           </Card>
-//         </div>
-
-//         {/* Filters */}
-//         <div className="flex space-x-4 mb-6">
-//           <Button
-//             variant={filter === 'all' ? 'primary' : 'secondary'}
-//             onClick={() => setFilter('all')}
-//             size="sm"
-//           >
-//             All Tests ({attempts.length})
-//           </Button>
-//           <Button
-//             variant={filter === 'passed' ? 'primary' : 'secondary'}
-//             onClick={() => setFilter('passed')}
-//             size="sm"
-//           >
-//             Passed ({stats.passed})
-//           </Button>
-//           <Button
-//             variant={filter === 'failed' ? 'primary' : 'secondary'}
-//             onClick={() => setFilter('failed')}
-//             size="sm"
-//           >
-//             Failed ({stats.failed})
-//           </Button>
-//         </div>
-
-//         {/* Test Attempts List */}
-//         {filteredAttempts.length === 0 ? (
-//           <Card className="bg-white dark:bg-gray-800 p-12 text-center">
-//             <HiClipboardList className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-//             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-//               {filter === 'all' ? 'No Tests Taken Yet' : `No ${filter} tests`}
-//             </h3>
-//             <p className="text-gray-600 dark:text-gray-400 mb-6">
-//               {filter === 'all' 
-//                 ? "You haven't taken any tests yet. Check available tests in your subjects."
-//                 : `You don't have any ${filter} tests.`}
-//             </p>
-//             <Link to="/student/dashboard">
-//               <Button variant="primary">
-//                 Browse Subjects
-//               </Button>
-//             </Link>
 //           </Card>
 //         ) : (
-//           <div className="space-y-4">
-//             {filteredAttempts.map((attempt) => {
-//               const percentage = ((attempt.score / attempt.test.marks) * 100).toFixed(1);
-//               const isPassed = percentage >= 40;
+//           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+//             {subjects.map((subject) => (
+//               <Card
+//                 key={subject.id}
+//                 className="cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+//                 onClick={() => handleSubjectClick(subject.id)}
+//               >
+//                 <div className="p-6">
+//                   {/* Subject Icon */}
+//                   <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center mb-4">
+//                     <HiBookOpen className="w-8 h-8 text-white" />
+//                   </div>
 
-//               return (
-//                 <Card 
-//                   key={attempt.id}
-//                   className="bg-white dark:bg-gray-800 hover:shadow-xl transition-all"
-//                 >
-//                   <div className="flex items-center justify-between p-6">
-//                     <div className="flex-1">
-//                       <div className="flex items-center space-x-3 mb-2">
-//                         <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-//                           {attempt.test.name || 'Test'}
-//                         </h3>
-//                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-//                           isPassed 
-//                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-//                             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
-//                         }`}>
-//                           {isPassed ? 'Passed' : 'Failed'}
-//                         </span>
-//                       </div>
-                      
-//                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-//                         <div>
-//                           <p className="text-xs text-gray-500 dark:text-gray-400">Type</p>
-//                           <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">
-//                             {attempt.test.type || 'MCQ'}
-//                           </p>
-//                         </div>
-//                         <div>
-//                           <p className="text-xs text-gray-500 dark:text-gray-400">Score</p>
-//                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-//                             {attempt.score} / {attempt.test.marks}
-//                           </p>
-//                         </div>
-//                         <div>
-//                           <p className="text-xs text-gray-500 dark:text-gray-400">Percentage</p>
-//                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-//                             {percentage}%
-//                           </p>
-//                         </div>
-//                         <div>
-//                           <p className="text-xs text-gray-500 dark:text-gray-400">Attempted On</p>
-//                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-//                             {new Date(attempt.attempted_at).toLocaleDateString()}
-//                           </p>
-//                         </div>
-//                       </div>
+//                   {/* Subject Name */}
+//                   <h3 className="text-xl font-bold text-gray-800 mb-4">{subject.name}</h3>
 
-//                       {/* Progress Bar */}
-//                       <div className="mt-4">
-//                         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-//                           <div
-//                             className={`h-2 rounded-full transition-all ${
-//                               isPassed ? 'bg-green-500' : 'bg-red-500'
-//                             }`}
-//                             style={{ width: `${percentage}%` }}
-//                           ></div>
-//                         </div>
-//                       </div>
+//                   {/* Stats */}
+//                   <div className="space-y-3">
+//                     <div className="flex items-center justify-between">
+//                       <span className="text-sm text-gray-600 flex items-center">
+//                         <HiClipboardList className="w-4 h-4 mr-2" />
+//                         Total Tests
+//                       </span>
+//                       <span className="font-semibold text-gray-800">{subject.total_tests}</span>
 //                     </div>
 
-//                     <div className="ml-6 flex flex-col space-y-2">
-//                       <Link to={`/student/test-attempt/${attempt.id}/result`}>
-//                         <Button variant="primary" size="sm">
-//                           View Result & Solutions
-//                         </Button>
-//                       </Link>
+//                     <div className="flex items-center justify-between">
+//                       <span className="text-sm text-green-600 flex items-center">
+//                         <HiCheckCircle className="w-4 h-4 mr-2" />
+//                         Attempted
+//                       </span>
+//                       <span className="font-semibold text-green-600">{subject.attempted_tests}</span>
+//                     </div>
+
+//                     <div className="flex items-center justify-between">
+//                       <span className="text-sm text-orange-600 flex items-center">
+//                         <HiClock className="w-4 h-4 mr-2" />
+//                         Pending
+//                       </span>
+//                       <span className="font-semibold text-orange-600">{subject.pending_tests}</span>
 //                     </div>
 //                   </div>
-//                 </Card>
-//               );
-//             })}
+
+//                   {/* View Button */}
+//                   <Button
+//                     onClick={() => handleSubjectClick(subject.id)}
+//                     className="w-full mt-4"
+//                   >
+//                     View Tests
+//                   </Button>
+//                 </div>
+//               </Card>
+//             ))}
 //           </div>
 //         )}
 //       </div>
@@ -559,13 +332,582 @@ export default MyTests;
 
 
 
+
+
+
+
+
+
+
+
+// // import { useState, useEffect } from 'react';
+// // import { Link } from 'react-router-dom';
+// // import { 
+// //   HiArrowLeft, 
+// //   HiClipboardList, 
+// //   HiClock, 
+// //   HiCheckCircle,
+// //   HiXCircle,
+// //   HiChartBar 
+// // } from 'react-icons/hi';
+// // // Added HiTrophy from hi2 to fix the "requested module does not provide an export" error
+// // import { HiTrophy } from 'react-icons/hi2'; 
 // // import DashboardLayout from '../../components/layout/DashboardLayout';
-// // export default function MyTests() {
+// // import Card from '../../components/common/Card';
+// // import Loading from '../../components/common/Loading';
+// // import Button from '../../components/common/Button';
+// // import { studentAPI } from '../../services/api';
+// // import toast from 'react-hot-toast';
+
+// // const MyTests = () => {
+// //   const [attempts, setAttempts] = useState([]);
+// //   const [loading, setLoading] = useState(true);
+// //   const [filter, setFilter] = useState('all'); // all, passed, failed
+
+// //   useEffect(() => {
+// //     fetchMyAttempts();
+// //   }, []);
+
+// //   const fetchMyAttempts = async () => {
+// //     try {
+// //       const response = await studentAPI.getMyAttempts();
+// //       setAttempts(response.data || []);
+// //     } catch (error) {
+// //       console.error('Failed to load test attempts:', error);
+// //       toast.error('Failed to load your tests');
+// //     } finally {
+// //       setLoading(false);
+// //     }
+// //   };
+
+// //   if (loading) return <Loading fullScreen />;
+
+// //   const filteredAttempts = attempts.filter(attempt => {
+// //     if (filter === 'all') return true;
+// //     const percentage = (attempt.score / attempt.test.marks) * 100;
+// //     if (filter === 'passed') return percentage >= 40;
+// //     if (filter === 'failed') return percentage < 40;
+// //     return true;
+// //   });
+
+// //   const stats = {
+// //     total: attempts.length,
+// //     passed: attempts.filter(a => (a.score / a.test.marks) * 100 >= 40).length,
+// //     failed: attempts.filter(a => (a.score / a.test.marks) * 100 < 40).length,
+// //     average: attempts.length > 0 
+// //       ? (attempts.reduce((sum, a) => sum + (a.score / a.test.marks) * 100, 0) / attempts.length).toFixed(1)
+// //       : 0
+// //   };
+
 // //   return (
 // //     <DashboardLayout>
-// //       <div className="p-6">
-// //         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Tests - Coming Soon</h1>
+// //       <div className="p-6 max-w-7xl mx-auto">
+// //         {/* Header */}
+// //         <div className="flex items-center justify-between mb-8">
+// //           <div className="flex items-center space-x-4">
+// //             <Link to="/student/dashboard">
+// //               <Button variant="secondary" size="sm">
+// //                 <HiArrowLeft className="w-4 h-4 mr-2" />
+// //                 Back
+// //               </Button>
+// //             </Link>
+// //             <div>
+// //               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+// //                 My Tests
+// //               </h1>
+// //               <p className="text-gray-600 dark:text-gray-400 mt-1">
+// //                 View all your test attempts and results
+// //               </p>
+// //             </div>
+// //           </div>
+// //           {/* Trophy Icon added here as a visual milestone if user has passed tests */}
+// //           {stats.passed > 0 && (
+// //             <div className="flex items-center bg-yellow-100 dark:bg-yellow-900/30 px-4 py-2 rounded-lg border border-yellow-200 dark:border-yellow-800">
+// //               <HiTrophy className="w-6 h-6 text-yellow-600 mr-2" />
+// //               <span className="font-bold text-yellow-700 dark:text-yellow-500">{stats.passed} Passed!</span>
+// //             </div>
+// //           )}
+// //         </div>
+
+// //         {/* Stats Cards */}
+// //         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+// //           <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg p-6">
+// //             <div className="flex items-center justify-between">
+// //               <div>
+// //                 <p className="text-blue-100 mb-1">Total Tests</p>
+// //                 <p className="text-3xl font-bold">{stats.total}</p>
+// //               </div>
+// //               <HiClipboardList className="w-10 h-10 opacity-80" />
+// //             </div>
+// //           </Card>
+
+// //           <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg p-6">
+// //             <div className="flex items-center justify-between">
+// //               <div>
+// //                 <p className="text-green-100 mb-1">Passed</p>
+// //                 <p className="text-3xl font-bold">{stats.passed}</p>
+// //               </div>
+// //               <HiCheckCircle className="w-10 h-10 opacity-80" />
+// //             </div>
+// //           </Card>
+
+// //           <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg p-6">
+// //             <div className="flex items-center justify-between">
+// //               <div>
+// //                 <p className="text-red-100 mb-1">Failed</p>
+// //                 <p className="text-3xl font-bold">{stats.failed}</p>
+// //               </div>
+// //               <HiXCircle className="w-10 h-10 opacity-80" />
+// //             </div>
+// //           </Card>
+
+// //           <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg p-6">
+// //             <div className="flex items-center justify-between">
+// //               <div>
+// //                 <p className="text-purple-100 mb-1">Average Score</p>
+// //                 <p className="text-3xl font-bold">{stats.average}%</p>
+// //               </div>
+// //               <HiChartBar className="w-10 h-10 opacity-80" />
+// //             </div>
+// //           </Card>
+// //         </div>
+
+// //         {/* Filters */}
+// //         <div className="flex space-x-4 mb-6">
+// //           <Button
+// //             variant={filter === 'all' ? 'primary' : 'secondary'}
+// //             onClick={() => setFilter('all')}
+// //             size="sm"
+// //           >
+// //             All Tests ({attempts.length})
+// //           </Button>
+// //           <Button
+// //             variant={filter === 'passed' ? 'primary' : 'secondary'}
+// //             onClick={() => setFilter('passed')}
+// //             size="sm"
+// //           >
+// //             Passed ({stats.passed})
+// //           </Button>
+// //           <Button
+// //             variant={filter === 'failed' ? 'primary' : 'secondary'}
+// //             onClick={() => setFilter('failed')}
+// //             size="sm"
+// //           >
+// //             Failed ({stats.failed})
+// //           </Button>
+// //         </div>
+
+// //         {/* Test Attempts List */}
+// //         {filteredAttempts.length === 0 ? (
+// //           <Card className="bg-white dark:bg-gray-800 p-12 text-center">
+// //             <HiClipboardList className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+// //             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+// //               {filter === 'all' ? 'No Tests Taken Yet' : `No ${filter} tests`}
+// //             </h3>
+// //             <p className="text-gray-600 dark:text-gray-400 mb-6">
+// //               {filter === 'all' 
+// //                 ? "You haven't taken any tests yet. Check available tests in your subjects."
+// //                 : `You don't have any ${filter} tests.`}
+// //             </p>
+// //             <Link to="/student/dashboard">
+// //               <Button variant="primary">
+// //                 Browse Subjects
+// //               </Button>
+// //             </Link>
+// //           </Card>
+// //         ) : (
+// //           <div className="space-y-4">
+// //             {filteredAttempts.map((attempt) => {
+// //               const percentage = ((attempt.score / attempt.test.marks) * 100).toFixed(1);
+// //               const isPassed = percentage >= 40;
+
+// //               return (
+// //                 <Card 
+// //                   key={attempt.id}
+// //                   className="bg-white dark:bg-gray-800 hover:shadow-xl transition-all"
+// //                 >
+// //                   <div className="flex items-center justify-between p-6">
+// //                     <div className="flex-1">
+// //                       <div className="flex items-center space-x-3 mb-2">
+// //                         <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+// //                           {attempt.test.name || 'Test'}
+// //                         </h3>
+// //                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+// //                           isPassed 
+// //                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
+// //                             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
+// //                         }`}>
+// //                           {isPassed ? 'Passed' : 'Failed'}
+// //                         </span>
+// //                       </div>
+                      
+// //                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+// //                         <div>
+// //                           <p className="text-xs text-gray-500 dark:text-gray-400">Type</p>
+// //                           <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">
+// //                             {attempt.test.type || 'MCQ'}
+// //                           </p>
+// //                         </div>
+// //                         <div>
+// //                           <p className="text-xs text-gray-500 dark:text-gray-400">Score</p>
+// //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
+// //                             {attempt.score} / {attempt.test.marks}
+// //                           </p>
+// //                         </div>
+// //                         <div>
+// //                           <p className="text-xs text-gray-500 dark:text-gray-400">Percentage</p>
+// //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
+// //                             {percentage}%
+// //                           </p>
+// //                         </div>
+// //                         <div>
+// //                           <p className="text-xs text-gray-500 dark:text-gray-400">Attempted On</p>
+// //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
+// //                             {new Date(attempt.attempted_at).toLocaleDateString()}
+// //                           </p>
+// //                         </div>
+// //                       </div>
+
+// //                       {/* Progress Bar */}
+// //                       <div className="mt-4">
+// //                         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+// //                           <div
+// //                             className={`h-2 rounded-full transition-all ${
+// //                               isPassed ? 'bg-green-500' : 'bg-red-500'
+// //                             }`}
+// //                             style={{ width: `${percentage}%` }}
+// //                           ></div>
+// //                         </div>
+// //                       </div>
+// //                     </div>
+
+// //                     <div className="ml-6 flex flex-col space-y-2">
+// //                       <Link to={`/student/test-attempt/${attempt.id}/result`}>
+// //                         <Button variant="primary" size="sm">
+// //                           View Result & Solutions
+// //                         </Button>
+// //                       </Link>
+// //                     </div>
+// //                   </div>
+// //                 </Card>
+// //               );
+// //             })}
+// //           </div>
+// //         )}
 // //       </div>
 // //     </DashboardLayout>
 // //   );
-// // }
+// // };
+
+// // export default MyTests;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // import { useState, useEffect } from 'react';
+// // // import { Link } from 'react-router-dom';
+// // // import { 
+// // //   HiArrowLeft, 
+// // //   HiClipboardList, 
+// // //   HiClock, 
+// // //   HiCheckCircle,
+// // //   HiXCircle,
+// // //   HiChartBar 
+// // // } from 'react-icons/hi';
+// // // import DashboardLayout from '../../components/layout/DashboardLayout';
+// // // import Card from '../../components/common/Card';
+// // // import Loading from '../../components/common/Loading';
+// // // import Button from '../../components/common/Button';
+// // // import { studentAPI } from '../../services/api';
+// // // import toast from 'react-hot-toast';
+
+
+// // // const MyTests = () => {
+// // //   const [attempts, setAttempts] = useState([]);
+// // //   const [loading, setLoading] = useState(true);
+// // //   const [filter, setFilter] = useState('all'); // all, passed, failed
+
+// // //   useEffect(() => {
+// // //     fetchMyAttempts();
+// // //   }, []);
+
+// // //   const fetchMyAttempts = async () => {
+// // //     try {
+// // //       const response = await studentAPI.getMyAttempts();
+// // //       setAttempts(response.data || []);
+// // //     } catch (error) {
+// // //       console.error('Failed to load test attempts:', error);
+// // //       toast.error('Failed to load your tests');
+// // //     } finally {
+// // //       setLoading(false);
+// // //     }
+// // //   };
+
+// // //   if (loading) return <Loading fullScreen />;
+
+// // //   const filteredAttempts = attempts.filter(attempt => {
+// // //     if (filter === 'all') return true;
+// // //     const percentage = (attempt.score / attempt.test.marks) * 100;
+// // //     if (filter === 'passed') return percentage >= 40;
+// // //     if (filter === 'failed') return percentage < 40;
+// // //     return true;
+// // //   });
+
+// // //   const stats = {
+// // //     total: attempts.length,
+// // //     passed: attempts.filter(a => (a.score / a.test.marks) * 100 >= 40).length,
+// // //     failed: attempts.filter(a => (a.score / a.test.marks) * 100 < 40).length,
+// // //     average: attempts.length > 0 
+// // //       ? (attempts.reduce((sum, a) => sum + (a.score / a.test.marks) * 100, 0) / attempts.length).toFixed(1)
+// // //       : 0
+// // //   };
+
+// // //   return (
+// // //     <DashboardLayout>
+// // //       <div className="p-6 max-w-7xl mx-auto">
+// // //         {/* Header */}
+// // //         <div className="flex items-center justify-between mb-8">
+// // //           <div className="flex items-center space-x-4">
+// // //             <Link to="/student/dashboard">
+// // //               <Button variant="secondary" size="sm">
+// // //                 <HiArrowLeft className="w-4 h-4 mr-2" />
+// // //                 Back
+// // //               </Button>
+// // //             </Link>
+// // //             <div>
+// // //               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+// // //                 My Tests
+// // //               </h1>
+// // //               <p className="text-gray-600 dark:text-gray-400 mt-1">
+// // //                 View all your test attempts and results
+// // //               </p>
+// // //             </div>
+// // //           </div>
+// // //         </div>
+
+// // //         {/* Stats Cards */}
+// // //         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+// // //           <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg p-6">
+// // //             <div className="flex items-center justify-between">
+// // //               <div>
+// // //                 <p className="text-blue-100 mb-1">Total Tests</p>
+// // //                 <p className="text-3xl font-bold">{stats.total}</p>
+// // //               </div>
+// // //               <HiClipboardList className="w-10 h-10 opacity-80" />
+// // //             </div>
+// // //           </Card>
+
+// // //           <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg p-6">
+// // //             <div className="flex items-center justify-between">
+// // //               <div>
+// // //                 <p className="text-green-100 mb-1">Passed</p>
+// // //                 <p className="text-3xl font-bold">{stats.passed}</p>
+// // //               </div>
+// // //               <HiCheckCircle className="w-10 h-10 opacity-80" />
+// // //             </div>
+// // //           </Card>
+
+// // //           <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg p-6">
+// // //             <div className="flex items-center justify-between">
+// // //               <div>
+// // //                 <p className="text-red-100 mb-1">Failed</p>
+// // //                 <p className="text-3xl font-bold">{stats.failed}</p>
+// // //               </div>
+// // //               <HiXCircle className="w-10 h-10 opacity-80" />
+// // //             </div>
+// // //           </Card>
+
+// // //           <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg p-6">
+// // //             <div className="flex items-center justify-between">
+// // //               <div>
+// // //                 <p className="text-purple-100 mb-1">Average Score</p>
+// // //                 <p className="text-3xl font-bold">{stats.average}%</p>
+// // //               </div>
+// // //               <HiChartBar className="w-10 h-10 opacity-80" />
+// // //             </div>
+// // //           </Card>
+// // //         </div>
+
+// // //         {/* Filters */}
+// // //         <div className="flex space-x-4 mb-6">
+// // //           <Button
+// // //             variant={filter === 'all' ? 'primary' : 'secondary'}
+// // //             onClick={() => setFilter('all')}
+// // //             size="sm"
+// // //           >
+// // //             All Tests ({attempts.length})
+// // //           </Button>
+// // //           <Button
+// // //             variant={filter === 'passed' ? 'primary' : 'secondary'}
+// // //             onClick={() => setFilter('passed')}
+// // //             size="sm"
+// // //           >
+// // //             Passed ({stats.passed})
+// // //           </Button>
+// // //           <Button
+// // //             variant={filter === 'failed' ? 'primary' : 'secondary'}
+// // //             onClick={() => setFilter('failed')}
+// // //             size="sm"
+// // //           >
+// // //             Failed ({stats.failed})
+// // //           </Button>
+// // //         </div>
+
+// // //         {/* Test Attempts List */}
+// // //         {filteredAttempts.length === 0 ? (
+// // //           <Card className="bg-white dark:bg-gray-800 p-12 text-center">
+// // //             <HiClipboardList className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+// // //             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+// // //               {filter === 'all' ? 'No Tests Taken Yet' : `No ${filter} tests`}
+// // //             </h3>
+// // //             <p className="text-gray-600 dark:text-gray-400 mb-6">
+// // //               {filter === 'all' 
+// // //                 ? "You haven't taken any tests yet. Check available tests in your subjects."
+// // //                 : `You don't have any ${filter} tests.`}
+// // //             </p>
+// // //             <Link to="/student/dashboard">
+// // //               <Button variant="primary">
+// // //                 Browse Subjects
+// // //               </Button>
+// // //             </Link>
+// // //           </Card>
+// // //         ) : (
+// // //           <div className="space-y-4">
+// // //             {filteredAttempts.map((attempt) => {
+// // //               const percentage = ((attempt.score / attempt.test.marks) * 100).toFixed(1);
+// // //               const isPassed = percentage >= 40;
+
+// // //               return (
+// // //                 <Card 
+// // //                   key={attempt.id}
+// // //                   className="bg-white dark:bg-gray-800 hover:shadow-xl transition-all"
+// // //                 >
+// // //                   <div className="flex items-center justify-between p-6">
+// // //                     <div className="flex-1">
+// // //                       <div className="flex items-center space-x-3 mb-2">
+// // //                         <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+// // //                           {attempt.test.name || 'Test'}
+// // //                         </h3>
+// // //                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+// // //                           isPassed 
+// // //                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
+// // //                             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
+// // //                         }`}>
+// // //                           {isPassed ? 'Passed' : 'Failed'}
+// // //                         </span>
+// // //                       </div>
+                      
+// // //                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+// // //                         <div>
+// // //                           <p className="text-xs text-gray-500 dark:text-gray-400">Type</p>
+// // //                           <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">
+// // //                             {attempt.test.type || 'MCQ'}
+// // //                           </p>
+// // //                         </div>
+// // //                         <div>
+// // //                           <p className="text-xs text-gray-500 dark:text-gray-400">Score</p>
+// // //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
+// // //                             {attempt.score} / {attempt.test.marks}
+// // //                           </p>
+// // //                         </div>
+// // //                         <div>
+// // //                           <p className="text-xs text-gray-500 dark:text-gray-400">Percentage</p>
+// // //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
+// // //                             {percentage}%
+// // //                           </p>
+// // //                         </div>
+// // //                         <div>
+// // //                           <p className="text-xs text-gray-500 dark:text-gray-400">Attempted On</p>
+// // //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
+// // //                             {new Date(attempt.attempted_at).toLocaleDateString()}
+// // //                           </p>
+// // //                         </div>
+// // //                       </div>
+
+// // //                       {/* Progress Bar */}
+// // //                       <div className="mt-4">
+// // //                         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+// // //                           <div
+// // //                             className={`h-2 rounded-full transition-all ${
+// // //                               isPassed ? 'bg-green-500' : 'bg-red-500'
+// // //                             }`}
+// // //                             style={{ width: `${percentage}%` }}
+// // //                           ></div>
+// // //                         </div>
+// // //                       </div>
+// // //                     </div>
+
+// // //                     <div className="ml-6 flex flex-col space-y-2">
+// // //                       <Link to={`/student/test-attempt/${attempt.id}/result`}>
+// // //                         <Button variant="primary" size="sm">
+// // //                           View Result & Solutions
+// // //                         </Button>
+// // //                       </Link>
+// // //                     </div>
+// // //                   </div>
+// // //                 </Card>
+// // //               );
+// // //             })}
+// // //           </div>
+// // //         )}
+// // //       </div>
+// // //     </DashboardLayout>
+// // //   );
+// // // };
+
+// // // export default MyTests;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // import DashboardLayout from '../../components/layout/DashboardLayout';
+// // // // export default function MyTests() {
+// // // //   return (
+// // // //     <DashboardLayout>
+// // // //       <div className="p-6">
+// // // //         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Tests - Coming Soon</h1>
+// // // //       </div>
+// // // //     </DashboardLayout>
+// // // //   );
+// // // // }

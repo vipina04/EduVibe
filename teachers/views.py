@@ -344,9 +344,8 @@ def get_assigned_classes(request):
 # ═══════════════════════════════════════════════════════════
 #  TEACHER DASHBOARD & CORE LISTS
 # ═══════════════════════════════════════════════════════════
-
 class TeacherHomeView(APIView):
-    """Teacher dashboard/home"""
+    """Teacher dashboard/home - Returns dashboard statistics for frontend"""
     permission_classes = [IsTeacherRole]
     
     def get(self, request):
@@ -379,14 +378,55 @@ class TeacherHomeView(APIView):
                 'completed_chapters': chapters.filter(is_completed=True).count()
             })
         
-        # Get stats
+        # ✅ Calculate statistics for dashboard cards
+        # Count unique classes assigned to this teacher
+        assigned_classes_count = TeacherAssignment.objects.filter(
+            teacher=teacher
+        ).values('class_assigned').distinct().count()
+        
+        # Count unique subjects assigned to this teacher (from teacher's registered subjects)
+        total_subjects_count = teacher.subjects.count()
+        
+        # Count total tests created by this teacher
+        total_tests_count = Test.objects.filter(created_by=teacher).count()
+        
+        # Get recent tests (last 5)
+        recent_tests = Test.objects.filter(
+            created_by=teacher
+        ).select_related(
+            'chapter__subject',
+            'chapter__class_assigned'
+        ).order_by('-created_at')[:5]
+        
+        recent_tests_data = []
+        for test in recent_tests:
+            recent_tests_data.append({
+                'id': test.id,
+                'name': test.name,
+                'type': test.type,
+                'marks': test.marks,
+                'subject_name': test.chapter.subject.name,
+                'class_name': test.chapter.class_assigned.name,
+                'chapter_name': test.chapter.name,
+                'created_at': test.created_at.isoformat()
+            })
+        
+        # Get stats for backward compatibility
         stats = {
-            'total_tests': Test.objects.filter(created_by=teacher).count(),
+            'total_tests': total_tests_count,
             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
-            'classes_teaching': TeacherAssignment.objects.filter(teacher=teacher).values('class_assigned').distinct().count()
+            'classes_teaching': assigned_classes_count
         }
         
+        # ✅ Return data in the format expected by frontend TeacherDashboard
         return Response({
+            # Dashboard statistics (for the stats cards)
+            'assigned_classes': assigned_classes_count,
+            'total_subjects': total_subjects_count,
+            'total_tests': total_tests_count,
+            'recent_tests': recent_tests_data,
+            
+            # Additional data (for other parts of the dashboard)
             'teacher': {
                 'name': f'{teacher.first_name} {teacher.last_name}'.strip(),
                 'unique_id': teacher.unique_id,
@@ -396,8 +436,62 @@ class TeacherHomeView(APIView):
                 ]
             },
             'assignments': assignments_data,
-            'stats': stats
+            'stats': stats  # Keep for backward compatibility
         })
+        
+# class TeacherHomeView(APIView):
+#     """Teacher dashboard/home"""
+#     permission_classes = [IsTeacherRole]
+    
+#     def get(self, request):
+#         teacher = request.user
+        
+#         # Get teacher's assignments
+#         assignments = TeacherAssignment.objects.filter(
+#             teacher=teacher
+#         ).select_related('class_assigned', 'subject')
+        
+#         assignments_data = []
+#         for assignment in assignments:
+#             # Get chapters for this class-subject
+#             chapters = Chapter.objects.filter(
+#                 subject=assignment.subject,
+#                 class_assigned=assignment.class_assigned
+#             )
+            
+#             assignments_data.append({
+#                 'id': assignment.id,
+#                 'class': {
+#                     'id': assignment.class_assigned.id,
+#                     'name': assignment.class_assigned.name
+#                 },
+#                 'subject': {
+#                     'id': assignment.subject.id,
+#                     'name': assignment.subject.name
+#                 },
+#                 'total_chapters': chapters.count(),
+#                 'completed_chapters': chapters.filter(is_completed=True).count()
+#             })
+        
+#         # Get stats
+#         stats = {
+#             'total_tests': Test.objects.filter(created_by=teacher).count(),
+#             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
+#             'classes_teaching': TeacherAssignment.objects.filter(teacher=teacher).values('class_assigned').distinct().count()
+#         }
+        
+#         return Response({
+#             'teacher': {
+#                 'name': f'{teacher.first_name} {teacher.last_name}'.strip(),
+#                 'unique_id': teacher.unique_id,
+#                 'subjects': [
+#                     {'id': s.id, 'name': s.name}
+#                     for s in teacher.subjects.all()
+#                 ]
+#             },
+#             'assignments': assignments_data,
+#             'stats': stats
+#         })
 
 
 class TeacherClassesListView(APIView):

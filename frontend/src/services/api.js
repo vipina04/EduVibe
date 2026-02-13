@@ -95,6 +95,9 @@ export const studentAPI = {
   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
   getMyAttempts: () => api.get('/students/my-test-attempts/'),
+  getEnrolledSubjects: () => api.get('/students/enrolled-subjects/'),
+  getSubjectTests: (subjectId) => api.get(`/students/subjects/${subjectId}/tests/`),
+  
   getMyTests: () => api.get('/students/my-test-attempts/'), // Alias
   
   // Attendance
