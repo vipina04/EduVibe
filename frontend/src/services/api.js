@@ -19,6 +19,12 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Token ${token}`; // Token not Bearer
     }
+    
+    // If sending FormData, delete Content-Type to let browser set it with boundary
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+    
     return config;
   },
   (error) => {
@@ -169,9 +175,13 @@ export const teacherAPI = {
   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/delete/`),
   
   // Questions
-  createQuestion: (data) => api.post('/teachers/questions/create/', data, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
+  // createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+  //   headers: { 'Content-Type': 'multipart/form-data' }
+  // }),
+//   createQuestion: (data) => api.post('/teachers/create-question/', data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+ createQuestion: (data) => api.post('/teachers/create-question/', data),
   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),

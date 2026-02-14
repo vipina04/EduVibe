@@ -193,16 +193,21 @@ def get_test_results(request, test_id):
 def create_question(request):
     """Create a new question for a test"""
     try:
-        # Get data from FormData
-        test_id = request.data.get('test')
-        question_text = request.data.get('question_text', '')
+        # Get data from request.POST (FormData fields)
+        test_id = request.POST.get('test')
+        question_text = request.POST.get('question_text', '')
+        option1 = request.POST.get('option1', '')
+        option2 = request.POST.get('option2', '')
+        option3 = request.POST.get('option3', '')
+        option4 = request.POST.get('option4', '')
+        correct_option = request.POST.get('correct_option', None)
+        explanation = request.POST.get('explanation', '')
         question_image = request.FILES.get('question_image', None)
-        option1 = request.data.get('option1', '')
-        option2 = request.data.get('option2', '')
-        option3 = request.data.get('option3', '')
-        option4 = request.data.get('option4', '')
-        correct_option = request.data.get('correct_option', None)
-        explanation = request.data.get('explanation', '')
+        
+        if not test_id:
+            return Response({
+                'error': 'Test ID is required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Validate test exists
         try:
@@ -249,11 +254,79 @@ def create_question(request):
         
     except Exception as e:
         print("Error creating question:", str(e))
+        import traceback
         print("Traceback:", traceback.format_exc())
         return Response({
             'error': 'Failed to create question',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated])
+# def create_question(request):
+#     """Create a new question for a test"""
+#     try:
+#         # Get data from FormData
+#         test_id = request.data.get('test')
+#         question_text = request.data.get('question_text', '')
+#         question_image = request.FILES.get('question_image', None)
+#         option1 = request.data.get('option1', '')
+#         option2 = request.data.get('option2', '')
+#         option3 = request.data.get('option3', '')
+#         option4 = request.data.get('option4', '')
+#         correct_option = request.data.get('correct_option', None)
+#         explanation = request.data.get('explanation', '')
+        
+#         # Validate test exists
+#         try:
+#             test = Test.objects.get(id=test_id)
+#         except Test.DoesNotExist:
+#             return Response(
+#                 {'error': f'Test with id {test_id} does not exist'},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
+        
+#         # Check if user is the creator of the test
+#         if test.created_by != request.user:
+#             return Response(
+#                 {'error': 'You are not authorized to add questions to this test'},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+        
+#         # Create question
+#         question = Question.objects.create(
+#             test=test,
+#             question_text=question_text,
+#             question_image=question_image,
+#             option1=option1,
+#             option2=option2,
+#             option3=option3,
+#             option4=option4,
+#             correct_option=int(correct_option) if correct_option else None,
+#             explanation=explanation
+#         )
+        
+#         return Response({
+#             'message': 'Question created successfully',
+#             'question_id': question.id,
+#             'question': {
+#                 'id': question.id,
+#                 'question_text': question.question_text,
+#                 'option1': question.option1,
+#                 'option2': question.option2,
+#                 'option3': question.option3,
+#                 'option4': question.option4,
+#                 'correct_option': question.correct_option,
+#             }
+#         }, status=status.HTTP_201_CREATED)
+        
+#     except Exception as e:
+#         print("Error creating question:", str(e))
+#         print("Traceback:", traceback.format_exc())
+#         return Response({
+#             'error': 'Failed to create question',
+#             'details': str(e)
+#         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -438,7 +511,7 @@ class TeacherHomeView(APIView):
             'assignments': assignments_data,
             'stats': stats  # Keep for backward compatibility
         })
-        
+
 # class TeacherHomeView(APIView):
 #     """Teacher dashboard/home"""
 #     permission_classes = [IsTeacherRole]

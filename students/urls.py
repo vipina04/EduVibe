@@ -12,11 +12,13 @@ from .views import (
     SubjectDetailView,
     ChapterTestsView,
     
+    
     # Test Taking
     TestStartView,
     TestSubmitView,
     TestResultView,
     MyTestAttemptsView,
+    SubjectTestsView,
     
     # Attendance & Fees
     MyAttendanceView,
@@ -57,6 +59,7 @@ urlpatterns = [
     path('test-attempts/<int:attempt_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
     path('test-attempts/<int:attempt_id>/result/', TestResultView.as_view(), name='test-result'),
     path('my-test-attempts/', MyTestAttemptsView.as_view(), name='my-test-attempts'),
+    path('subjects/<int:subject_id>/tests/', SubjectTestsView.as_view(), name='subject-tests'),
     
     # ═══════════════════════════════════════════════════════════
     #  ATTENDANCE & FEES

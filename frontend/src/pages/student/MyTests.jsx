@@ -2,7 +2,8 @@
 // FIXED VERSION - Replace your existing MyTests.jsx with this
 
 import React, { useState, useEffect } from 'react';
-import { getEnrolledSubjects } from '../../services/api';
+// import { getEnrolledSubjects } from '../../services/api';
+import { studentAPI } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import './MyTests.css';
 
@@ -21,7 +22,7 @@ const MyTests = () => {
       setLoading(true);
       setError('');
       
-      const response = await getEnrolledSubjects();
+      const response = await studentAPI.getEnrolledSubjects();
       console.log('✅ Subjects API response:', response.data);
       
       // Handle the response - it's already an array
@@ -44,7 +45,7 @@ const MyTests = () => {
   };
 
   const handleSubjectClick = (subjectId) => {
-    navigate(`/student/subjects/${subjectId}`);
+    navigate(`/student/subject/${subjectId}/tests`);
   };
 
   if (loading) {
