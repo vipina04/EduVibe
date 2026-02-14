@@ -34,21 +34,83 @@ const TakeTest = () => {
     }
   }, [timeLeft, submitting]);
 
-  const startTest = async () => {
-    try {
-      const response = await studentAPI.startTest(testId);
-      setTest(response.data.test);
-      setAttempt(response.data.attempt);
-      setQuestions(response.data.questions || []);
-      setTimeLeft((response.data.test.duration_minutes || 30) * 60);
-    } catch (error) {
-      console.error('Failed to start test:', error);
-      toast.error(error.response?.data?.error || 'Failed to start test');
-      navigate('/student/my-tests');
-    } finally {
-      setLoading(false);
+//   const startTest = async () => {
+//     try {
+//       const response = await studentAPI.startTest(testId);
+//       setTest(response.data.test);
+//       setAttempt(response.data.attempt);
+//       setQuestions(response.data.questions || []);
+//       // setTimeLeft((response.data.test.duration_minutes || 30) * 60);
+//  const durationMinutes = response.data.test.duration_minutes || 30;
+//  const durationSeconds = durationMinutes * 60;
+//       console.log(`⏱️ Test Duration: ${durationMinutes} minutes`);
+//       setTimeLeft(durationSeconds);
+//     } catch (error) {
+//       console.error('Failed to start test:', error);
+//       toast.error(error.response?.data?.error || 'Failed to start test');
+//       navigate('/student/my-tests');
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+const startTest = async () => {
+  try {
+    console.log('🚀 Starting test with ID:', testId);
+    console.log('📡 Calling API:', `/students/tests/${testId}/start/`);
+    
+    const response = await studentAPI.startTest(testId);
+    
+    console.log('✅ Full Response:', response);
+    console.log('📦 Response Data:', response.data);
+    console.log('🧪 Test Object:', response.data.test);
+    console.log('📝 Attempt Object:', response.data.attempt);
+    console.log('❓ Questions:', response.data.questions);
+    
+    // Check if we have all required data
+    if (!response.data.test) {
+      throw new Error('No test data in response');
     }
-  };
+    if (!response.data.attempt) {
+      throw new Error('No attempt data in response');
+    }
+    if (!response.data.questions) {
+      throw new Error('No questions data in response');
+    }
+    
+    setTest(response.data.test);
+    setAttempt(response.data.attempt);
+    setQuestions(response.data.questions || []);
+    
+    const durationMinutes = response.data.test.duration_minutes || 30;
+    const durationSeconds = durationMinutes * 60;
+    console.log(`⏱️ Test Duration: ${durationMinutes} minutes (${durationSeconds} seconds)`);
+    setTimeLeft(durationSeconds);
+    
+    console.log('✅ Test started successfully!');
+  } catch (error) {
+    console.error('❌ ERROR DETAILS:');
+    console.error('Error object:', error);
+    console.error('Error message:', error.message);
+    console.error('Error response:', error.response);
+    console.error('Response status:', error.response?.status);
+    console.error('Response data:', error.response?.data);
+    console.error('Response headers:', error.response?.headers);
+    
+    const errorMessage = error.response?.data?.error || error.message || 'Failed to start test';
+    toast.error(errorMessage);
+    
+    setLoading(false);
+    
+    // Wait before redirecting so user can see error
+    setTimeout(() => {
+      navigate(-1);
+    }, 2500);
+    
+    return;
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleAnswerChange = (questionId, answer) => {
     setAnswers({

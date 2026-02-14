@@ -1,163 +1,283 @@
-// src/pages/student/MyTests.jsx
-// FIXED VERSION - Replace your existing MyTests.jsx with this
+// src/services/api.js
+import axios from 'axios';
 
-import React, { useState, useEffect } from 'react';
-// import { getEnrolledSubjects } from '../../services/api';
-import { studentAPI } from '../../services/api';
-import { useNavigate } from 'react-router-dom';
-import './MyTests.css';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
-const MyTests = () => {
-  const navigate = useNavigate();
-  const [subjects, setSubjects] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+// Create axios instance
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 15000,
+});
 
-  useEffect(() => {
-    fetchEnrolledSubjects();
-  }, []);
-
-  const fetchEnrolledSubjects = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      
-      const response = await studentAPI.getEnrolledSubjects();
-      console.log('✅ Subjects API response:', response.data);
-      
-      // Handle the response - it's already an array
-      if (Array.isArray(response.data)) {
-        setSubjects(response.data);
-        console.log(`✅ Loaded ${response.data.length} subjects`);
-      } else {
-        // Fallback if wrapped in an object
-        setSubjects([]);
-        console.warn('⚠️ Unexpected response format:', response.data);
-      }
-      
-    } catch (err) {
-      console.error('❌ Failed to fetch subjects:', err);
-      setError(err.response?.data?.error || 'Unable to load subjects. Please try again.');
-      setSubjects([]);
-    } finally {
-      setLoading(false);
+// Add token to requests
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Token ${token}`; // Token not Bearer
     }
-  };
-
-  const handleSubjectClick = (subjectId) => {
-    navigate(`/student/subject/${subjectId}/tests`);
-  };
-
-  if (loading) {
-    return (
-      <div className="my-tests-container">
-        <div className="loading-state">
-          <div className="spinner"></div>
-          <p>Loading subjects...</p>
-        </div>
-      </div>
-    );
+    
+    // If sending FormData, delete Content-Type to let browser set it with boundary
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+    
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
+);
 
-  if (error) {
-    return (
-      <div className="my-tests-container">
-        <div className="error-state">
-          <div className="error-icon">⚠️</div>
-          <h3>Unable to Load Subjects</h3>
-          <p>{error}</p>
-          <button onClick={fetchEnrolledSubjects} className="retry-btn">
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
+// Handle response errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
   }
+);
 
-  if (subjects.length === 0) {
-    return (
-      <div className="my-tests-container">
-        <div className="empty-state">
-          <div className="empty-icon">📚</div>
-          <h3>No Subjects Available</h3>
-          <p>You don't have any subjects assigned yet.</p>
-          <p className="help-text">Please contact your administrator.</p>
-        </div>
-      </div>
-    );
-  }
+export default api;
 
-  return (
-    <div className="my-tests-container">
-      <div className="page-header">
-        <h1>My Tests</h1>
-        <p className="subtitle">Select a subject to view and take tests</p>
-      </div>
-
-      <div className="subjects-grid">
-        {subjects.map((subject) => (
-          <div
-            key={subject.id}
-            className="subject-card"
-            onClick={() => handleSubjectClick(subject.id)}
-          >
-            <div className="subject-header">
-              <h3>{subject.name}</h3>
-              <div className="subject-icon">📖</div>
-            </div>
-
-            <div className="subject-stats">
-              <div className="stat-item">
-                <span className="stat-label">Chapters</span>
-                <span className="stat-value">{subject.chapters_count || 0}</span>
-              </div>
-              
-              <div className="stat-item">
-                <span className="stat-label">Total Tests</span>
-                <span className="stat-value">{subject.total_tests || 0}</span>
-              </div>
-              
-              <div className="stat-item">
-                <span className="stat-label">Attempted</span>
-                <span className="stat-value success">{subject.attempted_tests || 0}</span>
-              </div>
-              
-              <div className="stat-item">
-                <span className="stat-label">Pending</span>
-                <span className="stat-value warning">{subject.pending_tests || 0}</span>
-              </div>
-            </div>
-
-            {subject.attempted_tests > 0 && (
-              <div className="subject-score">
-                <div className="score-label">Average Score</div>
-                <div className={`score-value ${getScoreClass(subject.average_score)}`}>
-                  {subject.average_score}%
-                </div>
-              </div>
-            )}
-
-            <div className="subject-footer">
-              <button className="view-tests-btn">
-                View Tests →
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+// ============ AUTH APIs ============
+export const authAPI = {
+  // Get registration data (classes & subjects)
+  getRegistrationData: () => api.get('/users/registration-data/'),
+  
+  // Register
+  register: (data) => api.post('/users/register/', data),
+  
+  // Verify registration OTP
+  verifyRegistrationOTP: (data) => api.post('/users/verify-registration-otp/', data),
+  
+  // Resend OTP
+  resendOTP: (email) => api.post('/users/resend-registration-otp/', { email }),
+  
+  // Login
+  login: (data) => api.post('/users/login/', data),
+  
+  // Google OAuth Login - NEW!
+  googleAuth: (credential, role = 'student') => 
+    api.post('/users/auth/google/', { credential, role }),
+  
+  // Logout
+  logout: () => api.post('/users/logout/'),
+  
+  // Forgot password
+  forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+  
+  // Reset password
+  resetPassword: (data) => api.post('/users/verify-otp-reset-password/', data),
+  
+  // Get profile
+  getProfile: () => api.get('/users/profile/'),
 };
 
-// Helper function to get score class
-const getScoreClass = (score) => {
-  if (score >= 80) return 'excellent';
-  if (score >= 60) return 'good';
-  if (score >= 40) return 'average';
-  return 'poor';
+// ============ STUDENT APIs ============
+export const studentAPI = {
+  // Dashboard
+  getDashboard: () => api.get('/students/home/'),
+  getHome: () => api.get('/students/home/'), // Alias
+  
+  // Subjects
+  getSubjects: () => api.get('/students/subjects/'),
+  getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+  getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`), // Alias
+  
+  // Chapters
+  getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
+  
+  // Tests
+  getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+  startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
+  submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+  getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+  getMyAttempts: () => api.get('/students/my-test-attempts/'),
+  getEnrolledSubjects: () => api.get('/students/enrolled-subjects/'),
+  getSubjectTests: (subjectId) => api.get(`/students/subjects/${subjectId}/tests/`),
+  
+  getMyTests: () => api.get('/students/my-test-attempts/'), // Alias
+  
+  // Attendance
+  getAttendance: () => api.get('/students/my-attendance/'),
+  getMyAttendance: () => api.get('/students/my-attendance/'), // Alias
+  
+  // Fee Payments
+  getFeePayments: () => api.get('/students/my-fee-payments/'),
+  getMyFees: () => api.get('/students/my-fee-payments/'), // Alias
+  
+  // Assignments
+  getAssignments: () => api.get('/students/my-assignments/'),
+  getMyAssignments: () => api.get('/students/my-assignments/'), // Alias
+  submitAssignment: (assignmentId, data) => api.post(`/students/assignments/${assignmentId}/submit/`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  
+  // Doubts
+  getEnrolledSubjects: () => api.get('/students/subjects/'),
+  createDoubt: (data) => api.post('/students/doubts/create/', data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getDoubts: () => api.get('/students/doubts/'),
+  getMyDoubts: () => api.get('/students/doubts/'), // Alias
+  getDoubtDetail: (doubtId) => api.get(`/students/doubts/${doubtId}/`),
+  replyToDoubt: (doubtId, data) => api.post(`/students/doubts/${doubtId}/reply/`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  
+  // Notifications
+  getNotifications: () => api.get('/students/my-notifications/'),
+  getMyNotifications: () => api.get('/students/my-notifications/'), // Alias
+  markNotificationRead: (notificationId) => api.patch(`/students/notifications/${notificationId}/read/`),
+  
+  // Search
+  search: (query) => api.get(`/students/search/?q=${query}`),
 };
 
-export default MyTests;
+// ============ TEACHER APIs ============
+export const teacherAPI = {
+  // Dashboard
+  getDashboard: () => api.get('/teachers/home/'),
+  getHome: () => api.get('/teachers/home/'), // Alias
+  getAllTests: () => api.get('/teachers/tests/all/'),
+  
+  // Classes & Subjects
+  getClasses: () => api.get('/teachers/classes/'),
+  getAssignedClasses: () => api.get('/teachers/assigned-classes/'),
+  getSubjects: (params) => api.get('/teachers/subjects/', { params }),
+  getSubjectClasses: (subjectId) => api.get('/teachers/subject-classes/', { params: { subject_id: subjectId } }),
+  getClassSubjects: (classId) => api.get(`/teachers/class/${classId}/subjects/`),
+  getClassChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+  
+  // FIXED: Removed duplicate /api/ prefix - these were causing issues
+  getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+  
+  // Chapters
+  getChapters: (params) => api.get('/teachers/chapters/', { params }),
+  createChapter: (data) => api.post('/teachers/chapters/create/', data),
+  markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
+
+  // Tests
+  getTests: (params) => api.get('/teachers/tests/', { params }),
+  getChapterTests: (chapterId) => api.get(`/teachers/chapter/${chapterId}/tests/`),
+  createTest: (data) => api.post('/teachers/tests/create/', data),
+  getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+  getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+  updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/update/`, data),
+  deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/delete/`),
+  
+  // Questions
+  // createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+  //   headers: { 'Content-Type': 'multipart/form-data' }
+  // }),
+//   createQuestion: (data) => api.post('/teachers/create-question/', data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+ createQuestion: (data) => api.post('/teachers/create-question/', data),
+  updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/delete/`),
+  
+  // Attendance
+  markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+  getAttendance: (params) => api.get('/teachers/attendance/', { params }),
+  getAttendanceHistory: (params) => api.get('/teachers/attendance/history/', { params }),
+  getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
+  
+  // Assignments
+  createAssignment: (data) => api.post('/teachers/assignments/create/', data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getAssignments: (params) => api.get('/teachers/assignments/', { params }),
+  getAssignmentDetail: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/`),
+  gradeAssignment: (submissionId, data) => api.patch(`/teachers/assignment-submission/${submissionId}/grade/`, data),
+  
+  // Doubts
+  getDoubts: (params) => api.get('/teachers/doubts/', { params }),
+  getDoubtDetail: (doubtId) => api.get(`/teachers/doubts/${doubtId}/`),
+  replyToDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  
+  // Search
+  search: (query) => api.get(`/teachers/search/?q=${query}`),
+};
+
+// ============ ADMIN APIs ============
+export const adminAPI = {
+  // Dashboard
+  getDashboard: () => api.get('/admin/dashboard/stats/'),
+  getStats: () => api.get('/admin/dashboard/stats/'),
+  
+  // User Management
+  getPendingUsers: () => api.get('/admin/users/pending/'),
+  approveUser: (userId) => api.post('/admin/users/approve/', { user_id: userId }),
+  rejectUser: (userId) => api.post('/admin/users/reject/', { user_id: userId }),
+  getAllUsers: (role) => api.get(`/admin/users/all/?role=${role || ''}`),
+  getUsers: () => api.get('/admin/users/all/'), // Alias
+  deleteUser: (userId) => api.delete(`/admin/users/${userId}/delete/`),
+  
+  // Classes
+  getClasses: () => api.get('/admin/classes/'),
+  createClass: (data) => api.post('/admin/classes/create/', data),
+  getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+  updateClass: (classId, data) => api.put(`/admin/classes/${classId}/update/`, data),
+  deleteClass: (classId) => api.delete(`/admin/classes/${classId}/delete/`),
+  
+  // Subjects
+  getSubjects: (classId) => api.get(`/admin/subjects/?class_id=${classId || ''}`),
+  createSubject: (data) => api.post('/admin/subjects/create/', data),
+  getSubjectDetail: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+  updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/update/`, data),
+  deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/delete/`),
+  
+  // Chapters
+  getChapters: (subjectId, classId) => 
+    api.get(`/admin/chapters/?subject_id=${subjectId || ''}&class_id=${classId || ''}`),
+  createChapter: (data) => api.post('/admin/chapters/create/', data),
+  updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/update/`, data),
+  deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/delete/`),
+  
+  // Teacher Assignments
+  getTeacherAssignments: () => api.get('/admin/teacher-assignments/'),
+  createTeacherAssignment: (data) => api.post('/admin/teacher-assignments/create/', data),
+  deleteTeacherAssignment: (assignmentId) => api.delete(`/admin/teacher-assignments/${assignmentId}/delete/`),
+  
+  // Notifications
+  createNotification: (data) => api.post('/admin/notifications/create/', data),
+  getNotifications: () => api.get('/admin/notifications/'),
+  
+  // Fee Payments
+  createFeePayment: (data) => api.post('/admin/fees/create/', data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getFeePayments: () => api.get('/admin/fees/'),
+  getFeePaymentDetail: (paymentId) => api.get(`/admin/fees/${paymentId}/`),
+};
+
+// ============ UTILITY APIs ============
+export const utilityAPI = {
+  uploadFile: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/upload/', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+};
+
+export { api };
 
 
 
@@ -176,145 +296,289 @@ export default MyTests;
 
 
 
+// // src/services/api.js
+// import axios from 'axios';
 
+// const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
+// // Create axios instance
+// const api = axios.create({
+//   baseURL: API_URL,
+//   headers: {
+//     'Content-Type': 'application/json',
+//   },
+//   timeout: 15000,
+// });
 
-
-
-
-
-
-
-
-
-
-
-
-
-// import { useState, useEffect } from 'react';
-// import { useNavigate } from 'react-router-dom';
-// import { HiBookOpen, HiClipboardList, HiCheckCircle, HiClock } from 'react-icons/hi';
-// import DashboardLayout from '../../components/layout/DashboardLayout';
-// import Card from '../../components/common/Card';
-// import Loading from '../../components/common/Loading';
-// import Button from '../../components/common/Button';
-// import { studentAPI } from '../../services/api';
-// import toast from 'react-hot-toast';
-
-// const MyTests = () => {
-//   const navigate = useNavigate();
-//   const [subjects, setSubjects] = useState([]);
-//   const [className, setClassName] = useState('');
-//   const [loading, setLoading] = useState(true);
-
-//   useEffect(() => {
-//     fetchEnrolledSubjects();
-//   }, []);
-
-//   const fetchEnrolledSubjects = async () => {
-//     try {
-//       const response = await studentAPI.getEnrolledSubjects();
-//       setSubjects(response.data.subjects);
-//       setClassName(response.data.class_name);
-//     } catch (error) {
-//       console.error('Failed to fetch subjects:', error);
-//       toast.error(error.response?.data?.error || 'Failed to load subjects');
-//     } finally {
-//       setLoading(false);
+// // Add token to requests
+// api.interceptors.request.use(
+//   (config) => {
+//     const token = localStorage.getItem('token');
+//     if (token) {
+//       config.headers.Authorization = `Token ${token}`; // Token not Bearer
 //     }
-//   };
-
-//   const handleSubjectClick = (subjectId) => {
-//     navigate(`/student/subject/${subjectId}/tests`);
-//   };
-
-//   if (loading) {
-//     return (
-//       <DashboardLayout>
-//         <Loading />
-//       </DashboardLayout>
-//     );
+//     return config;
+//   },
+//   (error) => {
+//     return Promise.reject(error);
 //   }
+// );
 
-//   return (
-//     <DashboardLayout>
-//       <div className="max-w-6xl mx-auto">
-//         {/* Header */}
-//         <div className="mb-8">
-//           <h1 className="text-3xl font-bold text-gray-800 mb-2">My Tests</h1>
-//           <p className="text-gray-600">Class: {className}</p>
-//         </div>
+// // Handle response errors
+// api.interceptors.response.use(
+//   (response) => response,
+//   (error) => {
+//     if (error.response?.status === 401) {
+//       localStorage.removeItem('token');
+//       localStorage.removeItem('user');
+//       window.location.href = '/login';
+//     }
+//     return Promise.reject(error);
+//   }
+// );
 
-//         {/* Subjects Grid */}
-//         {subjects.length === 0 ? (
-//           <Card>
-//             <div className="p-8 text-center">
-//               <HiBookOpen className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-//               <p className="text-gray-600">No subjects available for your class.</p>
-//             </div>
-//           </Card>
-//         ) : (
-//           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-//             {subjects.map((subject) => (
-//               <Card
-//                 key={subject.id}
-//                 className="cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
-//                 onClick={() => handleSubjectClick(subject.id)}
-//               >
-//                 <div className="p-6">
-//                   {/* Subject Icon */}
-//                   <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center mb-4">
-//                     <HiBookOpen className="w-8 h-8 text-white" />
-//                   </div>
+// export default api;
 
-//                   {/* Subject Name */}
-//                   <h3 className="text-xl font-bold text-gray-800 mb-4">{subject.name}</h3>
-
-//                   {/* Stats */}
-//                   <div className="space-y-3">
-//                     <div className="flex items-center justify-between">
-//                       <span className="text-sm text-gray-600 flex items-center">
-//                         <HiClipboardList className="w-4 h-4 mr-2" />
-//                         Total Tests
-//                       </span>
-//                       <span className="font-semibold text-gray-800">{subject.total_tests}</span>
-//                     </div>
-
-//                     <div className="flex items-center justify-between">
-//                       <span className="text-sm text-green-600 flex items-center">
-//                         <HiCheckCircle className="w-4 h-4 mr-2" />
-//                         Attempted
-//                       </span>
-//                       <span className="font-semibold text-green-600">{subject.attempted_tests}</span>
-//                     </div>
-
-//                     <div className="flex items-center justify-between">
-//                       <span className="text-sm text-orange-600 flex items-center">
-//                         <HiClock className="w-4 h-4 mr-2" />
-//                         Pending
-//                       </span>
-//                       <span className="font-semibold text-orange-600">{subject.pending_tests}</span>
-//                     </div>
-//                   </div>
-
-//                   {/* View Button */}
-//                   <Button
-//                     onClick={() => handleSubjectClick(subject.id)}
-//                     className="w-full mt-4"
-//                   >
-//                     View Tests
-//                   </Button>
-//                 </div>
-//               </Card>
-//             ))}
-//           </div>
-//         )}
-//       </div>
-//     </DashboardLayout>
-//   );
+// // ============ AUTH APIs ============
+// export const authAPI = {
+//   // Get registration data (classes & subjects)
+//   getRegistrationData: () => api.get('/users/registration-data/'),
+  
+//   // Register
+//   register: (data) => api.post('/users/register/', data),
+  
+//   // Verify registration OTP
+//   verifyRegistrationOTP: (data) => api.post('/users/verify-registration-otp/', data),
+  
+//   // Resend OTP
+//   resendOTP: (email) => api.post('/users/resend-registration-otp/', { email }),
+  
+//   // Login
+//   login: (data) => api.post('/users/login/', data),
+  
+//   // Logout
+//   logout: () => api.post('/users/logout/'),
+  
+//   // Forgot password
+//   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+  
+//   // Reset password
+//   resetPassword: (data) => api.post('/users/verify-otp-reset-password/', data),
+  
+//   // Get profile
+//   getProfile: () => api.get('/users/profile/'),
 // };
 
-// export default MyTests;
+// // ============ STUDENT APIs ============
+// export const studentAPI = {
+//   // Dashboard - NEW! This is what was missing
+//   getDashboard: () => api.get('/students/home/'),
+  
+//   // Home/Dashboard (alias for compatibility)
+//   getHome: () => api.get('/students/home/'),
+  
+//   // Subjects
+//   getSubjects: () => api.get('/students/subjects/'),
+//   getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+//   getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`), // Alias
+  
+//   // Chapters
+//   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
+  
+//   // Tests
+//   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+//   startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
+//   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+//   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+//   getMyAttempts: () => api.get('/students/my-test-attempts/'),
+//   getMyTests: () => api.get('/students/my-test-attempts/'), // Alias
+  
+//   // Attendance
+//  // Get classes assigned to teacher
+//   getClasses: () => api.get('/api/teachers/classes/'),
+  
+//   // Get subjects for a specific class
+//   getClassSubjects: (classId) => api.get(`/api/teachers/class/${classId}/subjects/`),
+  
+//   // Get students in a class
+//   getClassStudents: (classId) => api.get(`/api/teachers/class/${classId}/students/`),
+  
+//   // Mark attendance
+//   markAttendance: (data) => api.post('/api/teachers/attendance/mark/', data),
+
+
+//   getAttendance: () => api.get('/students/my-attendance/'),
+//   getMyAttendance: () => api.get('/students/my-attendance/'), // Alias
+  
+//   // Fee Payments
+//   getFeePayments: () => api.get('/students/my-fee-payments/'),
+//   getMyFees: () => api.get('/students/my-fee-payments/'), // Alias
+  
+//   // Assignments
+//   getAssignments: () => api.get('/students/my-assignments/'),
+//   getMyAssignments: () => api.get('/students/my-assignments/'), // Alias
+//   submitAssignment: (assignmentId, data) => api.post(`/students/assignments/${assignmentId}/submit/`, data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+  
+//   // Doubts
+//   getEnrolledSubjects: () => api.get('/students/subjects/'),
+//   createDoubt: (data) => api.post('/students/doubts/create/', data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+//   getDoubts: () => api.get('/students/doubts/'),
+//   getMyDoubts: () => api.get('/students/doubts/'), // Alias
+//   getDoubtDetail: (doubtId) => api.get(`/students/doubts/${doubtId}/`),
+//   replyToDoubt: (doubtId, data) => api.post(`/students/doubts/${doubtId}/reply/`, data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+  
+//   // Notifications
+//   getNotifications: () => api.get('/students/my-notifications/'),
+//   getMyNotifications: () => api.get('/students/my-notifications/'), // Alias
+//   markNotificationRead: (notificationId) => api.patch(`/students/notifications/${notificationId}/read/`),
+  
+//   // Search
+//   search: (query) => api.get(`/students/search/?q=${query}`),
+// };
+
+// // ============ TEACHER APIs ============
+// export const teacherAPI = {
+//   // Dashboard - NEW! This is what was missing for teachers
+//   getDashboard: () => api.get('/teachers/home/'),
+//   getAllTests: () => api.get('/teachers/tests/all/'),
+  
+//   // Home/Dashboard (alias for compatibility)
+//   getHome: () => api.get('/teachers/home/'),
+//   getClasses: () => api.get('/teachers/classes/'), 
+  
+//   // Classes & Subjects
+//   getAssignedClasses: () => api.get('/teachers/assigned-classes/'),
+//   getSubjects: (params) => api.get('/teachers/subjects/', { params }),
+//   // FIXED LINE BELOW — this was causing the 404
+//   getSubjectClasses: (subjectId) => api.get('/teachers/subject-classes/', { params: { subject_id: subjectId } }),
+//   getClassChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+//   getChapters: (params) => api.get('/teachers/chapters/', { params }),
+//   createChapter: (data) => api.post('/teachers/chapters/create/', data),
+//   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
+//   getClassSubjects: (classId) =>
+//     api.get(`/teachers/class/${classId}/subjects/`),
+
+//   // Tests
+//   getTests: (params) => api.get('/teachers/tests/', { params }),
+//   getChapterTests: (chapterId) => api.get(`/teachers/chapter/${chapterId}/tests/`),
+//   createTest: (data) => api.post('/teachers/tests/create/', data),
+//   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+//   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+//   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/update/`, data),
+//   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/delete/`),
+  
+//   // Questions
+//   createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+//   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+//   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/delete/`),
+  
+//   // Attendance
+//   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+//   getAttendance: (params) => api.get('/teachers/attendance/', { params }),
+//    getAttendanceHistory: (params) => api.get('/teachers/attendance/history/', { params }),
+//   // getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/attendance/history/`, { params: { classId, subjectId } }),
+//   getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
+  
+//   // Assignments
+//   createAssignment: (data) => api.post('/teachers/assignments/create/', data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+//   getAssignments: (params) => api.get('/teachers/assignments/', { params }),
+//   getAssignmentDetail: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/`),
+//   gradeAssignment: (submissionId, data) => api.patch(`/teachers/assignment-submission/${submissionId}/grade/`, data),
+  
+//   // Doubts
+//   getDoubts: (params) => api.get('/teachers/doubts/', { params }),
+//   getDoubtDetail: (doubtId) => api.get(`/teachers/doubts/${doubtId}/`),
+//   replyToDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+  
+//   // Students
+//   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+  
+//   // Search
+//   search: (query) => api.get(`/teachers/search/?q=${query}`),
+// };
+
+// // ============ ADMIN APIs ============
+// export const adminAPI = {
+//   // Dashboard
+//   getDashboard: () => api.get('/admin/dashboard/stats/'),
+//   getStats: () => api.get('/admin/dashboard/stats/'),
+
+  
+  
+//   // User Management
+//   getPendingUsers: () => api.get('/admin/users/pending/'),
+//   approveUser: (userId) => api.post('/admin/users/approve/', { user_id: userId }),
+//   rejectUser: (userId) => api.post('/admin/users/reject/', { user_id: userId }),
+//   getAllUsers: (role) => api.get(`/admin/users/all/?role=${role || ''}`),
+//   getUsers: () => api.get('/admin/users/all/'), // Alias
+//   deleteUser: (userId) => api.delete(`/admin/users/${userId}/delete/`),
+  
+//   // Classes
+//   getClasses: () => api.get('/admin/classes/'),
+//   createClass: (data) => api.post('/admin/classes/create/', data),
+//   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+//   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/update/`, data),
+//   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/delete/`),
+  
+//   // Subjects
+//   getSubjects: (classId) => api.get(`/admin/subjects/?class_id=${classId || ''}`),
+//   createSubject: (data) => api.post('/admin/subjects/create/', data),
+//   getSubjectDetail: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+//   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/update/`, data),
+//   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/delete/`),
+  
+//   // Chapters
+//   getChapters: (subjectId, classId) => 
+//     api.get(`/admin/chapters/?subject_id=${subjectId || ''}&class_id=${classId || ''}`),
+//   createChapter: (data) => api.post('/admin/chapters/create/', data),
+//   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/update/`, data),
+//   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/delete/`),
+  
+//   // Teacher Assignments
+//   getTeacherAssignments: () => api.get('/admin/teacher-assignments/'),
+//   createTeacherAssignment: (data) => api.post('/admin/teacher-assignments/create/', data),
+//   deleteTeacherAssignment: (assignmentId) => api.delete(`/admin/teacher-assignments/${assignmentId}/delete/`),
+  
+//   // Notifications
+//   createNotification: (data) => api.post('/admin/notifications/create/', data),
+//   getNotifications: () => api.get('/admin/notifications/'),
+  
+//   // Fee Payments
+//   createFeePayment: (data) => api.post('/admin/fees/create/', data, {
+//     headers: { 'Content-Type': 'multipart/form-data' }
+//   }),
+//   getFeePayments: () => api.get('/admin/fees/'),
+//   getFeePaymentDetail: (paymentId) => api.get(`/admin/fees/${paymentId}/`),
+// };
+
+// // ============ UTILITY APIs ============
+// export const utilityAPI = {
+//   uploadFile: (file) => {
+//     const formData = new FormData();
+//     formData.append('file', file);
+//     return api.post('/upload/', formData, {
+//       headers: {
+//         'Content-Type': 'multipart/form-data',
+//       },
+//     });
+//   },
+// };
+
+// export { api };
 
 
 
@@ -341,266 +605,225 @@ export default MyTests;
 
 
 
-// // import { useState, useEffect } from 'react';
-// // import { Link } from 'react-router-dom';
-// // import { 
-// //   HiArrowLeft, 
-// //   HiClipboardList, 
-// //   HiClock, 
-// //   HiCheckCircle,
-// //   HiXCircle,
-// //   HiChartBar 
-// // } from 'react-icons/hi';
-// // // Added HiTrophy from hi2 to fix the "requested module does not provide an export" error
-// // import { HiTrophy } from 'react-icons/hi2'; 
-// // import DashboardLayout from '../../components/layout/DashboardLayout';
-// // import Card from '../../components/common/Card';
-// // import Loading from '../../components/common/Loading';
-// // import Button from '../../components/common/Button';
-// // import { studentAPI } from '../../services/api';
-// // import toast from 'react-hot-toast';
 
-// // const MyTests = () => {
-// //   const [attempts, setAttempts] = useState([]);
-// //   const [loading, setLoading] = useState(true);
-// //   const [filter, setFilter] = useState('all'); // all, passed, failed
 
-// //   useEffect(() => {
-// //     fetchMyAttempts();
-// //   }, []);
 
-// //   const fetchMyAttempts = async () => {
-// //     try {
-// //       const response = await studentAPI.getMyAttempts();
-// //       setAttempts(response.data || []);
-// //     } catch (error) {
-// //       console.error('Failed to load test attempts:', error);
-// //       toast.error('Failed to load your tests');
-// //     } finally {
-// //       setLoading(false);
+
+
+
+
+
+
+
+
+// // // src/services/api.js
+// // import axios from 'axios';
+
+// // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // Create axios instance
+// // const api = axios.create({
+// //   baseURL: API_URL,
+// //   headers: {
+// //     'Content-Type': 'application/json',
+// //   },
+// //   timeout: 15000,
+// // });
+
+// // // Add token to requests
+// // api.interceptors.request.use(
+// //   (config) => {
+// //     const token = localStorage.getItem('token');
+// //     if (token) {
+// //       config.headers.Authorization = `Token ${token}`; // ← CHANGED: Token not Bearer
 // //     }
-// //   };
+// //     return config;
+// //   },
+// //   (error) => {
+// //     return Promise.reject(error);
+// //   }
+// // );
 
-// //   if (loading) return <Loading fullScreen />;
+// // // Handle response errors
+// // api.interceptors.response.use(
+// //   (response) => response,
+// //   (error) => {
+// //     if (error.response?.status === 401) {
+// //       localStorage.removeItem('token');
+// //       localStorage.removeItem('user');
+// //       window.location.href = '/login';
+// //     }
+// //     return Promise.reject(error);
+// //   }
+// // );
 
-// //   const filteredAttempts = attempts.filter(attempt => {
-// //     if (filter === 'all') return true;
-// //     const percentage = (attempt.score / attempt.test.marks) * 100;
-// //     if (filter === 'passed') return percentage >= 40;
-// //     if (filter === 'failed') return percentage < 40;
-// //     return true;
-// //   });
+// // export default api;
 
-// //   const stats = {
-// //     total: attempts.length,
-// //     passed: attempts.filter(a => (a.score / a.test.marks) * 100 >= 40).length,
-// //     failed: attempts.filter(a => (a.score / a.test.marks) * 100 < 40).length,
-// //     average: attempts.length > 0 
-// //       ? (attempts.reduce((sum, a) => sum + (a.score / a.test.marks) * 100, 0) / attempts.length).toFixed(1)
-// //       : 0
-// //   };
-
-// //   return (
-// //     <DashboardLayout>
-// //       <div className="p-6 max-w-7xl mx-auto">
-// //         {/* Header */}
-// //         <div className="flex items-center justify-between mb-8">
-// //           <div className="flex items-center space-x-4">
-// //             <Link to="/student/dashboard">
-// //               <Button variant="secondary" size="sm">
-// //                 <HiArrowLeft className="w-4 h-4 mr-2" />
-// //                 Back
-// //               </Button>
-// //             </Link>
-// //             <div>
-// //               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-// //                 My Tests
-// //               </h1>
-// //               <p className="text-gray-600 dark:text-gray-400 mt-1">
-// //                 View all your test attempts and results
-// //               </p>
-// //             </div>
-// //           </div>
-// //           {/* Trophy Icon added here as a visual milestone if user has passed tests */}
-// //           {stats.passed > 0 && (
-// //             <div className="flex items-center bg-yellow-100 dark:bg-yellow-900/30 px-4 py-2 rounded-lg border border-yellow-200 dark:border-yellow-800">
-// //               <HiTrophy className="w-6 h-6 text-yellow-600 mr-2" />
-// //               <span className="font-bold text-yellow-700 dark:text-yellow-500">{stats.passed} Passed!</span>
-// //             </div>
-// //           )}
-// //         </div>
-
-// //         {/* Stats Cards */}
-// //         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-// //           <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg p-6">
-// //             <div className="flex items-center justify-between">
-// //               <div>
-// //                 <p className="text-blue-100 mb-1">Total Tests</p>
-// //                 <p className="text-3xl font-bold">{stats.total}</p>
-// //               </div>
-// //               <HiClipboardList className="w-10 h-10 opacity-80" />
-// //             </div>
-// //           </Card>
-
-// //           <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg p-6">
-// //             <div className="flex items-center justify-between">
-// //               <div>
-// //                 <p className="text-green-100 mb-1">Passed</p>
-// //                 <p className="text-3xl font-bold">{stats.passed}</p>
-// //               </div>
-// //               <HiCheckCircle className="w-10 h-10 opacity-80" />
-// //             </div>
-// //           </Card>
-
-// //           <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg p-6">
-// //             <div className="flex items-center justify-between">
-// //               <div>
-// //                 <p className="text-red-100 mb-1">Failed</p>
-// //                 <p className="text-3xl font-bold">{stats.failed}</p>
-// //               </div>
-// //               <HiXCircle className="w-10 h-10 opacity-80" />
-// //             </div>
-// //           </Card>
-
-// //           <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg p-6">
-// //             <div className="flex items-center justify-between">
-// //               <div>
-// //                 <p className="text-purple-100 mb-1">Average Score</p>
-// //                 <p className="text-3xl font-bold">{stats.average}%</p>
-// //               </div>
-// //               <HiChartBar className="w-10 h-10 opacity-80" />
-// //             </div>
-// //           </Card>
-// //         </div>
-
-// //         {/* Filters */}
-// //         <div className="flex space-x-4 mb-6">
-// //           <Button
-// //             variant={filter === 'all' ? 'primary' : 'secondary'}
-// //             onClick={() => setFilter('all')}
-// //             size="sm"
-// //           >
-// //             All Tests ({attempts.length})
-// //           </Button>
-// //           <Button
-// //             variant={filter === 'passed' ? 'primary' : 'secondary'}
-// //             onClick={() => setFilter('passed')}
-// //             size="sm"
-// //           >
-// //             Passed ({stats.passed})
-// //           </Button>
-// //           <Button
-// //             variant={filter === 'failed' ? 'primary' : 'secondary'}
-// //             onClick={() => setFilter('failed')}
-// //             size="sm"
-// //           >
-// //             Failed ({stats.failed})
-// //           </Button>
-// //         </div>
-
-// //         {/* Test Attempts List */}
-// //         {filteredAttempts.length === 0 ? (
-// //           <Card className="bg-white dark:bg-gray-800 p-12 text-center">
-// //             <HiClipboardList className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-// //             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-// //               {filter === 'all' ? 'No Tests Taken Yet' : `No ${filter} tests`}
-// //             </h3>
-// //             <p className="text-gray-600 dark:text-gray-400 mb-6">
-// //               {filter === 'all' 
-// //                 ? "You haven't taken any tests yet. Check available tests in your subjects."
-// //                 : `You don't have any ${filter} tests.`}
-// //             </p>
-// //             <Link to="/student/dashboard">
-// //               <Button variant="primary">
-// //                 Browse Subjects
-// //               </Button>
-// //             </Link>
-// //           </Card>
-// //         ) : (
-// //           <div className="space-y-4">
-// //             {filteredAttempts.map((attempt) => {
-// //               const percentage = ((attempt.score / attempt.test.marks) * 100).toFixed(1);
-// //               const isPassed = percentage >= 40;
-
-// //               return (
-// //                 <Card 
-// //                   key={attempt.id}
-// //                   className="bg-white dark:bg-gray-800 hover:shadow-xl transition-all"
-// //                 >
-// //                   <div className="flex items-center justify-between p-6">
-// //                     <div className="flex-1">
-// //                       <div className="flex items-center space-x-3 mb-2">
-// //                         <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-// //                           {attempt.test.name || 'Test'}
-// //                         </h3>
-// //                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-// //                           isPassed 
-// //                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-// //                             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
-// //                         }`}>
-// //                           {isPassed ? 'Passed' : 'Failed'}
-// //                         </span>
-// //                       </div>
-                      
-// //                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-// //                         <div>
-// //                           <p className="text-xs text-gray-500 dark:text-gray-400">Type</p>
-// //                           <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">
-// //                             {attempt.test.type || 'MCQ'}
-// //                           </p>
-// //                         </div>
-// //                         <div>
-// //                           <p className="text-xs text-gray-500 dark:text-gray-400">Score</p>
-// //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-// //                             {attempt.score} / {attempt.test.marks}
-// //                           </p>
-// //                         </div>
-// //                         <div>
-// //                           <p className="text-xs text-gray-500 dark:text-gray-400">Percentage</p>
-// //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-// //                             {percentage}%
-// //                           </p>
-// //                         </div>
-// //                         <div>
-// //                           <p className="text-xs text-gray-500 dark:text-gray-400">Attempted On</p>
-// //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-// //                             {new Date(attempt.attempted_at).toLocaleDateString()}
-// //                           </p>
-// //                         </div>
-// //                       </div>
-
-// //                       {/* Progress Bar */}
-// //                       <div className="mt-4">
-// //                         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-// //                           <div
-// //                             className={`h-2 rounded-full transition-all ${
-// //                               isPassed ? 'bg-green-500' : 'bg-red-500'
-// //                             }`}
-// //                             style={{ width: `${percentage}%` }}
-// //                           ></div>
-// //                         </div>
-// //                       </div>
-// //                     </div>
-
-// //                     <div className="ml-6 flex flex-col space-y-2">
-// //                       <Link to={`/student/test-attempt/${attempt.id}/result`}>
-// //                         <Button variant="primary" size="sm">
-// //                           View Result & Solutions
-// //                         </Button>
-// //                       </Link>
-// //                     </div>
-// //                   </div>
-// //                 </Card>
-// //               );
-// //             })}
-// //           </div>
-// //         )}
-// //       </div>
-// //     </DashboardLayout>
-// //   );
+// // // ============ AUTH APIs ============
+// // export const authAPI = {
+// //   // Get registration data (classes & subjects)
+// //   getRegistrationData: () => api.get('/users/registration-data/'),
+  
+// //   // Register
+// //   register: (data) => api.post('/users/register/', data),
+  
+// //   // Verify registration OTP
+// //   verifyRegistrationOTP: (data) => api.post('/users/verify-registration-otp/', data),
+  
+// //   // Resend OTP
+// //   resendOTP: (email) => api.post('/users/resend-registration-otp/', { email }),
+  
+// //   // Login
+// //   login: (data) => api.post('/users/login/', data),
+  
+// //   // Logout
+// //   logout: () => api.post('/users/logout/'),
+  
+// //   // Forgot password
+// //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+  
+// //   // Reset password
+// //   resetPassword: (data) => api.post('/users/verify-otp-reset-password/', data),
+  
+// //   // Get profile
+// //   getProfile: () => api.get('/users/profile/'),
 // // };
 
-// // export default MyTests;
+// // // ============ STUDENT APIs ============
+// // export const studentAPI = {
+// //   // Home/Dashboard
+// //   getHome: () => api.get('/students/home/'),
+  
+// //   // Subjects
+// //   getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+  
+// //   // Tests
+// //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// //   startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
+// //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// //   getMyAttempts: () => api.get('/students/my-test-attempts/'),
+  
+// //   // Attendance
+// //   getAttendance: () => api.get('/students/my-attendance/'),
+  
+// //   // Fee Payments
+// //   getFeePayments: () => api.get('/students/my-fee-payments/'),
+  
+// //   // Assignments
+// //   getAssignments: () => api.get('/students/my-assignments/'),
+  
+// //   // Doubts
+// //   createDoubt: (data) => api.post('/students/doubts/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   getDoubts: () => api.get('/students/doubts/'),
+// //   replyToDoubt: (doubtId, data) => api.post(`/students/doubts/${doubtId}/reply/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+  
+// //   // Notifications
+// //   getNotifications: () => api.get('/students/my-notifications/'),
+  
+// //   // Search
+// //   search: (query) => api.get(`/students/search/?q=${query}`),
+// // };
+
+// // // ============ TEACHER APIs ============
+// // export const teacherAPI = {
+// //   // Home/Dashboard
+// //   getHome: () => api.get('/teachers/home/'),
+  
+// //   // Classes & Subjects
+// //   getSubjectClasses: (subjectId) => api.get(`/teachers/subject/${subjectId}/classes/`),
+// //   getChapters: (params) => api.get('/teachers/chapters/', { params }),
+// //   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
+  
+// //   // Tests
+// //   getTests: (params) => api.get('/teachers/tests/', { params }),
+// //   createTest: (data) => api.post('/teachers/tests/create/', data),
+// //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// //   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+  
+// //   // Questions
+// //   createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/delete/`),
+  
+// //   // Attendance
+// //   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+// //   getAttendance: (params) => api.get('/teachers/attendance/', { params }),
+// //   getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
+  
+// //   // Assignments
+// //   createAssignment: (data) => api.post('/teachers/assignments/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   getAssignments: (params) => api.get('/teachers/assignments/', { params }),
+// //   getAssignmentDetail: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/`),
+  
+// //   // Doubts
+// //   getDoubts: (params) => api.get('/teachers/doubts/', { params }),
+// //   getDoubtDetail: (doubtId) => api.get(`/teachers/doubts/${doubtId}/`),
+// //   replyToDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+  
+// //   // Students
+// //   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+  
+// //   // Search
+// //   search: (query) => api.get(`/teachers/search/?q=${query}`),
+// // };
+
+// // // ============ ADMIN APIs ============
+// // export const adminAPI = {
+// //   // Dashboard
+// //   getStats: () => api.get('/admin/dashboard/stats/'),
+  
+// //   // User Management
+// //   getPendingUsers: () => api.get('/admin/users/pending/'),
+// //   approveUser: (userId) => api.post('/admin/users/approve/', { user_id: userId }),
+// //   rejectUser: (userId) => api.post('/admin/users/reject/', { user_id: userId }),
+// //   getAllUsers: (role) => api.get(`/admin/users/all/?role=${role || ''}`),
+  
+// //   // Classes
+// //   getClasses: () => api.get('/admin/classes/'),
+// //   createClass: (data) => api.post('/admin/classes/create/', data),
+// //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/delete/`),
+  
+// //   // Subjects
+// //   getSubjects: (classId) => api.get(`/admin/subjects/?class_id=${classId || ''}`),
+// //   createSubject: (data) => api.post('/admin/subjects/create/', data),
+// //   getSubjectDetail: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+  
+// //   // Chapters
+// //   getChapters: (subjectId, classId) => 
+// //     api.get(`/admin/chapters/?subject_id=${subjectId}&class_id=${classId}`),
+// //   createChapter: (data) => api.post('/admin/chapters/create/', data),
+  
+// //   // Teacher Assignments
+// //   getTeacherAssignments: () => api.get('/admin/teacher-assignments/'),
+// //   createTeacherAssignment: (data) => api.post('/admin/teacher-assignments/create/', data),
+  
+// //   // Notifications
+// //   createNotification: (data) => api.post('/admin/notifications/create/', data),
+// //   getNotifications: () => api.get('/admin/notifications/'),
+  
+// //   // Fee Payments
+// //   createFeePayment: (data) => api.post('/admin/fees/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   getFeePayments: () => api.get('/admin/fees/'),
+// //   getFeePaymentDetail: (paymentId) => api.get(`/admin/fees/${paymentId}/`),
+// // };
+
+// // export { api };
 
 
 
@@ -632,258 +855,150 @@ export default MyTests;
 
 
 
-// // // import { useState, useEffect } from 'react';
-// // // import { Link } from 'react-router-dom';
-// // // import { 
-// // //   HiArrowLeft, 
-// // //   HiClipboardList, 
-// // //   HiClock, 
-// // //   HiCheckCircle,
-// // //   HiXCircle,
-// // //   HiChartBar 
-// // // } from 'react-icons/hi';
-// // // import DashboardLayout from '../../components/layout/DashboardLayout';
-// // // import Card from '../../components/common/Card';
-// // // import Loading from '../../components/common/Loading';
-// // // import Button from '../../components/common/Button';
-// // // import { studentAPI } from '../../services/api';
+
+
+
+
+// // // import axios from 'axios';
 // // // import toast from 'react-hot-toast';
 
+// // // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
-// // // const MyTests = () => {
-// // //   const [attempts, setAttempts] = useState([]);
-// // //   const [loading, setLoading] = useState(true);
-// // //   const [filter, setFilter] = useState('all'); // all, passed, failed
+// // // const api = axios.create({
+// // //   baseURL: API_URL,
+// // //   headers: {
+// // //     'Content-Type': 'application/json',
+// // //   },
+// // //   timeout: 15000,
+// // // });
 
-// // //   useEffect(() => {
-// // //     fetchMyAttempts();
-// // //   }, []);
-
-// // //   const fetchMyAttempts = async () => {
-// // //     try {
-// // //       const response = await studentAPI.getMyAttempts();
-// // //       setAttempts(response.data || []);
-// // //     } catch (error) {
-// // //       console.error('Failed to load test attempts:', error);
-// // //       toast.error('Failed to load your tests');
-// // //     } finally {
-// // //       setLoading(false);
+// // // // Request interceptor
+// // // api.interceptors.request.use(
+// // //   (config) => {
+// // //     const token = localStorage.getItem('access_token');
+// // //     if (token) {
+// // //       config.headers.Authorization = `Bearer ${token}`;
 // // //     }
-// // //   };
+// // //     return config;
+// // //   },
+// // //   (error) => Promise.reject(error)
+// // // );
 
-// // //   if (loading) return <Loading fullScreen />;
+// // // // Response interceptor
+// // // api.interceptors.response.use(
+// // //   (response) => response,
+// // //   async (error) => {
+// // //     const originalRequest = error.config;
 
-// // //   const filteredAttempts = attempts.filter(attempt => {
-// // //     if (filter === 'all') return true;
-// // //     const percentage = (attempt.score / attempt.test.marks) * 100;
-// // //     if (filter === 'passed') return percentage >= 40;
-// // //     if (filter === 'failed') return percentage < 40;
-// // //     return true;
-// // //   });
+// // //     if (error.response?.status === 401 && !originalRequest._retry) {
+// // //       originalRequest._retry = true;
 
-// // //   const stats = {
-// // //     total: attempts.length,
-// // //     passed: attempts.filter(a => (a.score / a.test.marks) * 100 >= 40).length,
-// // //     failed: attempts.filter(a => (a.score / a.test.marks) * 100 < 40).length,
-// // //     average: attempts.length > 0 
-// // //       ? (attempts.reduce((sum, a) => sum + (a.score / a.test.marks) * 100, 0) / attempts.length).toFixed(1)
-// // //       : 0
-// // //   };
+// // //       try {
+// // //         const refreshToken = localStorage.getItem('refresh_token');
+// // //         const response = await axios.post(`${API_URL}/users/token/refresh/`, {
+// // //           refresh: refreshToken,
+// // //         });
 
-// // //   return (
-// // //     <DashboardLayout>
-// // //       <div className="p-6 max-w-7xl mx-auto">
-// // //         {/* Header */}
-// // //         <div className="flex items-center justify-between mb-8">
-// // //           <div className="flex items-center space-x-4">
-// // //             <Link to="/student/dashboard">
-// // //               <Button variant="secondary" size="sm">
-// // //                 <HiArrowLeft className="w-4 h-4 mr-2" />
-// // //                 Back
-// // //               </Button>
-// // //             </Link>
-// // //             <div>
-// // //               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-// // //                 My Tests
-// // //               </h1>
-// // //               <p className="text-gray-600 dark:text-gray-400 mt-1">
-// // //                 View all your test attempts and results
-// // //               </p>
-// // //             </div>
-// // //           </div>
-// // //         </div>
+// // //         const { access } = response.data;
+// // //         localStorage.setItem('access_token', access);
+// // //         originalRequest.headers.Authorization = `Bearer ${access}`;
+// // //         return api(originalRequest);
+// // //       } catch (refreshError) {
+// // //         localStorage.clear();
+// // //         window.location.href = '/login';
+// // //         return Promise.reject(refreshError);
+// // //       }
+// // //     }
 
-// // //         {/* Stats Cards */}
-// // //         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-// // //           <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg p-6">
-// // //             <div className="flex items-center justify-between">
-// // //               <div>
-// // //                 <p className="text-blue-100 mb-1">Total Tests</p>
-// // //                 <p className="text-3xl font-bold">{stats.total}</p>
-// // //               </div>
-// // //               <HiClipboardList className="w-10 h-10 opacity-80" />
-// // //             </div>
-// // //           </Card>
+// // //     return Promise.reject(error);
+// // //   }
+// // // );
 
-// // //           <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg p-6">
-// // //             <div className="flex items-center justify-between">
-// // //               <div>
-// // //                 <p className="text-green-100 mb-1">Passed</p>
-// // //                 <p className="text-3xl font-bold">{stats.passed}</p>
-// // //               </div>
-// // //               <HiCheckCircle className="w-10 h-10 opacity-80" />
-// // //             </div>
-// // //           </Card>
-
-// // //           <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg p-6">
-// // //             <div className="flex items-center justify-between">
-// // //               <div>
-// // //                 <p className="text-red-100 mb-1">Failed</p>
-// // //                 <p className="text-3xl font-bold">{stats.failed}</p>
-// // //               </div>
-// // //               <HiXCircle className="w-10 h-10 opacity-80" />
-// // //             </div>
-// // //           </Card>
-
-// // //           <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg p-6">
-// // //             <div className="flex items-center justify-between">
-// // //               <div>
-// // //                 <p className="text-purple-100 mb-1">Average Score</p>
-// // //                 <p className="text-3xl font-bold">{stats.average}%</p>
-// // //               </div>
-// // //               <HiChartBar className="w-10 h-10 opacity-80" />
-// // //             </div>
-// // //           </Card>
-// // //         </div>
-
-// // //         {/* Filters */}
-// // //         <div className="flex space-x-4 mb-6">
-// // //           <Button
-// // //             variant={filter === 'all' ? 'primary' : 'secondary'}
-// // //             onClick={() => setFilter('all')}
-// // //             size="sm"
-// // //           >
-// // //             All Tests ({attempts.length})
-// // //           </Button>
-// // //           <Button
-// // //             variant={filter === 'passed' ? 'primary' : 'secondary'}
-// // //             onClick={() => setFilter('passed')}
-// // //             size="sm"
-// // //           >
-// // //             Passed ({stats.passed})
-// // //           </Button>
-// // //           <Button
-// // //             variant={filter === 'failed' ? 'primary' : 'secondary'}
-// // //             onClick={() => setFilter('failed')}
-// // //             size="sm"
-// // //           >
-// // //             Failed ({stats.failed})
-// // //           </Button>
-// // //         </div>
-
-// // //         {/* Test Attempts List */}
-// // //         {filteredAttempts.length === 0 ? (
-// // //           <Card className="bg-white dark:bg-gray-800 p-12 text-center">
-// // //             <HiClipboardList className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-// // //             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-// // //               {filter === 'all' ? 'No Tests Taken Yet' : `No ${filter} tests`}
-// // //             </h3>
-// // //             <p className="text-gray-600 dark:text-gray-400 mb-6">
-// // //               {filter === 'all' 
-// // //                 ? "You haven't taken any tests yet. Check available tests in your subjects."
-// // //                 : `You don't have any ${filter} tests.`}
-// // //             </p>
-// // //             <Link to="/student/dashboard">
-// // //               <Button variant="primary">
-// // //                 Browse Subjects
-// // //               </Button>
-// // //             </Link>
-// // //           </Card>
-// // //         ) : (
-// // //           <div className="space-y-4">
-// // //             {filteredAttempts.map((attempt) => {
-// // //               const percentage = ((attempt.score / attempt.test.marks) * 100).toFixed(1);
-// // //               const isPassed = percentage >= 40;
-
-// // //               return (
-// // //                 <Card 
-// // //                   key={attempt.id}
-// // //                   className="bg-white dark:bg-gray-800 hover:shadow-xl transition-all"
-// // //                 >
-// // //                   <div className="flex items-center justify-between p-6">
-// // //                     <div className="flex-1">
-// // //                       <div className="flex items-center space-x-3 mb-2">
-// // //                         <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-// // //                           {attempt.test.name || 'Test'}
-// // //                         </h3>
-// // //                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-// // //                           isPassed 
-// // //                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-// // //                             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
-// // //                         }`}>
-// // //                           {isPassed ? 'Passed' : 'Failed'}
-// // //                         </span>
-// // //                       </div>
-                      
-// // //                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-// // //                         <div>
-// // //                           <p className="text-xs text-gray-500 dark:text-gray-400">Type</p>
-// // //                           <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">
-// // //                             {attempt.test.type || 'MCQ'}
-// // //                           </p>
-// // //                         </div>
-// // //                         <div>
-// // //                           <p className="text-xs text-gray-500 dark:text-gray-400">Score</p>
-// // //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-// // //                             {attempt.score} / {attempt.test.marks}
-// // //                           </p>
-// // //                         </div>
-// // //                         <div>
-// // //                           <p className="text-xs text-gray-500 dark:text-gray-400">Percentage</p>
-// // //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-// // //                             {percentage}%
-// // //                           </p>
-// // //                         </div>
-// // //                         <div>
-// // //                           <p className="text-xs text-gray-500 dark:text-gray-400">Attempted On</p>
-// // //                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-// // //                             {new Date(attempt.attempted_at).toLocaleDateString()}
-// // //                           </p>
-// // //                         </div>
-// // //                       </div>
-
-// // //                       {/* Progress Bar */}
-// // //                       <div className="mt-4">
-// // //                         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-// // //                           <div
-// // //                             className={`h-2 rounded-full transition-all ${
-// // //                               isPassed ? 'bg-green-500' : 'bg-red-500'
-// // //                             }`}
-// // //                             style={{ width: `${percentage}%` }}
-// // //                           ></div>
-// // //                         </div>
-// // //                       </div>
-// // //                     </div>
-
-// // //                     <div className="ml-6 flex flex-col space-y-2">
-// // //                       <Link to={`/student/test-attempt/${attempt.id}/result`}>
-// // //                         <Button variant="primary" size="sm">
-// // //                           View Result & Solutions
-// // //                         </Button>
-// // //                       </Link>
-// // //                     </div>
-// // //                   </div>
-// // //                 </Card>
-// // //               );
-// // //             })}
-// // //           </div>
-// // //         )}
-// // //       </div>
-// // //     </DashboardLayout>
-// // //   );
+// // // // AUTH ENDPOINTS
+// // // export const authAPI = {
+// // //   register: (data) => api.post('/users/register/', data),
+// // //   login: (data) => api.post('/users/login/', data),
+// // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+// // //   verifyOTP: (email, otp) => api.post('/users/verify-otp/', { email, otp }),
+// // //   resetPassword: (data) => api.post('/users/reset-password/', data),
+// // //   getProfile: () => api.get('/users/profile/'),
+// // //   updateProfile: (data) => api.patch('/users/profile/', data),
+// // //   logout: () => {
+// // //     localStorage.clear();
+// // //     return Promise.resolve();
+// // //   },
 // // // };
 
-// // // export default MyTests;
+// // // // STUDENT ENDPOINTS
+// // // export const studentAPI = {
+// // //   getDashboard: () => api.get('/students/dashboard/'),
+// // //   getSubjects: () => api.get('/students/subjects/'),
+// // //   getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+// // //   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
+// // //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// // //   getTestDetails: (testId) => api.get(`/students/tests/${testId}/`),
+// // //   startTest: (testId) => api.post(`/students/tests/${testId}/start/`),
+// // //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// // //   getMyTests: () => api.get('/students/my-tests/'),
+// // //   getAttendance: () => api.get('/students/attendance/'),
+// // //   getFees: () => api.get('/students/fees/'),
+// // //   getAssignments: () => api.get('/students/assignments/'),
+// // //   submitAssignment: (assignmentId, data) => api.post(`/students/assignments/${assignmentId}/submit/`, data),
+// // //   getDoubts: () => api.get('/students/doubts/'),
+// // //   postDoubt: (data) => api.post('/students/doubts/', data),
+// // //   getNotifications: () => api.get('/students/notifications/'),
+// // //   markNotificationRead: (notificationId) => api.patch(`/students/notifications/${notificationId}/read/`),
+// // // };
+
+// // // // TEACHER ENDPOINTS
+// // // export const teacherAPI = {
+// // //   getDashboard: () => api.get('/teachers/dashboard/'),
+// // //   getSubjects: () => api.get('/teachers/subjects/'),
+// // //   getSubjectClasses: (subjectId) => api.get(`/teachers/subjects/${subjectId}/classes/`),
+// // //   getChapters: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/chapters/`),
+// // //   getChapterTests: (chapterId) => api.get(`/teachers/chapters/${chapterId}/tests/`),
+// // //   createTest: (chapterId, data) => api.post(`/teachers/chapters/${chapterId}/tests/`, data),
+// // //   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/`, data),
+// // //   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/`),
+// // //   getTestSubmissions: (testId) => api.get(`/teachers/tests/${testId}/submissions/`),
+// // //   gradeTest: (attemptId, data) => api.post(`/teachers/test-attempts/${attemptId}/grade/`, data),
+// // //   markAttendance: (classId, subjectId, data) => api.post(`/teachers/classes/${classId}/subjects/${subjectId}/attendance/`, data),
+// // //   getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/attendance/`),
+// // //   getAssignments: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/assignments/`),
+// // //   createAssignment: (classId, subjectId, data) => api.post(`/teachers/classes/${classId}/subjects/${subjectId}/assignments/`, data),
+// // //   getAssignmentSubmissions: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/submissions/`),
+// // //   gradeAssignment: (submissionId, data) => api.post(`/teachers/submissions/${submissionId}/grade/`, data),
+// // //   getDoubts: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/doubts/`),
+// // //   answerDoubt: (doubtId, answer) => api.post(`/teachers/doubts/${doubtId}/answer/`, { answer }),
+// // // };
+
+// // // // ADMIN ENDPOINTS
+// // // export const adminAPI = {
+// // //   getDashboard: () => api.get('/admin/dashboard/'),
+// // //   getUsers: () => api.get('/admin/users/'),
+// // //   createUser: (data) => api.post('/admin/users/', data),
+// // //   updateUser: (userId, data) => api.put(`/admin/users/${userId}/`, data),
+// // //   deleteUser: (userId) => api.delete(`/admin/users/${userId}/`),
+// // //   getClasses: () => api.get('/admin/classes/'),
+// // //   createClass: (data) => api.post('/admin/classes/', data),
+// // //   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/`, data),
+// // //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/`),
+// // //   getSubjects: () => api.get('/admin/subjects/'),
+// // //   createSubject: (data) => api.post('/admin/subjects/', data),
+// // //   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/`, data),
+// // //   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/`),
+// // //   getChapters: (subjectId) => api.get(`/admin/subjects/${subjectId}/chapters/`),
+// // //   createChapter: (subjectId, data) => api.post(`/admin/subjects/${subjectId}/chapters/`, data),
+// // //   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/`, data),
+// // //   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/`),
+// // //   enrollStudent: (data) => api.post('/admin/enrollments/', data),
+// // //   removeEnrollment: (enrollmentId) => api.delete(`/admin/enrollments/${enrollmentId}/`),
+// // //   assignTeacher: (data) => api.post('/admin/teacher-assignments/', data),
+// // //   removeTeacherAssignment: (assignmentId) => api.delete(`/admin/teacher-assignments/${assignmentId}/`),
+// // // };
+
+// // // export default api;
 
 
 
@@ -902,13 +1017,3317 @@ export default MyTests;
 
 
 
-// // // // import DashboardLayout from '../../components/layout/DashboardLayout';
-// // // // export default function MyTests() {
-// // // //   return (
-// // // //     <DashboardLayout>
-// // // //       <div className="p-6">
-// // // //         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Tests - Coming Soon</h1>
-// // // //       </div>
-// // // //     </DashboardLayout>
-// // // //   );
-// // // // }
+
+
+
+
+
+
+
+// // // // import axios from 'axios';
+
+// // // // // Create axios instance
+// // // // const api = axios.create({
+// // // //   baseURL: 'http://localhost:8000', // Your Django backend URL
+// // // //   headers: {
+// // // //     'Content-Type': 'application/json',
+// // // //   },
+// // // //   timeout: 10000,
+// // // // });
+
+// // // // // Request interceptor
+// // // // api.interceptors.request.use(
+// // // //   (config) => {
+// // // //     const token = localStorage.getItem('token');
+// // // //     if (token) {
+// // // //       config.headers.Authorization = `Token ${token}`;
+// // // //     }
+// // // //     return config;
+// // // //   },
+// // // //   (error) => {
+// // // //     return Promise.reject(error);
+// // // //   }
+// // // // );
+
+// // // // // Response interceptor
+// // // // api.interceptors.response.use(
+// // // //   (response) => response,
+// // // //   (error) => {
+// // // //     if (error.response?.status === 401) {
+// // // //       // Unauthorized - clear auth and redirect to login
+// // // //       localStorage.removeItem('token');
+// // // //       localStorage.removeItem('user');
+// // // //       window.location.href = '/login';
+// // // //     }
+// // // //     return Promise.reject(error);
+// // // //   }
+// // // // );
+
+// // // // export default api;
+
+// // // // // ═══════════════════════════════════════════════════
+// // // // //  API HELPER FUNCTIONS
+// // // // // ═══════════════════════════════════════════════════
+
+// // // // // Auth APIs
+// // // // export const authAPI = {
+// // // //   login: (email, password) => api.post('/api/users/login/', { email, password }),
+// // // //   register: (data) => api.post('/api/users/register/', data),
+// // // //   verifyOTP: (email, otp) => api.post('/api/users/verify-registration-otp/', { email, otp }),
+// // // //   resendOTP: (email) => api.post('/api/users/resend-otp/', { email }),
+// // // //   forgotPassword: (email) => api.post('/api/users/forgot-password/', { email }),
+// // // //   resetPassword: (email, otp, newPassword) => 
+// // // //     api.post('/api/users/verify-otp-reset-password/', { email, otp, new_password: newPassword }),
+// // // //   logout: () => api.post('/api/users/logout/'),
+// // // //   getProfile: () => api.get('/api/users/profile/'),
+// // // // };
+
+// // // // // Student APIs
+// // // // export const studentAPI = {
+// // // //   getDashboard: () => api.get('/api/students/home/'),
+// // // //   getSubjectDetails: (subjectId) => api.get(`/api/students/subjects/${subjectId}/`),
+// // // //   getChapterTests: (chapterId) => api.get(`/api/students/chapters/${chapterId}/tests/`),
+// // // //   startTest: (testId) => api.post(`/api/students/tests/${testId}/start/`),
+// // // //   submitTest: (attemptId, answers) => 
+// // // //     api.post(`/api/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // // //   getTestResult: (attemptId) => api.get(`/api/students/test-attempts/${attemptId}/result/`),
+// // // //   getMyTests: () => api.get('/api/students/my-test-attempts/'),
+// // // //   getAttendance: () => api.get('/api/students/my-attendance/'),
+// // // //   getFees: () => api.get('/api/students/my-fee-payments/'),
+// // // //   getAssignments: () => api.get('/api/students/my-assignments/'),
+// // // //   createDoubt: (data) => api.post('/api/students/doubts/create/', data),
+// // // //   getNotifications: () => api.get('/api/students/my-notifications/'),
+// // // // };
+
+// // // // // Teacher APIs
+// // // // export const teacherAPI = {
+// // // //   getDashboard: () => api.get('/api/teachers/home/'),
+// // // //   getSubjectClasses: (subjectId) => api.get(`/api/teachers/subject/${subjectId}/classes/`),
+// // // //   getChapters: (classId, subjectId) => 
+// // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+// // // //   markChapterComplete: (chapterId) => 
+// // // //     api.post(`/api/teachers/chapters/${chapterId}/mark-complete/`),
+// // // //   getTests: (chapterId) => api.get(`/api/teachers/chapter/${chapterId}/tests/`),
+// // // //   createTest: (chapterId, data) => 
+// // // //     api.post(`/api/teachers/chapter/${chapterId}/tests/create/`, data),
+// // // //   getTestDetails: (testId) => api.get(`/api/teachers/tests/${testId}/`),
+// // // //   createQuestion: (testId, data) => 
+// // // //     api.post(`/api/teachers/tests/${testId}/questions/create/`, data),
+// // // //   updateQuestion: (questionId, data) => 
+// // // //     api.put(`/api/teachers/questions/${questionId}/update/`, data),
+// // // //   deleteQuestion: (questionId) => api.delete(`/api/teachers/questions/${questionId}/delete/`),
+// // // //   markAttendance: (classId, subjectId, data) => 
+// // // //     api.post(`/api/teachers/class/${classId}/subject/${subjectId}/attendance/mark/`, data),
+// // // //   getAttendanceList: (classId, subjectId) => 
+// // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/attendance/`),
+// // // //   createAssignment: (classId, subjectId, data) => 
+// // // //     api.post(`/api/teachers/class/${classId}/subject/${subjectId}/assignments/create/`, data),
+// // // //   getAssignments: (classId, subjectId) => 
+// // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/assignments/`),
+// // // //   getDoubts: (classId, subjectId) => 
+// // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/doubts/`),
+// // // //   replyDoubt: (doubtId, data) => 
+// // // //     api.post(`/api/teachers/doubts/${doubtId}/reply/`, data),
+// // // //   getClassStudents: (classId) => api.get(`/api/teachers/class/${classId}/students/`),
+// // // // };
+
+// // // // // Admin APIs
+// // // // export const adminAPI = {
+// // // //   getAllUsers: () => api.get('/api/admin/users/'),
+// // // //   approveUser: (userId) => api.post(`/api/admin/users/${userId}/approve/`),
+// // // //   createClass: (data) => api.post('/api/admin/classes/create/', data),
+// // // //   getAllClasses: () => api.get('/api/admin/classes/'),
+// // // //   createSubject: (data) => api.post('/api/admin/subjects/create/', data),
+// // // //   getAllSubjects: () => api.get('/api/admin/subjects/'),
+// // // //   createChapter: (data) => api.post('/api/admin/chapters/create/', data),
+// // // //   getAllChapters: () => api.get('/api/admin/chapters/'),
+// // // // };
+
+// // // // // Utility APIs
+// // // // export const utilityAPI = {
+// // // //   getClasses: () => api.get('/api/users/classes/'),
+// // // //   getSubjects: () => api.get('/api/users/subjects/'),
+// // // // };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // // import axios from 'axios';
+
+// // // // // const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // // const api = axios.create({
+// // // // //   baseURL: API_BASE_URL,
+// // // // //   headers: {
+// // // // //     'Content-Type': 'application/json',
+// // // // //   },
+// // // // // });
+
+// // // // // // Request interceptor
+// // // // // api.interceptors.request.use(
+// // // // //   (config) => {
+// // // // //     const token = localStorage.getItem('access_token');
+// // // // //     if (token) {
+// // // // //       config.headers.Authorization = `Bearer ${token}`;
+// // // // //     }
+// // // // //     return config;
+// // // // //   },
+// // // // //   (error) => Promise.reject(error)
+// // // // // );
+
+// // // // // // Response interceptor
+// // // // // api.interceptors.response.use(
+// // // // //   (response) => response,
+// // // // //   async (error) => {
+// // // // //     const originalRequest = error.config;
+
+// // // // //     if (error.response?.status === 401 && !originalRequest._retry) {
+// // // // //       originalRequest._retry = true;
+
+// // // // //       try {
+// // // // //         const refreshToken = localStorage.getItem('refresh_token');
+// // // // //         const response = await axios.post(`${API_BASE_URL}/users/token/refresh/`, {
+// // // // //           refresh: refreshToken,
+// // // // //         });
+
+// // // // //         const { access } = response.data;
+// // // // //         localStorage.setItem('access_token', access);
+// // // // //         originalRequest.headers.Authorization = `Bearer ${access}`;
+// // // // //         return api(originalRequest);
+// // // // //       } catch (refreshError) {
+// // // // //         localStorage.clear();
+// // // // //         window.location.href = '/login';
+// // // // //         return Promise.reject(refreshError);
+// // // // //       }
+// // // // //     }
+
+// // // // //     return Promise.reject(error);
+// // // // //   }
+// // // // // );
+
+// // // // // // Authentication API
+// // // // // export const authAPI = {
+// // // // //   register: (userData) => api.post('/users/register/', userData),
+// // // // //   verifyOTP: (email, otp) => api.post('/users/verify-registration-otp/', { email, otp }),
+// // // // //   resendOTP: (email) => api.post('/users/resend-otp/', { email }),
+// // // // //   login: (identifier, password) => api.post('/users/login/', { identifier, password }),
+// // // // //   logout: (refreshToken) => api.post('/users/logout/', { refresh_token: refreshToken }),
+// // // // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+// // // // //   resetPassword: (email, otp, newPassword) => 
+// // // // //     api.post('/users/reset-password/', { email, otp, new_password: newPassword }),
+// // // // //   getProfile: () => api.get('/users/me/'),
+// // // // //   updateProfile: (userData) => api.put('/users/profile/', userData),
+// // // // //   changePassword: (oldPassword, newPassword, newPasswordConfirm) => 
+// // // // //     api.post('/users/change-password/', {
+// // // // //       old_password: oldPassword,
+// // // // //       new_password: newPassword,
+// // // // //       new_password_confirm: newPasswordConfirm,
+// // // // //     }),
+// // // // // };
+
+// // // // // // Student API
+// // // // // export const studentAPI = {
+// // // // //   getDashboard: () => api.get('/students/dashboard/'),
+// // // // //   getAvailableTests: (params) => api.get('/students/available-tests/', { params }),
+// // // // //   startTest: (testId) => api.get(`/students/start-test/${testId}/`),
+// // // // //   submitTest: (testId, answers) => api.post(`/students/submit-test/${testId}/`, { answers }),
+// // // // //   getTestAttempts: () => api.get('/students/test-attempts/'),
+// // // // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/`),
+// // // // //   getStatistics: () => api.get('/students/test-attempts/statistics/'),
+// // // // //   getAttendance: (params) => api.get('/students/attendance/', { params }),
+// // // // //   getAssignments: (params) => api.get('/students/assignments/', { params }),
+// // // // //   getDoubts: () => api.get('/students/doubts/'),
+// // // // //   postDoubt: (doubtData) => api.post('/students/doubts/', doubtData),
+// // // // //   getDoubtDetail: (doubtId) => api.get(`/students/doubts/${doubtId}/`),
+// // // // // };
+
+// // // // // // Teacher API
+// // // // // export const teacherAPI = {
+// // // // //   getDashboard: () => api.get('/teachers/dashboard/'),
+// // // // //   getAssignments: () => api.get('/teachers/assignments/my-assignments/'),
+// // // // //   getTests: (params) => api.get('/teachers/tests/my-tests/', { params }),
+// // // // //   createTest: (testData) => api.post('/teachers/tests/', testData),
+// // // // //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// // // // //   addQuestion: (testId, questionData) => api.post(`/teachers/tests/${testId}/add-question/`, questionData),
+// // // // //   getTestStatistics: (testId) => api.get(`/teachers/tests/${testId}/statistics/`),
+// // // // //   markAttendance: (attendanceData) => api.post('/teachers/attendance/mark-bulk/', attendanceData),
+// // // // //   getAttendanceByDate: (params) => api.get('/teachers/attendance/by-date/', { params }),
+// // // // //   getStudentReport: (studentId, params) => api.get(`/teachers/attendance/student-report/${studentId}/`, { params }),
+// // // // //   getClassReport: (classId, params) => api.get(`/teachers/attendance/class-report/${classId}/`, { params }),
+// // // // //   createAssignment: (assignmentData) => api.post('/teachers/assignments/', assignmentData),
+// // // // //   getDoubts: (params) => api.get('/teachers/doubts/my-subject-doubts/', { params }),
+// // // // //   replyToDoubt: (doubtId, replyData) => api.post(`/teachers/doubts/${doubtId}/reply/`, replyData),
+// // // // // };
+
+// // // // // // Admin API
+// // // // // export const adminAPI = {
+// // // // //   getDashboard: () => api.get('/admin/dashboard/'),
+// // // // //   getPendingUsers: () => api.get('/users/pending/'),
+// // // // //   approveUser: (userId) => api.post(`/users/${userId}/approve/`),
+// // // // //   rejectUser: (userId) => api.post(`/users/${userId}/reject/`),
+// // // // //   getClasses: () => api.get('/admin/classes/'),
+// // // // //   createClass: (classData) => api.post('/admin/classes/', classData),
+// // // // //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// // // // //   getSubjects: () => api.get('/admin/subjects/'),
+// // // // //   createSubject: (subjectData) => api.post('/admin/subjects/', subjectData),
+// // // // //   getChapters: (params) => api.get('/admin/chapters/', { params }),
+// // // // //   createChapter: (chapterData) => api.post('/admin/chapters/', chapterData),
+// // // // //   markChapterComplete: (chapterId, isCompleted) => 
+// // // // //     api.post(`/admin/chapters/${chapterId}/mark-completed/`, { is_completed: isCompleted }),
+// // // // //   getFeePayments: (params) => api.get('/admin/fee-payments/', { params }),
+// // // // //   createFeePayment: (paymentData) => api.post('/admin/fee-payments/', paymentData),
+// // // // //   getNotifications: () => api.get('/admin/notifications/'),
+// // // // //   createNotification: (notificationData) => api.post('/admin/notifications/', notificationData),
+// // // // //   broadcastNotification: (message, role) => 
+// // // // //     api.post('/admin/notifications/broadcast/', { message, role }),
+// // // // // };
+
+// // // // // export default api;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // src/services/api.js
+// // import axios from 'axios';
+
+// // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // Create axios instance
+// // const api = axios.create({
+// //   baseURL: API_URL,
+// //   headers: {
+// //     'Content-Type': 'application/json',
+// //   },
+// //   timeout: 15000,
+// // });
+
+// // // Add token to requests
+// // api.interceptors.request.use(
+// //   (config) => {
+// //     const token = localStorage.getItem('token');
+// //     if (token) {
+// //       config.headers.Authorization = `Token ${token}`; // Token not Bearer
+// //     }
+// //     return config;
+// //   },
+// //   (error) => {
+// //     return Promise.reject(error);
+// //   }
+// // );
+
+// // // Handle response errors
+// // api.interceptors.response.use(
+// //   (response) => response,
+// //   (error) => {
+// //     if (error.response?.status === 401) {
+// //       localStorage.removeItem('token');
+// //       localStorage.removeItem('user');
+// //       window.location.href = '/login';
+// //     }
+// //     return Promise.reject(error);
+// //   }
+// // );
+
+// // export default api;
+
+// // // ============ AUTH APIs ============
+// // export const authAPI = {
+// //   // Get registration data (classes & subjects)
+// //   getRegistrationData: () => api.get('/users/registration-data/'),
+  
+// //   // Register
+// //   register: (data) => api.post('/users/register/', data),
+  
+// //   // Verify registration OTP
+// //   verifyRegistrationOTP: (data) => api.post('/users/verify-registration-otp/', data),
+  
+// //   // Resend OTP
+// //   resendOTP: (email) => api.post('/users/resend-registration-otp/', { email }),
+  
+// //   // Login
+// //   login: (data) => api.post('/users/login/', data),
+  
+// //   // Logout
+// //   logout: () => api.post('/users/logout/'),
+  
+// //   // Forgot password
+// //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+  
+// //   // Reset password
+// //   resetPassword: (data) => api.post('/users/verify-otp-reset-password/', data),
+  
+// //   // Get profile
+// //   getProfile: () => api.get('/users/profile/'),
+// // };
+
+// // // ============ STUDENT APIs ============
+// // export const studentAPI = {
+// //   // Dashboard - NEW! This is what was missing
+// //   getDashboard: () => api.get('/students/home/'),
+  
+// //   // Home/Dashboard (alias for compatibility)
+// //   getHome: () => api.get('/students/home/'),
+  
+// //   // Subjects
+// //   getSubjects: () => api.get('/students/subjects/'),
+// //   getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+// //   getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`), // Alias
+  
+// //   // Chapters
+// //   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
+  
+// //   // Tests
+// //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// //   startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
+// //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// //   getMyAttempts: () => api.get('/students/my-test-attempts/'),
+// //   getMyTests: () => api.get('/students/my-test-attempts/'), // Alias
+  
+// //   // Attendance
+// //   getAttendance: () => api.get('/students/my-attendance/'),
+// //   getMyAttendance: () => api.get('/students/my-attendance/'), // Alias
+  
+// //   // Fee Payments
+// //   getFeePayments: () => api.get('/students/my-fee-payments/'),
+// //   getMyFees: () => api.get('/students/my-fee-payments/'), // Alias
+  
+// //   // Assignments
+// //   getAssignments: () => api.get('/students/my-assignments/'),
+// //   getMyAssignments: () => api.get('/students/my-assignments/'), // Alias
+// //   submitAssignment: (assignmentId, data) => api.post(`/students/assignments/${assignmentId}/submit/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+  
+// //   // Doubts
+// //   createDoubt: (data) => api.post('/students/doubts/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   getDoubts: () => api.get('/students/doubts/'),
+// //   getMyDoubts: () => api.get('/students/doubts/'), // Alias
+// //   getDoubtDetail: (doubtId) => api.get(`/students/doubts/${doubtId}/`),
+// //   replyToDoubt: (doubtId, data) => api.post(`/students/doubts/${doubtId}/reply/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+  
+// //   // Notifications
+// //   getNotifications: () => api.get('/students/my-notifications/'),
+// //   getMyNotifications: () => api.get('/students/my-notifications/'), // Alias
+// //   markNotificationRead: (notificationId) => api.patch(`/students/notifications/${notificationId}/read/`),
+  
+// //   // Search
+// //   search: (query) => api.get(`/students/search/?q=${query}`),
+// // };
+
+// // // ============ TEACHER APIs ============
+// // export const teacherAPI = {
+// //   // Dashboard - NEW! This is what was missing for teachers
+// //   getDashboard: () => api.get('/teachers/home/'),
+  
+// //   // Home/Dashboard (alias for compatibility)
+// //   getHome: () => api.get('/teachers/home/'),
+  
+// //   // Classes & Subjects
+// //   getSubjects: () => api.get('/teachers/subjects/'),
+// //   getSubjectClasses: (subjectId) => api.get(`/teachers/subject/${subjectId}/classes/`),
+// //   getClassChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+// //   getChapters: (params) => api.get('/teachers/chapters/', { params }),
+// //   createChapter: (data) => api.post('/teachers/chapters/create/', data),
+// //   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
+  
+// //   // Tests
+// //   getTests: (params) => api.get('/teachers/tests/', { params }),
+// //   getChapterTests: (chapterId) => api.get(`/teachers/chapter/${chapterId}/tests/`),
+// //   createTest: (data) => api.post('/teachers/tests/create/', data),
+// //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// //   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+// //   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/update/`, data),
+// //   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/delete/`),
+  
+// //   // Questions
+// //   createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/delete/`),
+  
+// //   // Attendance
+// //   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+// //   getAttendance: (params) => api.get('/teachers/attendance/', { params }),
+// //   getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/attendance/history/`, { params: { classId, subjectId } }),
+// //   getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
+  
+// //   // Assignments
+// //   createAssignment: (data) => api.post('/teachers/assignments/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   getAssignments: (params) => api.get('/teachers/assignments/', { params }),
+// //   getAssignmentDetail: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/`),
+// //   gradeAssignment: (submissionId, data) => api.patch(`/teachers/assignment-submission/${submissionId}/grade/`, data),
+  
+// //   // Doubts
+// //   getDoubts: (params) => api.get('/teachers/doubts/', { params }),
+// //   getDoubtDetail: (doubtId) => api.get(`/teachers/doubts/${doubtId}/`),
+// //   replyToDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+  
+// //   // Students
+// //   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+  
+// //   // Search
+// //   search: (query) => api.get(`/teachers/search/?q=${query}`),
+// // };
+
+// // // ============ ADMIN APIs ============
+// // export const adminAPI = {
+// //   // Dashboard
+// //   getDashboard: () => api.get('/admin/dashboard/stats/'),
+// //   getStats: () => api.get('/admin/dashboard/stats/'),
+  
+// //   // User Management
+// //   getPendingUsers: () => api.get('/admin/users/pending/'),
+// //   approveUser: (userId) => api.post('/admin/users/approve/', { user_id: userId }),
+// //   rejectUser: (userId) => api.post('/admin/users/reject/', { user_id: userId }),
+// //   getAllUsers: (role) => api.get(`/admin/users/all/?role=${role || ''}`),
+// //   getUsers: () => api.get('/admin/users/all/'), // Alias
+// //   deleteUser: (userId) => api.delete(`/admin/users/${userId}/delete/`),
+  
+// //   // Classes
+// //   getClasses: () => api.get('/admin/classes/'),
+// //   createClass: (data) => api.post('/admin/classes/create/', data),
+// //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// //   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/update/`, data),
+// //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/delete/`),
+  
+// //   // Subjects
+// //   getSubjects: (classId) => api.get(`/admin/subjects/?class_id=${classId || ''}`),
+// //   createSubject: (data) => api.post('/admin/subjects/create/', data),
+// //   getSubjectDetail: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+// //   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/update/`, data),
+// //   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/delete/`),
+  
+// //   // Chapters
+// //   getChapters: (subjectId, classId) => 
+// //     api.get(`/admin/chapters/?subject_id=${subjectId || ''}&class_id=${classId || ''}`),
+// //   createChapter: (data) => api.post('/admin/chapters/create/', data),
+// //   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/update/`, data),
+// //   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/delete/`),
+  
+// //   // Teacher Assignments
+// //   getTeacherAssignments: () => api.get('/admin/teacher-assignments/'),
+// //   createTeacherAssignment: (data) => api.post('/admin/teacher-assignments/create/', data),
+// //   deleteTeacherAssignment: (assignmentId) => api.delete(`/admin/teacher-assignments/${assignmentId}/delete/`),
+  
+// //   // Notifications
+// //   createNotification: (data) => api.post('/admin/notifications/create/', data),
+// //   getNotifications: () => api.get('/admin/notifications/'),
+  
+// //   // Fee Payments
+// //   createFeePayment: (data) => api.post('/admin/fees/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   getFeePayments: () => api.get('/admin/fees/'),
+// //   getFeePaymentDetail: (paymentId) => api.get(`/admin/fees/${paymentId}/`),
+// // };
+
+// // // ============ UTILITY APIs ============
+// // export const utilityAPI = {
+// //   uploadFile: (file) => {
+// //     const formData = new FormData();
+// //     formData.append('file', file);
+// //     return api.post('/upload/', formData, {
+// //       headers: {
+// //         'Content-Type': 'multipart/form-data',
+// //       },
+// //     });
+// //   },
+// // };
+
+// // export { api };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // src/services/api.js
+// // // import axios from 'axios';
+
+// // // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // Create axios instance
+// // // const api = axios.create({
+// // //   baseURL: API_URL,
+// // //   headers: {
+// // //     'Content-Type': 'application/json',
+// // //   },
+// // //   timeout: 15000,
+// // // });
+
+// // // // Add token to requests
+// // // api.interceptors.request.use(
+// // //   (config) => {
+// // //     const token = localStorage.getItem('token');
+// // //     if (token) {
+// // //       config.headers.Authorization = `Token ${token}`; // ← CHANGED: Token not Bearer
+// // //     }
+// // //     return config;
+// // //   },
+// // //   (error) => {
+// // //     return Promise.reject(error);
+// // //   }
+// // // );
+
+// // // // Handle response errors
+// // // api.interceptors.response.use(
+// // //   (response) => response,
+// // //   (error) => {
+// // //     if (error.response?.status === 401) {
+// // //       localStorage.removeItem('token');
+// // //       localStorage.removeItem('user');
+// // //       window.location.href = '/login';
+// // //     }
+// // //     return Promise.reject(error);
+// // //   }
+// // // );
+
+// // // export default api;
+
+// // // // ============ AUTH APIs ============
+// // // export const authAPI = {
+// // //   // Get registration data (classes & subjects)
+// // //   getRegistrationData: () => api.get('/users/registration-data/'),
+  
+// // //   // Register
+// // //   register: (data) => api.post('/users/register/', data),
+  
+// // //   // Verify registration OTP
+// // //   verifyRegistrationOTP: (data) => api.post('/users/verify-registration-otp/', data),
+  
+// // //   // Resend OTP
+// // //   resendOTP: (email) => api.post('/users/resend-registration-otp/', { email }),
+  
+// // //   // Login
+// // //   login: (data) => api.post('/users/login/', data),
+  
+// // //   // Logout
+// // //   logout: () => api.post('/users/logout/'),
+  
+// // //   // Forgot password
+// // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+  
+// // //   // Reset password
+// // //   resetPassword: (data) => api.post('/users/verify-otp-reset-password/', data),
+  
+// // //   // Get profile
+// // //   getProfile: () => api.get('/users/profile/'),
+// // // };
+
+// // // // ============ STUDENT APIs ============
+// // // export const studentAPI = {
+// // //   // Home/Dashboard
+// // //   getHome: () => api.get('/students/home/'),
+  
+// // //   // Subjects
+// // //   getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+  
+// // //   // Tests
+// // //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// // //   startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
+// // //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// // //   getMyAttempts: () => api.get('/students/my-test-attempts/'),
+  
+// // //   // Attendance
+// // //   getAttendance: () => api.get('/students/my-attendance/'),
+  
+// // //   // Fee Payments
+// // //   getFeePayments: () => api.get('/students/my-fee-payments/'),
+  
+// // //   // Assignments
+// // //   getAssignments: () => api.get('/students/my-assignments/'),
+  
+// // //   // Doubts
+// // //   createDoubt: (data) => api.post('/students/doubts/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   getDoubts: () => api.get('/students/doubts/'),
+// // //   replyToDoubt: (doubtId, data) => api.post(`/students/doubts/${doubtId}/reply/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+  
+// // //   // Notifications
+// // //   getNotifications: () => api.get('/students/my-notifications/'),
+  
+// // //   // Search
+// // //   search: (query) => api.get(`/students/search/?q=${query}`),
+// // // };
+
+// // // // ============ TEACHER APIs ============
+// // // export const teacherAPI = {
+// // //   // Home/Dashboard
+// // //   getHome: () => api.get('/teachers/home/'),
+  
+// // //   // Classes & Subjects
+// // //   getSubjectClasses: (subjectId) => api.get(`/teachers/subject/${subjectId}/classes/`),
+// // //   getChapters: (params) => api.get('/teachers/chapters/', { params }),
+// // //   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
+  
+// // //   // Tests
+// // //   getTests: (params) => api.get('/teachers/tests/', { params }),
+// // //   createTest: (data) => api.post('/teachers/tests/create/', data),
+// // //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// // //   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+  
+// // //   // Questions
+// // //   createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/delete/`),
+  
+// // //   // Attendance
+// // //   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+// // //   getAttendance: (params) => api.get('/teachers/attendance/', { params }),
+// // //   getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
+  
+// // //   // Assignments
+// // //   createAssignment: (data) => api.post('/teachers/assignments/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   getAssignments: (params) => api.get('/teachers/assignments/', { params }),
+// // //   getAssignmentDetail: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/`),
+  
+// // //   // Doubts
+// // //   getDoubts: (params) => api.get('/teachers/doubts/', { params }),
+// // //   getDoubtDetail: (doubtId) => api.get(`/teachers/doubts/${doubtId}/`),
+// // //   replyToDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+  
+// // //   // Students
+// // //   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+  
+// // //   // Search
+// // //   search: (query) => api.get(`/teachers/search/?q=${query}`),
+// // // };
+
+// // // // ============ ADMIN APIs ============
+// // // export const adminAPI = {
+// // //   // Dashboard
+// // //   getStats: () => api.get('/admin/dashboard/stats/'),
+  
+// // //   // User Management
+// // //   getPendingUsers: () => api.get('/admin/users/pending/'),
+// // //   approveUser: (userId) => api.post('/admin/users/approve/', { user_id: userId }),
+// // //   rejectUser: (userId) => api.post('/admin/users/reject/', { user_id: userId }),
+// // //   getAllUsers: (role) => api.get(`/admin/users/all/?role=${role || ''}`),
+  
+// // //   // Classes
+// // //   getClasses: () => api.get('/admin/classes/'),
+// // //   createClass: (data) => api.post('/admin/classes/create/', data),
+// // //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// // //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/delete/`),
+  
+// // //   // Subjects
+// // //   getSubjects: (classId) => api.get(`/admin/subjects/?class_id=${classId || ''}`),
+// // //   createSubject: (data) => api.post('/admin/subjects/create/', data),
+// // //   getSubjectDetail: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+  
+// // //   // Chapters
+// // //   getChapters: (subjectId, classId) => 
+// // //     api.get(`/admin/chapters/?subject_id=${subjectId}&class_id=${classId}`),
+// // //   createChapter: (data) => api.post('/admin/chapters/create/', data),
+  
+// // //   // Teacher Assignments
+// // //   getTeacherAssignments: () => api.get('/admin/teacher-assignments/'),
+// // //   createTeacherAssignment: (data) => api.post('/admin/teacher-assignments/create/', data),
+  
+// // //   // Notifications
+// // //   createNotification: (data) => api.post('/admin/notifications/create/', data),
+// // //   getNotifications: () => api.get('/admin/notifications/'),
+  
+// // //   // Fee Payments
+// // //   createFeePayment: (data) => api.post('/admin/fees/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   getFeePayments: () => api.get('/admin/fees/'),
+// // //   getFeePaymentDetail: (paymentId) => api.get(`/admin/fees/${paymentId}/`),
+// // // };
+
+// // // export { api };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // import axios from 'axios';
+// // // // import toast from 'react-hot-toast';
+
+// // // // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // const api = axios.create({
+// // // //   baseURL: API_URL,
+// // // //   headers: {
+// // // //     'Content-Type': 'application/json',
+// // // //   },
+// // // //   timeout: 15000,
+// // // // });
+
+// // // // // Request interceptor
+// // // // api.interceptors.request.use(
+// // // //   (config) => {
+// // // //     const token = localStorage.getItem('access_token');
+// // // //     if (token) {
+// // // //       config.headers.Authorization = `Bearer ${token}`;
+// // // //     }
+// // // //     return config;
+// // // //   },
+// // // //   (error) => Promise.reject(error)
+// // // // );
+
+// // // // // Response interceptor
+// // // // api.interceptors.response.use(
+// // // //   (response) => response,
+// // // //   async (error) => {
+// // // //     const originalRequest = error.config;
+
+// // // //     if (error.response?.status === 401 && !originalRequest._retry) {
+// // // //       originalRequest._retry = true;
+
+// // // //       try {
+// // // //         const refreshToken = localStorage.getItem('refresh_token');
+// // // //         const response = await axios.post(`${API_URL}/users/token/refresh/`, {
+// // // //           refresh: refreshToken,
+// // // //         });
+
+// // // //         const { access } = response.data;
+// // // //         localStorage.setItem('access_token', access);
+// // // //         originalRequest.headers.Authorization = `Bearer ${access}`;
+// // // //         return api(originalRequest);
+// // // //       } catch (refreshError) {
+// // // //         localStorage.clear();
+// // // //         window.location.href = '/login';
+// // // //         return Promise.reject(refreshError);
+// // // //       }
+// // // //     }
+
+// // // //     return Promise.reject(error);
+// // // //   }
+// // // // );
+
+// // // // // AUTH ENDPOINTS
+// // // // export const authAPI = {
+// // // //   register: (data) => api.post('/users/register/', data),
+// // // //   login: (data) => api.post('/users/login/', data),
+// // // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+// // // //   verifyOTP: (email, otp) => api.post('/users/verify-otp/', { email, otp }),
+// // // //   resetPassword: (data) => api.post('/users/reset-password/', data),
+// // // //   getProfile: () => api.get('/users/profile/'),
+// // // //   updateProfile: (data) => api.patch('/users/profile/', data),
+// // // //   logout: () => {
+// // // //     localStorage.clear();
+// // // //     return Promise.resolve();
+// // // //   },
+// // // // };
+
+// // // // // STUDENT ENDPOINTS
+// // // // export const studentAPI = {
+// // // //   getDashboard: () => api.get('/students/dashboard/'),
+// // // //   getSubjects: () => api.get('/students/subjects/'),
+// // // //   getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+// // // //   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
+// // // //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// // // //   getTestDetails: (testId) => api.get(`/students/tests/${testId}/`),
+// // // //   startTest: (testId) => api.post(`/students/tests/${testId}/start/`),
+// // // //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// // // //   getMyTests: () => api.get('/students/my-tests/'),
+// // // //   getAttendance: () => api.get('/students/attendance/'),
+// // // //   getFees: () => api.get('/students/fees/'),
+// // // //   getAssignments: () => api.get('/students/assignments/'),
+// // // //   submitAssignment: (assignmentId, data) => api.post(`/students/assignments/${assignmentId}/submit/`, data),
+// // // //   getDoubts: () => api.get('/students/doubts/'),
+// // // //   postDoubt: (data) => api.post('/students/doubts/', data),
+// // // //   getNotifications: () => api.get('/students/notifications/'),
+// // // //   markNotificationRead: (notificationId) => api.patch(`/students/notifications/${notificationId}/read/`),
+// // // // };
+
+// // // // // TEACHER ENDPOINTS
+// // // // export const teacherAPI = {
+// // // //   getDashboard: () => api.get('/teachers/dashboard/'),
+// // // //   getSubjects: () => api.get('/teachers/subjects/'),
+// // // //   getSubjectClasses: (subjectId) => api.get(`/teachers/subjects/${subjectId}/classes/`),
+// // // //   getChapters: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/chapters/`),
+// // // //   getChapterTests: (chapterId) => api.get(`/teachers/chapters/${chapterId}/tests/`),
+// // // //   createTest: (chapterId, data) => api.post(`/teachers/chapters/${chapterId}/tests/`, data),
+// // // //   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/`, data),
+// // // //   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/`),
+// // // //   getTestSubmissions: (testId) => api.get(`/teachers/tests/${testId}/submissions/`),
+// // // //   gradeTest: (attemptId, data) => api.post(`/teachers/test-attempts/${attemptId}/grade/`, data),
+// // // //   markAttendance: (classId, subjectId, data) => api.post(`/teachers/classes/${classId}/subjects/${subjectId}/attendance/`, data),
+// // // //   getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/attendance/`),
+// // // //   getAssignments: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/assignments/`),
+// // // //   createAssignment: (classId, subjectId, data) => api.post(`/teachers/classes/${classId}/subjects/${subjectId}/assignments/`, data),
+// // // //   getAssignmentSubmissions: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/submissions/`),
+// // // //   gradeAssignment: (submissionId, data) => api.post(`/teachers/submissions/${submissionId}/grade/`, data),
+// // // //   getDoubts: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/doubts/`),
+// // // //   answerDoubt: (doubtId, answer) => api.post(`/teachers/doubts/${doubtId}/answer/`, { answer }),
+// // // // };
+
+// // // // // ADMIN ENDPOINTS
+// // // // export const adminAPI = {
+// // // //   getDashboard: () => api.get('/admin/dashboard/'),
+// // // //   getUsers: () => api.get('/admin/users/'),
+// // // //   createUser: (data) => api.post('/admin/users/', data),
+// // // //   updateUser: (userId, data) => api.put(`/admin/users/${userId}/`, data),
+// // // //   deleteUser: (userId) => api.delete(`/admin/users/${userId}/`),
+// // // //   getClasses: () => api.get('/admin/classes/'),
+// // // //   createClass: (data) => api.post('/admin/classes/', data),
+// // // //   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/`, data),
+// // // //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/`),
+// // // //   getSubjects: () => api.get('/admin/subjects/'),
+// // // //   createSubject: (data) => api.post('/admin/subjects/', data),
+// // // //   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/`, data),
+// // // //   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/`),
+// // // //   getChapters: (subjectId) => api.get(`/admin/subjects/${subjectId}/chapters/`),
+// // // //   createChapter: (subjectId, data) => api.post(`/admin/subjects/${subjectId}/chapters/`, data),
+// // // //   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/`, data),
+// // // //   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/`),
+// // // //   enrollStudent: (data) => api.post('/admin/enrollments/', data),
+// // // //   removeEnrollment: (enrollmentId) => api.delete(`/admin/enrollments/${enrollmentId}/`),
+// // // //   assignTeacher: (data) => api.post('/admin/teacher-assignments/', data),
+// // // //   removeTeacherAssignment: (assignmentId) => api.delete(`/admin/teacher-assignments/${assignmentId}/`),
+// // // // };
+
+// // // // export default api;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // // import axios from 'axios';
+
+// // // // // // Create axios instance
+// // // // // const api = axios.create({
+// // // // //   baseURL: 'http://localhost:8000', // Your Django backend URL
+// // // // //   headers: {
+// // // // //     'Content-Type': 'application/json',
+// // // // //   },
+// // // // //   timeout: 10000,
+// // // // // });
+
+// // // // // // Request interceptor
+// // // // // api.interceptors.request.use(
+// // // // //   (config) => {
+// // // // //     const token = localStorage.getItem('token');
+// // // // //     if (token) {
+// // // // //       config.headers.Authorization = `Token ${token}`;
+// // // // //     }
+// // // // //     return config;
+// // // // //   },
+// // // // //   (error) => {
+// // // // //     return Promise.reject(error);
+// // // // //   }
+// // // // // );
+
+// // // // // // Response interceptor
+// // // // // api.interceptors.response.use(
+// // // // //   (response) => response,
+// // // // //   (error) => {
+// // // // //     if (error.response?.status === 401) {
+// // // // //       // Unauthorized - clear auth and redirect to login
+// // // // //       localStorage.removeItem('token');
+// // // // //       localStorage.removeItem('user');
+// // // // //       window.location.href = '/login';
+// // // // //     }
+// // // // //     return Promise.reject(error);
+// // // // //   }
+// // // // // );
+
+// // // // // export default api;
+
+// // // // // // ═══════════════════════════════════════════════════
+// // // // // //  API HELPER FUNCTIONS
+// // // // // // ═══════════════════════════════════════════════════
+
+// // // // // // Auth APIs
+// // // // // export const authAPI = {
+// // // // //   login: (email, password) => api.post('/api/users/login/', { email, password }),
+// // // // //   register: (data) => api.post('/api/users/register/', data),
+// // // // //   verifyOTP: (email, otp) => api.post('/api/users/verify-registration-otp/', { email, otp }),
+// // // // //   resendOTP: (email) => api.post('/api/users/resend-otp/', { email }),
+// // // // //   forgotPassword: (email) => api.post('/api/users/forgot-password/', { email }),
+// // // // //   resetPassword: (email, otp, newPassword) => 
+// // // // //     api.post('/api/users/verify-otp-reset-password/', { email, otp, new_password: newPassword }),
+// // // // //   logout: () => api.post('/api/users/logout/'),
+// // // // //   getProfile: () => api.get('/api/users/profile/'),
+// // // // // };
+
+// // // // // // Student APIs
+// // // // // export const studentAPI = {
+// // // // //   getDashboard: () => api.get('/api/students/home/'),
+// // // // //   getSubjectDetails: (subjectId) => api.get(`/api/students/subjects/${subjectId}/`),
+// // // // //   getChapterTests: (chapterId) => api.get(`/api/students/chapters/${chapterId}/tests/`),
+// // // // //   startTest: (testId) => api.post(`/api/students/tests/${testId}/start/`),
+// // // // //   submitTest: (attemptId, answers) => 
+// // // // //     api.post(`/api/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // // // //   getTestResult: (attemptId) => api.get(`/api/students/test-attempts/${attemptId}/result/`),
+// // // // //   getMyTests: () => api.get('/api/students/my-test-attempts/'),
+// // // // //   getAttendance: () => api.get('/api/students/my-attendance/'),
+// // // // //   getFees: () => api.get('/api/students/my-fee-payments/'),
+// // // // //   getAssignments: () => api.get('/api/students/my-assignments/'),
+// // // // //   createDoubt: (data) => api.post('/api/students/doubts/create/', data),
+// // // // //   getNotifications: () => api.get('/api/students/my-notifications/'),
+// // // // // };
+
+// // // // // // Teacher APIs
+// // // // // export const teacherAPI = {
+// // // // //   getDashboard: () => api.get('/api/teachers/home/'),
+// // // // //   getSubjectClasses: (subjectId) => api.get(`/api/teachers/subject/${subjectId}/classes/`),
+// // // // //   getChapters: (classId, subjectId) => 
+// // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+// // // // //   markChapterComplete: (chapterId) => 
+// // // // //     api.post(`/api/teachers/chapters/${chapterId}/mark-complete/`),
+// // // // //   getTests: (chapterId) => api.get(`/api/teachers/chapter/${chapterId}/tests/`),
+// // // // //   createTest: (chapterId, data) => 
+// // // // //     api.post(`/api/teachers/chapter/${chapterId}/tests/create/`, data),
+// // // // //   getTestDetails: (testId) => api.get(`/api/teachers/tests/${testId}/`),
+// // // // //   createQuestion: (testId, data) => 
+// // // // //     api.post(`/api/teachers/tests/${testId}/questions/create/`, data),
+// // // // //   updateQuestion: (questionId, data) => 
+// // // // //     api.put(`/api/teachers/questions/${questionId}/update/`, data),
+// // // // //   deleteQuestion: (questionId) => api.delete(`/api/teachers/questions/${questionId}/delete/`),
+// // // // //   markAttendance: (classId, subjectId, data) => 
+// // // // //     api.post(`/api/teachers/class/${classId}/subject/${subjectId}/attendance/mark/`, data),
+// // // // //   getAttendanceList: (classId, subjectId) => 
+// // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/attendance/`),
+// // // // //   createAssignment: (classId, subjectId, data) => 
+// // // // //     api.post(`/api/teachers/class/${classId}/subject/${subjectId}/assignments/create/`, data),
+// // // // //   getAssignments: (classId, subjectId) => 
+// // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/assignments/`),
+// // // // //   getDoubts: (classId, subjectId) => 
+// // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/doubts/`),
+// // // // //   replyDoubt: (doubtId, data) => 
+// // // // //     api.post(`/api/teachers/doubts/${doubtId}/reply/`, data),
+// // // // //   getClassStudents: (classId) => api.get(`/api/teachers/class/${classId}/students/`),
+// // // // // };
+
+// // // // // // Admin APIs
+// // // // // export const adminAPI = {
+// // // // //   getAllUsers: () => api.get('/api/admin/users/'),
+// // // // //   approveUser: (userId) => api.post(`/api/admin/users/${userId}/approve/`),
+// // // // //   createClass: (data) => api.post('/api/admin/classes/create/', data),
+// // // // //   getAllClasses: () => api.get('/api/admin/classes/'),
+// // // // //   createSubject: (data) => api.post('/api/admin/subjects/create/', data),
+// // // // //   getAllSubjects: () => api.get('/api/admin/subjects/'),
+// // // // //   createChapter: (data) => api.post('/api/admin/chapters/create/', data),
+// // // // //   getAllChapters: () => api.get('/api/admin/chapters/'),
+// // // // // };
+
+// // // // // // Utility APIs
+// // // // // export const utilityAPI = {
+// // // // //   getClasses: () => api.get('/api/users/classes/'),
+// // // // //   getSubjects: () => api.get('/api/users/subjects/'),
+// // // // // };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // // // import axios from 'axios';
+
+// // // // // // const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // // // const api = axios.create({
+// // // // // //   baseURL: API_BASE_URL,
+// // // // // //   headers: {
+// // // // // //     'Content-Type': 'application/json',
+// // // // // //   },
+// // // // // // });
+
+// // // // // // // Request interceptor
+// // // // // // api.interceptors.request.use(
+// // // // // //   (config) => {
+// // // // // //     const token = localStorage.getItem('access_token');
+// // // // // //     if (token) {
+// // // // // //       config.headers.Authorization = `Bearer ${token}`;
+// // // // // //     }
+// // // // // //     return config;
+// // // // // //   },
+// // // // // //   (error) => Promise.reject(error)
+// // // // // // );
+
+// // // // // // // Response interceptor
+// // // // // // api.interceptors.response.use(
+// // // // // //   (response) => response,
+// // // // // //   async (error) => {
+// // // // // //     const originalRequest = error.config;
+
+// // // // // //     if (error.response?.status === 401 && !originalRequest._retry) {
+// // // // // //       originalRequest._retry = true;
+
+// // // // // //       try {
+// // // // // //         const refreshToken = localStorage.getItem('refresh_token');
+// // // // // //         const response = await axios.post(`${API_BASE_URL}/users/token/refresh/`, {
+// // // // // //           refresh: refreshToken,
+// // // // // //         });
+
+// // // // // //         const { access } = response.data;
+// // // // // //         localStorage.setItem('access_token', access);
+// // // // // //         originalRequest.headers.Authorization = `Bearer ${access}`;
+// // // // // //         return api(originalRequest);
+// // // // // //       } catch (refreshError) {
+// // // // // //         localStorage.clear();
+// // // // // //         window.location.href = '/login';
+// // // // // //         return Promise.reject(refreshError);
+// // // // // //       }
+// // // // // //     }
+
+// // // // // //     return Promise.reject(error);
+// // // // // //   }
+// // // // // // );
+
+// // // // // // // Authentication API
+// // // // // // export const authAPI = {
+// // // // // //   register: (userData) => api.post('/users/register/', userData),
+// // // // // //   verifyOTP: (email, otp) => api.post('/users/verify-registration-otp/', { email, otp }),
+// // // // // //   resendOTP: (email) => api.post('/users/resend-otp/', { email }),
+// // // // // //   login: (identifier, password) => api.post('/users/login/', { identifier, password }),
+// // // // // //   logout: (refreshToken) => api.post('/users/logout/', { refresh_token: refreshToken }),
+// // // // // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+// // // // // //   resetPassword: (email, otp, newPassword) => 
+// // // // // //     api.post('/users/reset-password/', { email, otp, new_password: newPassword }),
+// // // // // //   getProfile: () => api.get('/users/me/'),
+// // // // // //   updateProfile: (userData) => api.put('/users/profile/', userData),
+// // // // // //   changePassword: (oldPassword, newPassword, newPasswordConfirm) => 
+// // // // // //     api.post('/users/change-password/', {
+// // // // // //       old_password: oldPassword,
+// // // // // //       new_password: newPassword,
+// // // // // //       new_password_confirm: newPasswordConfirm,
+// // // // // //     }),
+// // // // // // };
+
+// // // // // // // Student API
+// // // // // // export const studentAPI = {
+// // // // // //   getDashboard: () => api.get('/students/dashboard/'),
+// // // // // //   getAvailableTests: (params) => api.get('/students/available-tests/', { params }),
+// // // // // //   startTest: (testId) => api.get(`/students/start-test/${testId}/`),
+// // // // // //   submitTest: (testId, answers) => api.post(`/students/submit-test/${testId}/`, { answers }),
+// // // // // //   getTestAttempts: () => api.get('/students/test-attempts/'),
+// // // // // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/`),
+// // // // // //   getStatistics: () => api.get('/students/test-attempts/statistics/'),
+// // // // // //   getAttendance: (params) => api.get('/students/attendance/', { params }),
+// // // // // //   getAssignments: (params) => api.get('/students/assignments/', { params }),
+// // // // // //   getDoubts: () => api.get('/students/doubts/'),
+// // // // // //   postDoubt: (doubtData) => api.post('/students/doubts/', doubtData),
+// // // // // //   getDoubtDetail: (doubtId) => api.get(`/students/doubts/${doubtId}/`),
+// // // // // // };
+
+// // // // // // // Teacher API
+// // // // // // export const teacherAPI = {
+// // // // // //   getDashboard: () => api.get('/teachers/dashboard/'),
+// // // // // //   getAssignments: () => api.get('/teachers/assignments/my-assignments/'),
+// // // // // //   getTests: (params) => api.get('/teachers/tests/my-tests/', { params }),
+// // // // // //   createTest: (testData) => api.post('/teachers/tests/', testData),
+// // // // // //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// // // // // //   addQuestion: (testId, questionData) => api.post(`/teachers/tests/${testId}/add-question/`, questionData),
+// // // // // //   getTestStatistics: (testId) => api.get(`/teachers/tests/${testId}/statistics/`),
+// // // // // //   markAttendance: (attendanceData) => api.post('/teachers/attendance/mark-bulk/', attendanceData),
+// // // // // //   getAttendanceByDate: (params) => api.get('/teachers/attendance/by-date/', { params }),
+// // // // // //   getStudentReport: (studentId, params) => api.get(`/teachers/attendance/student-report/${studentId}/`, { params }),
+// // // // // //   getClassReport: (classId, params) => api.get(`/teachers/attendance/class-report/${classId}/`, { params }),
+// // // // // //   createAssignment: (assignmentData) => api.post('/teachers/assignments/', assignmentData),
+// // // // // //   getDoubts: (params) => api.get('/teachers/doubts/my-subject-doubts/', { params }),
+// // // // // //   replyToDoubt: (doubtId, replyData) => api.post(`/teachers/doubts/${doubtId}/reply/`, replyData),
+// // // // // // };
+
+// // // // // // // Admin API
+// // // // // // export const adminAPI = {
+// // // // // //   getDashboard: () => api.get('/admin/dashboard/'),
+// // // // // //   getPendingUsers: () => api.get('/users/pending/'),
+// // // // // //   approveUser: (userId) => api.post(`/users/${userId}/approve/`),
+// // // // // //   rejectUser: (userId) => api.post(`/users/${userId}/reject/`),
+// // // // // //   getClasses: () => api.get('/admin/classes/'),
+// // // // // //   createClass: (classData) => api.post('/admin/classes/', classData),
+// // // // // //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// // // // // //   getSubjects: () => api.get('/admin/subjects/'),
+// // // // // //   createSubject: (subjectData) => api.post('/admin/subjects/', subjectData),
+// // // // // //   getChapters: (params) => api.get('/admin/chapters/', { params }),
+// // // // // //   createChapter: (chapterData) => api.post('/admin/chapters/', chapterData),
+// // // // // //   markChapterComplete: (chapterId, isCompleted) => 
+// // // // // //     api.post(`/admin/chapters/${chapterId}/mark-completed/`, { is_completed: isCompleted }),
+// // // // // //   getFeePayments: (params) => api.get('/admin/fee-payments/', { params }),
+// // // // // //   createFeePayment: (paymentData) => api.post('/admin/fee-payments/', paymentData),
+// // // // // //   getNotifications: () => api.get('/admin/notifications/'),
+// // // // // //   createNotification: (notificationData) => api.post('/admin/notifications/', notificationData),
+// // // // // //   broadcastNotification: (message, role) => 
+// // // // // //     api.post('/admin/notifications/broadcast/', { message, role }),
+// // // // // // };
+
+// // // // // // export default api;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // src/services/api.js
+// // import axios from 'axios';
+
+// // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // Create axios instance
+// // const api = axios.create({
+// //   baseURL: API_URL,
+// //   headers: {
+// //     'Content-Type': 'application/json',
+// //   },
+// //   timeout: 15000,
+// // });
+
+// // // Add token to requests
+// // api.interceptors.request.use(
+// //   (config) => {
+// //     const token = localStorage.getItem('token');
+// //     if (token) {
+// //       config.headers.Authorization = `Token ${token}`; // Token not Bearer
+// //     }
+// //     return config;
+// //   },
+// //   (error) => {
+// //     return Promise.reject(error);
+// //   }
+// // );
+
+// // // Handle response errors
+// // api.interceptors.response.use(
+// //   (response) => response,
+// //   (error) => {
+// //     if (error.response?.status === 401) {
+// //       localStorage.removeItem('token');
+// //       localStorage.removeItem('user');
+// //       window.location.href = '/login';
+// //     }
+// //     return Promise.reject(error);
+// //   }
+// // );
+
+// // export default api;
+
+// // // ============ AUTH APIs ============
+// // export const authAPI = {
+// //   // Get registration data (classes & subjects)
+// //   getRegistrationData: () => api.get('/users/registration-data/'),
+  
+// //   // Register
+// //   register: (data) => api.post('/users/register/', data),
+  
+// //   // Verify registration OTP
+// //   verifyRegistrationOTP: (data) => api.post('/users/verify-registration-otp/', data),
+  
+// //   // Resend OTP
+// //   resendOTP: (email) => api.post('/users/resend-registration-otp/', { email }),
+  
+// //   // Login
+// //   login: (data) => api.post('/users/login/', data),
+  
+// //   // Logout
+// //   logout: () => api.post('/users/logout/'),
+  
+// //   // Forgot password
+// //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+  
+// //   // Reset password
+// //   resetPassword: (data) => api.post('/users/verify-otp-reset-password/', data),
+  
+// //   // Get profile
+// //   getProfile: () => api.get('/users/profile/'),
+// // };
+
+// // // ============ STUDENT APIs ============
+// // export const studentAPI = {
+// //   // Dashboard - NEW! This is what was missing
+// //   getDashboard: () => api.get('/students/home/'),
+  
+// //   // Home/Dashboard (alias for compatibility)
+// //   getHome: () => api.get('/students/home/'),
+  
+// //   // Subjects
+// //   getSubjects: () => api.get('/students/subjects/'),
+// //   getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+// //   getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`), // Alias
+  
+// //   // Chapters
+// //   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
+  
+// //   // Tests
+// //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// //   startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
+// //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// //   getMyAttempts: () => api.get('/students/my-test-attempts/'),
+// //   getMyTests: () => api.get('/students/my-test-attempts/'), // Alias
+  
+// //   // Attendance
+// //   getAttendance: () => api.get('/students/my-attendance/'),
+// //   getMyAttendance: () => api.get('/students/my-attendance/'), // Alias
+  
+// //   // Fee Payments
+// //   getFeePayments: () => api.get('/students/my-fee-payments/'),
+// //   getMyFees: () => api.get('/students/my-fee-payments/'), // Alias
+  
+// //   // Assignments
+// //   getAssignments: () => api.get('/students/my-assignments/'),
+// //   getMyAssignments: () => api.get('/students/my-assignments/'), // Alias
+// //   submitAssignment: (assignmentId, data) => api.post(`/students/assignments/${assignmentId}/submit/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+  
+// //   // Doubts
+// //   getEnrolledSubjects: () => api.get('/students/subjects/'),
+// //   createDoubt: (data) => api.post('/students/doubts/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   getDoubts: () => api.get('/students/doubts/'),
+// //   getMyDoubts: () => api.get('/students/doubts/'), // Alias
+// //   getDoubtDetail: (doubtId) => api.get(`/students/doubts/${doubtId}/`),
+// //   replyToDoubt: (doubtId, data) => api.post(`/students/doubts/${doubtId}/reply/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+  
+// //   // Notifications
+// //   getNotifications: () => api.get('/students/my-notifications/'),
+// //   getMyNotifications: () => api.get('/students/my-notifications/'), // Alias
+// //   markNotificationRead: (notificationId) => api.patch(`/students/notifications/${notificationId}/read/`),
+  
+// //   // Search
+// //   search: (query) => api.get(`/students/search/?q=${query}`),
+// // };
+
+// // // ============ TEACHER APIs ============
+// // export const teacherAPI = {
+// //   // Dashboard - NEW! This is what was missing for teachers
+// //   getDashboard: () => api.get('/teachers/home/'),
+  
+// //   // Home/Dashboard (alias for compatibility)
+// //   getHome: () => api.get('/teachers/home/'),
+// //   getClasses: () => api.get('/teachers/classes/'), 
+  
+// //   // Classes & Subjects
+// //   getSubjects: () => api.get('/teachers/subjects/'),
+// //   getSubjectClasses: (subjectId) => api.get(`/teachers/subject/${subjectId}/classes/`),
+// //   getClassChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+// //   getChapters: (params) => api.get('/teachers/chapters/', { params }),
+// //   createChapter: (data) => api.post('/teachers/chapters/create/', data),
+// //   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
+  
+// //   // Tests
+// //   getTests: (params) => api.get('/teachers/tests/', { params }),
+// //   getChapterTests: (chapterId) => api.get(`/teachers/chapter/${chapterId}/tests/`),
+// //   createTest: (data) => api.post('/teachers/tests/create/', data),
+// //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// //   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+// //   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/update/`, data),
+// //   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/delete/`),
+  
+// //   // Questions
+// //   createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/delete/`),
+  
+// //   // Attendance
+// //   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+// //   getAttendance: (params) => api.get('/teachers/attendance/', { params }),
+// //   getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/attendance/history/`, { params: { classId, subjectId } }),
+// //   getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
+  
+// //   // Assignments
+// //   createAssignment: (data) => api.post('/teachers/assignments/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   getAssignments: (params) => api.get('/teachers/assignments/', { params }),
+// //   getAssignmentDetail: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/`),
+// //   gradeAssignment: (submissionId, data) => api.patch(`/teachers/assignment-submission/${submissionId}/grade/`, data),
+  
+// //   // Doubts
+// //   getDoubts: (params) => api.get('/teachers/doubts/', { params }),
+// //   getDoubtDetail: (doubtId) => api.get(`/teachers/doubts/${doubtId}/`),
+// //   replyToDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+  
+// //   // Students
+// //   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+  
+// //   // Search
+// //   search: (query) => api.get(`/teachers/search/?q=${query}`),
+// // };
+
+
+
+// // // ============ ADMIN APIs ============
+// // export const adminAPI = {
+// //   // Dashboard
+// //   getDashboard: () => api.get('/admin/dashboard/stats/'),
+// //   getStats: () => api.get('/admin/dashboard/stats/'),
+  
+// //   // User Management
+// //   getPendingUsers: () => api.get('/admin/users/pending/'),
+// //   approveUser: (userId) => api.post('/admin/users/approve/', { user_id: userId }),
+// //   rejectUser: (userId) => api.post('/admin/users/reject/', { user_id: userId }),
+// //   getAllUsers: (role) => api.get(`/admin/users/all/?role=${role || ''}`),
+// //   getUsers: () => api.get('/admin/users/all/'), // Alias
+// //   deleteUser: (userId) => api.delete(`/admin/users/${userId}/delete/`),
+  
+// //   // Classes
+// //   getClasses: () => api.get('/admin/classes/'),
+// //   createClass: (data) => api.post('/admin/classes/create/', data),
+// //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// //   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/update/`, data),
+// //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/delete/`),
+  
+// //   // Subjects
+// //   getSubjects: (classId) => api.get(`/admin/subjects/?class_id=${classId || ''}`),
+// //   createSubject: (data) => api.post('/admin/subjects/create/', data),
+// //   getSubjectDetail: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+// //   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/update/`, data),
+// //   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/delete/`),
+  
+// //   // Chapters
+// //   getChapters: (subjectId, classId) => 
+// //     api.get(`/admin/chapters/?subject_id=${subjectId || ''}&class_id=${classId || ''}`),
+// //   createChapter: (data) => api.post('/admin/chapters/create/', data),
+// //   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/update/`, data),
+// //   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/delete/`),
+  
+// //   // Teacher Assignments
+// //   getTeacherAssignments: () => api.get('/admin/teacher-assignments/'),
+// //   createTeacherAssignment: (data) => api.post('/admin/teacher-assignments/create/', data),
+// //   deleteTeacherAssignment: (assignmentId) => api.delete(`/admin/teacher-assignments/${assignmentId}/delete/`),
+  
+// //   // Notifications
+// //   createNotification: (data) => api.post('/admin/notifications/create/', data),
+// //   getNotifications: () => api.get('/admin/notifications/'),
+  
+// //   // Fee Payments
+// //   createFeePayment: (data) => api.post('/admin/fees/create/', data, {
+// //     headers: { 'Content-Type': 'multipart/form-data' }
+// //   }),
+// //   getFeePayments: () => api.get('/admin/fees/'),
+// //   getFeePaymentDetail: (paymentId) => api.get(`/admin/fees/${paymentId}/`),
+// // };
+
+// // // ============ UTILITY APIs ============
+// // export const utilityAPI = {
+// //   uploadFile: (file) => {
+// //     const formData = new FormData();
+// //     formData.append('file', file);
+// //     return api.post('/upload/', formData, {
+// //       headers: {
+// //         'Content-Type': 'multipart/form-data',
+// //       },
+// //     });
+// //   },
+// // };
+
+// // export { api };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // src/services/api.js
+// // // import axios from 'axios';
+
+// // // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // Create axios instance
+// // // const api = axios.create({
+// // //   baseURL: API_URL,
+// // //   headers: {
+// // //     'Content-Type': 'application/json',
+// // //   },
+// // //   timeout: 15000,
+// // // });
+
+// // // // Add token to requests
+// // // api.interceptors.request.use(
+// // //   (config) => {
+// // //     const token = localStorage.getItem('token');
+// // //     if (token) {
+// // //       config.headers.Authorization = `Token ${token}`; // ← CHANGED: Token not Bearer
+// // //     }
+// // //     return config;
+// // //   },
+// // //   (error) => {
+// // //     return Promise.reject(error);
+// // //   }
+// // // );
+
+// // // // Handle response errors
+// // // api.interceptors.response.use(
+// // //   (response) => response,
+// // //   (error) => {
+// // //     if (error.response?.status === 401) {
+// // //       localStorage.removeItem('token');
+// // //       localStorage.removeItem('user');
+// // //       window.location.href = '/login';
+// // //     }
+// // //     return Promise.reject(error);
+// // //   }
+// // // );
+
+// // // export default api;
+
+// // // // ============ AUTH APIs ============
+// // // export const authAPI = {
+// // //   // Get registration data (classes & subjects)
+// // //   getRegistrationData: () => api.get('/users/registration-data/'),
+  
+// // //   // Register
+// // //   register: (data) => api.post('/users/register/', data),
+  
+// // //   // Verify registration OTP
+// // //   verifyRegistrationOTP: (data) => api.post('/users/verify-registration-otp/', data),
+  
+// // //   // Resend OTP
+// // //   resendOTP: (email) => api.post('/users/resend-registration-otp/', { email }),
+  
+// // //   // Login
+// // //   login: (data) => api.post('/users/login/', data),
+  
+// // //   // Logout
+// // //   logout: () => api.post('/users/logout/'),
+  
+// // //   // Forgot password
+// // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+  
+// // //   // Reset password
+// // //   resetPassword: (data) => api.post('/users/verify-otp-reset-password/', data),
+  
+// // //   // Get profile
+// // //   getProfile: () => api.get('/users/profile/'),
+// // // };
+
+// // // // ============ STUDENT APIs ============
+// // // export const studentAPI = {
+// // //   // Home/Dashboard
+// // //   getHome: () => api.get('/students/home/'),
+  
+// // //   // Subjects
+// // //   getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+  
+// // //   // Tests
+// // //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// // //   startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
+// // //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// // //   getMyAttempts: () => api.get('/students/my-test-attempts/'),
+  
+// // //   // Attendance
+// // //   getAttendance: () => api.get('/students/my-attendance/'),
+  
+// // //   // Fee Payments
+// // //   getFeePayments: () => api.get('/students/my-fee-payments/'),
+  
+// // //   // Assignments
+// // //   getAssignments: () => api.get('/students/my-assignments/'),
+  
+// // //   // Doubts
+// // //   createDoubt: (data) => api.post('/students/doubts/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   getDoubts: () => api.get('/students/doubts/'),
+// // //   replyToDoubt: (doubtId, data) => api.post(`/students/doubts/${doubtId}/reply/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+  
+// // //   // Notifications
+// // //   getNotifications: () => api.get('/students/my-notifications/'),
+  
+// // //   // Search
+// // //   search: (query) => api.get(`/students/search/?q=${query}`),
+// // // };
+
+// // // // ============ TEACHER APIs ============
+// // // export const teacherAPI = {
+// // //   // Home/Dashboard
+// // //   getHome: () => api.get('/teachers/home/'),
+  
+// // //   // Classes & Subjects
+// // //   getSubjectClasses: (subjectId) => api.get(`/teachers/subject/${subjectId}/classes/`),
+// // //   getChapters: (params) => api.get('/teachers/chapters/', { params }),
+// // //   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
+  
+// // //   // Tests
+// // //   getTests: (params) => api.get('/teachers/tests/', { params }),
+// // //   createTest: (data) => api.post('/teachers/tests/create/', data),
+// // //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// // //   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+  
+// // //   // Questions
+// // //   createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/delete/`),
+  
+// // //   // Attendance
+// // //   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+// // //   getAttendance: (params) => api.get('/teachers/attendance/', { params }),
+// // //   getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
+  
+// // //   // Assignments
+// // //   createAssignment: (data) => api.post('/teachers/assignments/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   getAssignments: (params) => api.get('/teachers/assignments/', { params }),
+// // //   getAssignmentDetail: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/`),
+  
+// // //   // Doubts
+// // //   getDoubts: (params) => api.get('/teachers/doubts/', { params }),
+// // //   getDoubtDetail: (doubtId) => api.get(`/teachers/doubts/${doubtId}/`),
+// // //   replyToDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+  
+// // //   // Students
+// // //   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+  
+// // //   // Search
+// // //   search: (query) => api.get(`/teachers/search/?q=${query}`),
+// // // };
+
+// // // // ============ ADMIN APIs ============
+// // // export const adminAPI = {
+// // //   // Dashboard
+// // //   getStats: () => api.get('/admin/dashboard/stats/'),
+  
+// // //   // User Management
+// // //   getPendingUsers: () => api.get('/admin/users/pending/'),
+// // //   approveUser: (userId) => api.post('/admin/users/approve/', { user_id: userId }),
+// // //   rejectUser: (userId) => api.post('/admin/users/reject/', { user_id: userId }),
+// // //   getAllUsers: (role) => api.get(`/admin/users/all/?role=${role || ''}`),
+  
+// // //   // Classes
+// // //   getClasses: () => api.get('/admin/classes/'),
+// // //   createClass: (data) => api.post('/admin/classes/create/', data),
+// // //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// // //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/delete/`),
+  
+// // //   // Subjects
+// // //   getSubjects: (classId) => api.get(`/admin/subjects/?class_id=${classId || ''}`),
+// // //   createSubject: (data) => api.post('/admin/subjects/create/', data),
+// // //   getSubjectDetail: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+  
+// // //   // Chapters
+// // //   getChapters: (subjectId, classId) => 
+// // //     api.get(`/admin/chapters/?subject_id=${subjectId}&class_id=${classId}`),
+// // //   createChapter: (data) => api.post('/admin/chapters/create/', data),
+  
+// // //   // Teacher Assignments
+// // //   getTeacherAssignments: () => api.get('/admin/teacher-assignments/'),
+// // //   createTeacherAssignment: (data) => api.post('/admin/teacher-assignments/create/', data),
+  
+// // //   // Notifications
+// // //   createNotification: (data) => api.post('/admin/notifications/create/', data),
+// // //   getNotifications: () => api.get('/admin/notifications/'),
+  
+// // //   // Fee Payments
+// // //   createFeePayment: (data) => api.post('/admin/fees/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   getFeePayments: () => api.get('/admin/fees/'),
+// // //   getFeePaymentDetail: (paymentId) => api.get(`/admin/fees/${paymentId}/`),
+// // // };
+
+// // // export { api };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // import axios from 'axios';
+// // // // import toast from 'react-hot-toast';
+
+// // // // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // const api = axios.create({
+// // // //   baseURL: API_URL,
+// // // //   headers: {
+// // // //     'Content-Type': 'application/json',
+// // // //   },
+// // // //   timeout: 15000,
+// // // // });
+
+// // // // // Request interceptor
+// // // // api.interceptors.request.use(
+// // // //   (config) => {
+// // // //     const token = localStorage.getItem('access_token');
+// // // //     if (token) {
+// // // //       config.headers.Authorization = `Bearer ${token}`;
+// // // //     }
+// // // //     return config;
+// // // //   },
+// // // //   (error) => Promise.reject(error)
+// // // // );
+
+// // // // // Response interceptor
+// // // // api.interceptors.response.use(
+// // // //   (response) => response,
+// // // //   async (error) => {
+// // // //     const originalRequest = error.config;
+
+// // // //     if (error.response?.status === 401 && !originalRequest._retry) {
+// // // //       originalRequest._retry = true;
+
+// // // //       try {
+// // // //         const refreshToken = localStorage.getItem('refresh_token');
+// // // //         const response = await axios.post(`${API_URL}/users/token/refresh/`, {
+// // // //           refresh: refreshToken,
+// // // //         });
+
+// // // //         const { access } = response.data;
+// // // //         localStorage.setItem('access_token', access);
+// // // //         originalRequest.headers.Authorization = `Bearer ${access}`;
+// // // //         return api(originalRequest);
+// // // //       } catch (refreshError) {
+// // // //         localStorage.clear();
+// // // //         window.location.href = '/login';
+// // // //         return Promise.reject(refreshError);
+// // // //       }
+// // // //     }
+
+// // // //     return Promise.reject(error);
+// // // //   }
+// // // // );
+
+// // // // // AUTH ENDPOINTS
+// // // // export const authAPI = {
+// // // //   register: (data) => api.post('/users/register/', data),
+// // // //   login: (data) => api.post('/users/login/', data),
+// // // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+// // // //   verifyOTP: (email, otp) => api.post('/users/verify-otp/', { email, otp }),
+// // // //   resetPassword: (data) => api.post('/users/reset-password/', data),
+// // // //   getProfile: () => api.get('/users/profile/'),
+// // // //   updateProfile: (data) => api.patch('/users/profile/', data),
+// // // //   logout: () => {
+// // // //     localStorage.clear();
+// // // //     return Promise.resolve();
+// // // //   },
+// // // // };
+
+// // // // // STUDENT ENDPOINTS
+// // // // export const studentAPI = {
+// // // //   getDashboard: () => api.get('/students/dashboard/'),
+// // // //   getSubjects: () => api.get('/students/subjects/'),
+// // // //   getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+// // // //   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
+// // // //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// // // //   getTestDetails: (testId) => api.get(`/students/tests/${testId}/`),
+// // // //   startTest: (testId) => api.post(`/students/tests/${testId}/start/`),
+// // // //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// // // //   getMyTests: () => api.get('/students/my-tests/'),
+// // // //   getAttendance: () => api.get('/students/attendance/'),
+// // // //   getFees: () => api.get('/students/fees/'),
+// // // //   getAssignments: () => api.get('/students/assignments/'),
+// // // //   submitAssignment: (assignmentId, data) => api.post(`/students/assignments/${assignmentId}/submit/`, data),
+// // // //   getDoubts: () => api.get('/students/doubts/'),
+// // // //   postDoubt: (data) => api.post('/students/doubts/', data),
+// // // //   getNotifications: () => api.get('/students/notifications/'),
+// // // //   markNotificationRead: (notificationId) => api.patch(`/students/notifications/${notificationId}/read/`),
+// // // // };
+
+// // // // // TEACHER ENDPOINTS
+// // // // export const teacherAPI = {
+// // // //   getDashboard: () => api.get('/teachers/dashboard/'),
+// // // //   getSubjects: () => api.get('/teachers/subjects/'),
+// // // //   getSubjectClasses: (subjectId) => api.get(`/teachers/subjects/${subjectId}/classes/`),
+// // // //   getChapters: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/chapters/`),
+// // // //   getChapterTests: (chapterId) => api.get(`/teachers/chapters/${chapterId}/tests/`),
+// // // //   createTest: (chapterId, data) => api.post(`/teachers/chapters/${chapterId}/tests/`, data),
+// // // //   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/`, data),
+// // // //   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/`),
+// // // //   getTestSubmissions: (testId) => api.get(`/teachers/tests/${testId}/submissions/`),
+// // // //   gradeTest: (attemptId, data) => api.post(`/teachers/test-attempts/${attemptId}/grade/`, data),
+// // // //   markAttendance: (classId, subjectId, data) => api.post(`/teachers/classes/${classId}/subjects/${subjectId}/attendance/`, data),
+// // // //   getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/attendance/`),
+// // // //   getAssignments: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/assignments/`),
+// // // //   createAssignment: (classId, subjectId, data) => api.post(`/teachers/classes/${classId}/subjects/${subjectId}/assignments/`, data),
+// // // //   getAssignmentSubmissions: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/submissions/`),
+// // // //   gradeAssignment: (submissionId, data) => api.post(`/teachers/submissions/${submissionId}/grade/`, data),
+// // // //   getDoubts: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/doubts/`),
+// // // //   answerDoubt: (doubtId, answer) => api.post(`/teachers/doubts/${doubtId}/answer/`, { answer }),
+// // // // };
+
+// // // // // ADMIN ENDPOINTS
+// // // // export const adminAPI = {
+// // // //   getDashboard: () => api.get('/admin/dashboard/'),
+// // // //   getUsers: () => api.get('/admin/users/'),
+// // // //   createUser: (data) => api.post('/admin/users/', data),
+// // // //   updateUser: (userId, data) => api.put(`/admin/users/${userId}/`, data),
+// // // //   deleteUser: (userId) => api.delete(`/admin/users/${userId}/`),
+// // // //   getClasses: () => api.get('/admin/classes/'),
+// // // //   createClass: (data) => api.post('/admin/classes/', data),
+// // // //   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/`, data),
+// // // //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/`),
+// // // //   getSubjects: () => api.get('/admin/subjects/'),
+// // // //   createSubject: (data) => api.post('/admin/subjects/', data),
+// // // //   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/`, data),
+// // // //   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/`),
+// // // //   getChapters: (subjectId) => api.get(`/admin/subjects/${subjectId}/chapters/`),
+// // // //   createChapter: (subjectId, data) => api.post(`/admin/subjects/${subjectId}/chapters/`, data),
+// // // //   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/`, data),
+// // // //   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/`),
+// // // //   enrollStudent: (data) => api.post('/admin/enrollments/', data),
+// // // //   removeEnrollment: (enrollmentId) => api.delete(`/admin/enrollments/${enrollmentId}/`),
+// // // //   assignTeacher: (data) => api.post('/admin/teacher-assignments/', data),
+// // // //   removeTeacherAssignment: (assignmentId) => api.delete(`/admin/teacher-assignments/${assignmentId}/`),
+// // // // };
+
+// // // // export default api;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // // import axios from 'axios';
+
+// // // // // // Create axios instance
+// // // // // const api = axios.create({
+// // // // //   baseURL: 'http://localhost:8000', // Your Django backend URL
+// // // // //   headers: {
+// // // // //     'Content-Type': 'application/json',
+// // // // //   },
+// // // // //   timeout: 10000,
+// // // // // });
+
+// // // // // // Request interceptor
+// // // // // api.interceptors.request.use(
+// // // // //   (config) => {
+// // // // //     const token = localStorage.getItem('token');
+// // // // //     if (token) {
+// // // // //       config.headers.Authorization = `Token ${token}`;
+// // // // //     }
+// // // // //     return config;
+// // // // //   },
+// // // // //   (error) => {
+// // // // //     return Promise.reject(error);
+// // // // //   }
+// // // // // );
+
+// // // // // // Response interceptor
+// // // // // api.interceptors.response.use(
+// // // // //   (response) => response,
+// // // // //   (error) => {
+// // // // //     if (error.response?.status === 401) {
+// // // // //       // Unauthorized - clear auth and redirect to login
+// // // // //       localStorage.removeItem('token');
+// // // // //       localStorage.removeItem('user');
+// // // // //       window.location.href = '/login';
+// // // // //     }
+// // // // //     return Promise.reject(error);
+// // // // //   }
+// // // // // );
+
+// // // // // export default api;
+
+// // // // // // ═══════════════════════════════════════════════════
+// // // // // //  API HELPER FUNCTIONS
+// // // // // // ═══════════════════════════════════════════════════
+
+// // // // // // Auth APIs
+// // // // // export const authAPI = {
+// // // // //   login: (email, password) => api.post('/api/users/login/', { email, password }),
+// // // // //   register: (data) => api.post('/api/users/register/', data),
+// // // // //   verifyOTP: (email, otp) => api.post('/api/users/verify-registration-otp/', { email, otp }),
+// // // // //   resendOTP: (email) => api.post('/api/users/resend-otp/', { email }),
+// // // // //   forgotPassword: (email) => api.post('/api/users/forgot-password/', { email }),
+// // // // //   resetPassword: (email, otp, newPassword) => 
+// // // // //     api.post('/api/users/verify-otp-reset-password/', { email, otp, new_password: newPassword }),
+// // // // //   logout: () => api.post('/api/users/logout/'),
+// // // // //   getProfile: () => api.get('/api/users/profile/'),
+// // // // // };
+
+// // // // // // Student APIs
+// // // // // export const studentAPI = {
+// // // // //   getDashboard: () => api.get('/api/students/home/'),
+// // // // //   getSubjectDetails: (subjectId) => api.get(`/api/students/subjects/${subjectId}/`),
+// // // // //   getChapterTests: (chapterId) => api.get(`/api/students/chapters/${chapterId}/tests/`),
+// // // // //   startTest: (testId) => api.post(`/api/students/tests/${testId}/start/`),
+// // // // //   submitTest: (attemptId, answers) => 
+// // // // //     api.post(`/api/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // // // //   getTestResult: (attemptId) => api.get(`/api/students/test-attempts/${attemptId}/result/`),
+// // // // //   getMyTests: () => api.get('/api/students/my-test-attempts/'),
+// // // // //   getAttendance: () => api.get('/api/students/my-attendance/'),
+// // // // //   getFees: () => api.get('/api/students/my-fee-payments/'),
+// // // // //   getAssignments: () => api.get('/api/students/my-assignments/'),
+// // // // //   createDoubt: (data) => api.post('/api/students/doubts/create/', data),
+// // // // //   getNotifications: () => api.get('/api/students/my-notifications/'),
+// // // // // };
+
+// // // // // // Teacher APIs
+// // // // // export const teacherAPI = {
+// // // // //   getDashboard: () => api.get('/api/teachers/home/'),
+// // // // //   getSubjectClasses: (subjectId) => api.get(`/api/teachers/subject/${subjectId}/classes/`),
+// // // // //   getChapters: (classId, subjectId) => 
+// // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+// // // // //   markChapterComplete: (chapterId) => 
+// // // // //     api.post(`/api/teachers/chapters/${chapterId}/mark-complete/`),
+// // // // //   getTests: (chapterId) => api.get(`/api/teachers/chapter/${chapterId}/tests/`),
+// // // // //   createTest: (chapterId, data) => 
+// // // // //     api.post(`/api/teachers/chapter/${chapterId}/tests/create/`, data),
+// // // // //   getTestDetails: (testId) => api.get(`/api/teachers/tests/${testId}/`),
+// // // // //   createQuestion: (testId, data) => 
+// // // // //     api.post(`/api/teachers/tests/${testId}/questions/create/`, data),
+// // // // //   updateQuestion: (questionId, data) => 
+// // // // //     api.put(`/api/teachers/questions/${questionId}/update/`, data),
+// // // // //   deleteQuestion: (questionId) => api.delete(`/api/teachers/questions/${questionId}/delete/`),
+// // // // //   markAttendance: (classId, subjectId, data) => 
+// // // // //     api.post(`/api/teachers/class/${classId}/subject/${subjectId}/attendance/mark/`, data),
+// // // // //   getAttendanceList: (classId, subjectId) => 
+// // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/attendance/`),
+// // // // //   createAssignment: (classId, subjectId, data) => 
+// // // // //     api.post(`/api/teachers/class/${classId}/subject/${subjectId}/assignments/create/`, data),
+// // // // //   getAssignments: (classId, subjectId) => 
+// // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/assignments/`),
+// // // // //   getDoubts: (classId, subjectId) => 
+// // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/doubts/`),
+// // // // //   replyDoubt: (doubtId, data) => 
+// // // // //     api.post(`/api/teachers/doubts/${doubtId}/reply/`, data),
+// // // // //   getClassStudents: (classId) => api.get(`/api/teachers/class/${classId}/students/`),
+// // // // // };
+
+// // // // // // Admin APIs
+// // // // // export const adminAPI = {
+// // // // //   getAllUsers: () => api.get('/api/admin/users/'),
+// // // // //   approveUser: (userId) => api.post(`/api/admin/users/${userId}/approve/`),
+// // // // //   createClass: (data) => api.post('/api/admin/classes/create/', data),
+// // // // //   getAllClasses: () => api.get('/api/admin/classes/'),
+// // // // //   createSubject: (data) => api.post('/api/admin/subjects/create/', data),
+// // // // //   getAllSubjects: () => api.get('/api/admin/subjects/'),
+// // // // //   createChapter: (data) => api.post('/api/admin/chapters/create/', data),
+// // // // //   getAllChapters: () => api.get('/api/admin/chapters/'),
+// // // // // };
+
+// // // // // // Utility APIs
+// // // // // export const utilityAPI = {
+// // // // //   getClasses: () => api.get('/api/users/classes/'),
+// // // // //   getSubjects: () => api.get('/api/users/subjects/'),
+// // // // // };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // // // import axios from 'axios';
+
+// // // // // // const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // // // const api = axios.create({
+// // // // // //   baseURL: API_BASE_URL,
+// // // // // //   headers: {
+// // // // // //     'Content-Type': 'application/json',
+// // // // // //   },
+// // // // // // });
+
+// // // // // // // Request interceptor
+// // // // // // api.interceptors.request.use(
+// // // // // //   (config) => {
+// // // // // //     const token = localStorage.getItem('access_token');
+// // // // // //     if (token) {
+// // // // // //       config.headers.Authorization = `Bearer ${token}`;
+// // // // // //     }
+// // // // // //     return config;
+// // // // // //   },
+// // // // // //   (error) => Promise.reject(error)
+// // // // // // );
+
+// // // // // // // Response interceptor
+// // // // // // api.interceptors.response.use(
+// // // // // //   (response) => response,
+// // // // // //   async (error) => {
+// // // // // //     const originalRequest = error.config;
+
+// // // // // //     if (error.response?.status === 401 && !originalRequest._retry) {
+// // // // // //       originalRequest._retry = true;
+
+// // // // // //       try {
+// // // // // //         const refreshToken = localStorage.getItem('refresh_token');
+// // // // // //         const response = await axios.post(`${API_BASE_URL}/users/token/refresh/`, {
+// // // // // //           refresh: refreshToken,
+// // // // // //         });
+
+// // // // // //         const { access } = response.data;
+// // // // // //         localStorage.setItem('access_token', access);
+// // // // // //         originalRequest.headers.Authorization = `Bearer ${access}`;
+// // // // // //         return api(originalRequest);
+// // // // // //       } catch (refreshError) {
+// // // // // //         localStorage.clear();
+// // // // // //         window.location.href = '/login';
+// // // // // //         return Promise.reject(refreshError);
+// // // // // //       }
+// // // // // //     }
+
+// // // // // //     return Promise.reject(error);
+// // // // // //   }
+// // // // // // );
+
+// // // // // // // Authentication API
+// // // // // // export const authAPI = {
+// // // // // //   register: (userData) => api.post('/users/register/', userData),
+// // // // // //   verifyOTP: (email, otp) => api.post('/users/verify-registration-otp/', { email, otp }),
+// // // // // //   resendOTP: (email) => api.post('/users/resend-otp/', { email }),
+// // // // // //   login: (identifier, password) => api.post('/users/login/', { identifier, password }),
+// // // // // //   logout: (refreshToken) => api.post('/users/logout/', { refresh_token: refreshToken }),
+// // // // // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+// // // // // //   resetPassword: (email, otp, newPassword) => 
+// // // // // //     api.post('/users/reset-password/', { email, otp, new_password: newPassword }),
+// // // // // //   getProfile: () => api.get('/users/me/'),
+// // // // // //   updateProfile: (userData) => api.put('/users/profile/', userData),
+// // // // // //   changePassword: (oldPassword, newPassword, newPasswordConfirm) => 
+// // // // // //     api.post('/users/change-password/', {
+// // // // // //       old_password: oldPassword,
+// // // // // //       new_password: newPassword,
+// // // // // //       new_password_confirm: newPasswordConfirm,
+// // // // // //     }),
+// // // // // // };
+
+// // // // // // // Student API
+// // // // // // export const studentAPI = {
+// // // // // //   getDashboard: () => api.get('/students/dashboard/'),
+// // // // // //   getAvailableTests: (params) => api.get('/students/available-tests/', { params }),
+// // // // // //   startTest: (testId) => api.get(`/students/start-test/${testId}/`),
+// // // // // //   submitTest: (testId, answers) => api.post(`/students/submit-test/${testId}/`, { answers }),
+// // // // // //   getTestAttempts: () => api.get('/students/test-attempts/'),
+// // // // // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/`),
+// // // // // //   getStatistics: () => api.get('/students/test-attempts/statistics/'),
+// // // // // //   getAttendance: (params) => api.get('/students/attendance/', { params }),
+// // // // // //   getAssignments: (params) => api.get('/students/assignments/', { params }),
+// // // // // //   getDoubts: () => api.get('/students/doubts/'),
+// // // // // //   postDoubt: (doubtData) => api.post('/students/doubts/', doubtData),
+// // // // // //   getDoubtDetail: (doubtId) => api.get(`/students/doubts/${doubtId}/`),
+// // // // // // };
+
+// // // // // // // Teacher API
+// // // // // // export const teacherAPI = {
+// // // // // //   getDashboard: () => api.get('/teachers/dashboard/'),
+// // // // // //   getAssignments: () => api.get('/teachers/assignments/my-assignments/'),
+// // // // // //   getTests: (params) => api.get('/teachers/tests/my-tests/', { params }),
+// // // // // //   createTest: (testData) => api.post('/teachers/tests/', testData),
+// // // // // //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// // // // // //   addQuestion: (testId, questionData) => api.post(`/teachers/tests/${testId}/add-question/`, questionData),
+// // // // // //   getTestStatistics: (testId) => api.get(`/teachers/tests/${testId}/statistics/`),
+// // // // // //   markAttendance: (attendanceData) => api.post('/teachers/attendance/mark-bulk/', attendanceData),
+// // // // // //   getAttendanceByDate: (params) => api.get('/teachers/attendance/by-date/', { params }),
+// // // // // //   getStudentReport: (studentId, params) => api.get(`/teachers/attendance/student-report/${studentId}/`, { params }),
+// // // // // //   getClassReport: (classId, params) => api.get(`/teachers/attendance/class-report/${classId}/`, { params }),
+// // // // // //   createAssignment: (assignmentData) => api.post('/teachers/assignments/', assignmentData),
+// // // // // //   getDoubts: (params) => api.get('/teachers/doubts/my-subject-doubts/', { params }),
+// // // // // //   replyToDoubt: (doubtId, replyData) => api.post(`/teachers/doubts/${doubtId}/reply/`, replyData),
+// // // // // // };
+
+// // // // // // // Admin API
+// // // // // // export const adminAPI = {
+// // // // // //   getDashboard: () => api.get('/admin/dashboard/'),
+// // // // // //   getPendingUsers: () => api.get('/users/pending/'),
+// // // // // //   approveUser: (userId) => api.post(`/users/${userId}/approve/`),
+// // // // // //   rejectUser: (userId) => api.post(`/users/${userId}/reject/`),
+// // // // // //   getClasses: () => api.get('/admin/classes/'),
+// // // // // //   createClass: (classData) => api.post('/admin/classes/', classData),
+// // // // // //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// // // // // //   getSubjects: () => api.get('/admin/subjects/'),
+// // // // // //   createSubject: (subjectData) => api.post('/admin/subjects/', subjectData),
+// // // // // //   getChapters: (params) => api.get('/admin/chapters/', { params }),
+// // // // // //   createChapter: (chapterData) => api.post('/admin/chapters/', chapterData),
+// // // // // //   markChapterComplete: (chapterId, isCompleted) => 
+// // // // // //     api.post(`/admin/chapters/${chapterId}/mark-completed/`, { is_completed: isCompleted }),
+// // // // // //   getFeePayments: (params) => api.get('/admin/fee-payments/', { params }),
+// // // // // //   createFeePayment: (paymentData) => api.post('/admin/fee-payments/', paymentData),
+// // // // // //   getNotifications: () => api.get('/admin/notifications/'),
+// // // // // //   createNotification: (notificationData) => api.post('/admin/notifications/', notificationData),
+// // // // // //   broadcastNotification: (message, role) => 
+// // // // // //     api.post('/admin/notifications/broadcast/', { message, role }),
+// // // // // // };
+
+// // // // // // export default api;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // src/services/api.js
+// // // import axios from 'axios';
+
+// // // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // Create axios instance
+// // // const api = axios.create({
+// // //   baseURL: API_URL,
+// // //   headers: {
+// // //     'Content-Type': 'application/json',
+// // //   },
+// // //   timeout: 15000,
+// // // });
+
+// // // // Add token to requests
+// // // api.interceptors.request.use(
+// // //   (config) => {
+// // //     const token = localStorage.getItem('token');
+// // //     if (token) {
+// // //       config.headers.Authorization = `Token ${token}`; // Token not Bearer
+// // //     }
+// // //     return config;
+// // //   },
+// // //   (error) => {
+// // //     return Promise.reject(error);
+// // //   }
+// // // );
+
+// // // // Handle response errors
+// // // api.interceptors.response.use(
+// // //   (response) => response,
+// // //   (error) => {
+// // //     if (error.response?.status === 401) {
+// // //       localStorage.removeItem('token');
+// // //       localStorage.removeItem('user');
+// // //       window.location.href = '/login';
+// // //     }
+// // //     return Promise.reject(error);
+// // //   }
+// // // );
+
+// // // export default api;
+
+// // // // ============ AUTH APIs ============
+// // // export const authAPI = {
+// // //   // Get registration data (classes & subjects)
+// // //   getRegistrationData: () => api.get('/users/registration-data/'),
+  
+// // //   // Register
+// // //   register: (data) => api.post('/users/register/', data),
+  
+// // //   // Verify registration OTP
+// // //   verifyRegistrationOTP: (data) => api.post('/users/verify-registration-otp/', data),
+  
+// // //   // Resend OTP
+// // //   resendOTP: (email) => api.post('/users/resend-registration-otp/', { email }),
+  
+// // //   // Login
+// // //   login: (data) => api.post('/users/login/', data),
+  
+// // //   // Logout
+// // //   logout: () => api.post('/users/logout/'),
+  
+// // //   // Forgot password
+// // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+  
+// // //   // Reset password
+// // //   resetPassword: (data) => api.post('/users/verify-otp-reset-password/', data),
+  
+// // //   // Get profile
+// // //   getProfile: () => api.get('/users/profile/'),
+// // // };
+
+// // // // ============ STUDENT APIs ============
+// // // export const studentAPI = {
+// // //   // Dashboard - NEW! This is what was missing
+// // //   getDashboard: () => api.get('/students/home/'),
+  
+// // //   // Home/Dashboard (alias for compatibility)
+// // //   getHome: () => api.get('/students/home/'),
+  
+// // //   // Subjects
+// // //   getSubjects: () => api.get('/students/subjects/'),
+// // //   getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+// // //   getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`), // Alias
+  
+// // //   // Chapters
+// // //   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
+  
+// // //   // Tests
+// // //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// // //   startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
+// // //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// // //   getMyAttempts: () => api.get('/students/my-test-attempts/'),
+// // //   getMyTests: () => api.get('/students/my-test-attempts/'), // Alias
+  
+// // //   // Attendance
+// // //   getAttendance: () => api.get('/students/my-attendance/'),
+// // //   getMyAttendance: () => api.get('/students/my-attendance/'), // Alias
+  
+// // //   // Fee Payments
+// // //   getFeePayments: () => api.get('/students/my-fee-payments/'),
+// // //   getMyFees: () => api.get('/students/my-fee-payments/'), // Alias
+  
+// // //   // Assignments
+// // //   getAssignments: () => api.get('/students/my-assignments/'),
+// // //   getMyAssignments: () => api.get('/students/my-assignments/'), // Alias
+// // //   submitAssignment: (assignmentId, data) => api.post(`/students/assignments/${assignmentId}/submit/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+  
+// // //   // Doubts
+// // //   createDoubt: (data) => api.post('/students/doubts/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   getDoubts: () => api.get('/students/doubts/'),
+// // //   getMyDoubts: () => api.get('/students/doubts/'), // Alias
+// // //   getDoubtDetail: (doubtId) => api.get(`/students/doubts/${doubtId}/`),
+// // //   replyToDoubt: (doubtId, data) => api.post(`/students/doubts/${doubtId}/reply/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+  
+// // //   // Notifications
+// // //   getNotifications: () => api.get('/students/my-notifications/'),
+// // //   getMyNotifications: () => api.get('/students/my-notifications/'), // Alias
+// // //   markNotificationRead: (notificationId) => api.patch(`/students/notifications/${notificationId}/read/`),
+  
+// // //   // Search
+// // //   search: (query) => api.get(`/students/search/?q=${query}`),
+// // // };
+
+// // // // ============ TEACHER APIs ============
+// // // export const teacherAPI = {
+// // //   // Dashboard - NEW! This is what was missing for teachers
+// // //   getDashboard: () => api.get('/teachers/home/'),
+  
+// // //   // Home/Dashboard (alias for compatibility)
+// // //   getHome: () => api.get('/teachers/home/'),
+  
+// // //   // Classes & Subjects
+// // //   getSubjects: () => api.get('/teachers/subjects/'),
+// // //   getSubjectClasses: (subjectId) => api.get(`/teachers/subject/${subjectId}/classes/`),
+// // //   getClassChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+// // //   getChapters: (params) => api.get('/teachers/chapters/', { params }),
+// // //   createChapter: (data) => api.post('/teachers/chapters/create/', data),
+// // //   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
+  
+// // //   // Tests
+// // //   getTests: (params) => api.get('/teachers/tests/', { params }),
+// // //   getChapterTests: (chapterId) => api.get(`/teachers/chapter/${chapterId}/tests/`),
+// // //   createTest: (data) => api.post('/teachers/tests/create/', data),
+// // //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// // //   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+// // //   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/update/`, data),
+// // //   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/delete/`),
+  
+// // //   // Questions
+// // //   createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/delete/`),
+  
+// // //   // Attendance
+// // //   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+// // //   getAttendance: (params) => api.get('/teachers/attendance/', { params }),
+// // //   getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/attendance/history/`, { params: { classId, subjectId } }),
+// // //   getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
+  
+// // //   // Assignments
+// // //   createAssignment: (data) => api.post('/teachers/assignments/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   getAssignments: (params) => api.get('/teachers/assignments/', { params }),
+// // //   getAssignmentDetail: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/`),
+// // //   gradeAssignment: (submissionId, data) => api.patch(`/teachers/assignment-submission/${submissionId}/grade/`, data),
+  
+// // //   // Doubts
+// // //   getDoubts: (params) => api.get('/teachers/doubts/', { params }),
+// // //   getDoubtDetail: (doubtId) => api.get(`/teachers/doubts/${doubtId}/`),
+// // //   replyToDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+  
+// // //   // Students
+// // //   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+  
+// // //   // Search
+// // //   search: (query) => api.get(`/teachers/search/?q=${query}`),
+// // // };
+
+// // // // ============ ADMIN APIs ============
+// // // export const adminAPI = {
+// // //   // Dashboard
+// // //   getDashboard: () => api.get('/admin/dashboard/stats/'),
+// // //   getStats: () => api.get('/admin/dashboard/stats/'),
+  
+// // //   // User Management
+// // //   getPendingUsers: () => api.get('/admin/users/pending/'),
+// // //   approveUser: (userId) => api.post('/admin/users/approve/', { user_id: userId }),
+// // //   rejectUser: (userId) => api.post('/admin/users/reject/', { user_id: userId }),
+// // //   getAllUsers: (role) => api.get(`/admin/users/all/?role=${role || ''}`),
+// // //   getUsers: () => api.get('/admin/users/all/'), // Alias
+// // //   deleteUser: (userId) => api.delete(`/admin/users/${userId}/delete/`),
+  
+// // //   // Classes
+// // //   getClasses: () => api.get('/admin/classes/'),
+// // //   createClass: (data) => api.post('/admin/classes/create/', data),
+// // //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// // //   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/update/`, data),
+// // //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/delete/`),
+  
+// // //   // Subjects
+// // //   getSubjects: (classId) => api.get(`/admin/subjects/?class_id=${classId || ''}`),
+// // //   createSubject: (data) => api.post('/admin/subjects/create/', data),
+// // //   getSubjectDetail: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+// // //   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/update/`, data),
+// // //   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/delete/`),
+  
+// // //   // Chapters
+// // //   getChapters: (subjectId, classId) => 
+// // //     api.get(`/admin/chapters/?subject_id=${subjectId || ''}&class_id=${classId || ''}`),
+// // //   createChapter: (data) => api.post('/admin/chapters/create/', data),
+// // //   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/update/`, data),
+// // //   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/delete/`),
+  
+// // //   // Teacher Assignments
+// // //   getTeacherAssignments: () => api.get('/admin/teacher-assignments/'),
+// // //   createTeacherAssignment: (data) => api.post('/admin/teacher-assignments/create/', data),
+// // //   deleteTeacherAssignment: (assignmentId) => api.delete(`/admin/teacher-assignments/${assignmentId}/delete/`),
+  
+// // //   // Notifications
+// // //   createNotification: (data) => api.post('/admin/notifications/create/', data),
+// // //   getNotifications: () => api.get('/admin/notifications/'),
+  
+// // //   // Fee Payments
+// // //   createFeePayment: (data) => api.post('/admin/fees/create/', data, {
+// // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // //   }),
+// // //   getFeePayments: () => api.get('/admin/fees/'),
+// // //   getFeePaymentDetail: (paymentId) => api.get(`/admin/fees/${paymentId}/`),
+// // // };
+
+// // // // ============ UTILITY APIs ============
+// // // export const utilityAPI = {
+// // //   uploadFile: (file) => {
+// // //     const formData = new FormData();
+// // //     formData.append('file', file);
+// // //     return api.post('/upload/', formData, {
+// // //       headers: {
+// // //         'Content-Type': 'multipart/form-data',
+// // //       },
+// // //     });
+// // //   },
+// // // };
+
+// // // export { api };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // // src/services/api.js
+// // // // import axios from 'axios';
+
+// // // // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // // Create axios instance
+// // // // const api = axios.create({
+// // // //   baseURL: API_URL,
+// // // //   headers: {
+// // // //     'Content-Type': 'application/json',
+// // // //   },
+// // // //   timeout: 15000,
+// // // // });
+
+// // // // // Add token to requests
+// // // // api.interceptors.request.use(
+// // // //   (config) => {
+// // // //     const token = localStorage.getItem('token');
+// // // //     if (token) {
+// // // //       config.headers.Authorization = `Token ${token}`; // ← CHANGED: Token not Bearer
+// // // //     }
+// // // //     return config;
+// // // //   },
+// // // //   (error) => {
+// // // //     return Promise.reject(error);
+// // // //   }
+// // // // );
+
+// // // // // Handle response errors
+// // // // api.interceptors.response.use(
+// // // //   (response) => response,
+// // // //   (error) => {
+// // // //     if (error.response?.status === 401) {
+// // // //       localStorage.removeItem('token');
+// // // //       localStorage.removeItem('user');
+// // // //       window.location.href = '/login';
+// // // //     }
+// // // //     return Promise.reject(error);
+// // // //   }
+// // // // );
+
+// // // // export default api;
+
+// // // // // ============ AUTH APIs ============
+// // // // export const authAPI = {
+// // // //   // Get registration data (classes & subjects)
+// // // //   getRegistrationData: () => api.get('/users/registration-data/'),
+  
+// // // //   // Register
+// // // //   register: (data) => api.post('/users/register/', data),
+  
+// // // //   // Verify registration OTP
+// // // //   verifyRegistrationOTP: (data) => api.post('/users/verify-registration-otp/', data),
+  
+// // // //   // Resend OTP
+// // // //   resendOTP: (email) => api.post('/users/resend-registration-otp/', { email }),
+  
+// // // //   // Login
+// // // //   login: (data) => api.post('/users/login/', data),
+  
+// // // //   // Logout
+// // // //   logout: () => api.post('/users/logout/'),
+  
+// // // //   // Forgot password
+// // // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+  
+// // // //   // Reset password
+// // // //   resetPassword: (data) => api.post('/users/verify-otp-reset-password/', data),
+  
+// // // //   // Get profile
+// // // //   getProfile: () => api.get('/users/profile/'),
+// // // // };
+
+// // // // // ============ STUDENT APIs ============
+// // // // export const studentAPI = {
+// // // //   // Home/Dashboard
+// // // //   getHome: () => api.get('/students/home/'),
+  
+// // // //   // Subjects
+// // // //   getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+  
+// // // //   // Tests
+// // // //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// // // //   startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
+// // // //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// // // //   getMyAttempts: () => api.get('/students/my-test-attempts/'),
+  
+// // // //   // Attendance
+// // // //   getAttendance: () => api.get('/students/my-attendance/'),
+  
+// // // //   // Fee Payments
+// // // //   getFeePayments: () => api.get('/students/my-fee-payments/'),
+  
+// // // //   // Assignments
+// // // //   getAssignments: () => api.get('/students/my-assignments/'),
+  
+// // // //   // Doubts
+// // // //   createDoubt: (data) => api.post('/students/doubts/create/', data, {
+// // // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // // //   }),
+// // // //   getDoubts: () => api.get('/students/doubts/'),
+// // // //   replyToDoubt: (doubtId, data) => api.post(`/students/doubts/${doubtId}/reply/`, data, {
+// // // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // // //   }),
+  
+// // // //   // Notifications
+// // // //   getNotifications: () => api.get('/students/my-notifications/'),
+  
+// // // //   // Search
+// // // //   search: (query) => api.get(`/students/search/?q=${query}`),
+// // // // };
+
+// // // // // ============ TEACHER APIs ============
+// // // // export const teacherAPI = {
+// // // //   // Home/Dashboard
+// // // //   getHome: () => api.get('/teachers/home/'),
+  
+// // // //   // Classes & Subjects
+// // // //   getSubjectClasses: (subjectId) => api.get(`/teachers/subject/${subjectId}/classes/`),
+// // // //   getChapters: (params) => api.get('/teachers/chapters/', { params }),
+// // // //   markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/mark-complete/`),
+  
+// // // //   // Tests
+// // // //   getTests: (params) => api.get('/teachers/tests/', { params }),
+// // // //   createTest: (data) => api.post('/teachers/tests/create/', data),
+// // // //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// // // //   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+  
+// // // //   // Questions
+// // // //   createQuestion: (data) => api.post('/teachers/questions/create/', data, {
+// // // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // // //   }),
+// // // //   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/update/`, data, {
+// // // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // // //   }),
+// // // //   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/delete/`),
+  
+// // // //   // Attendance
+// // // //   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+// // // //   getAttendance: (params) => api.get('/teachers/attendance/', { params }),
+// // // //   getStudentAttendance: (studentId, params) => api.get(`/teachers/students/${studentId}/attendance/`, { params }),
+  
+// // // //   // Assignments
+// // // //   createAssignment: (data) => api.post('/teachers/assignments/create/', data, {
+// // // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // // //   }),
+// // // //   getAssignments: (params) => api.get('/teachers/assignments/', { params }),
+// // // //   getAssignmentDetail: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/`),
+  
+// // // //   // Doubts
+// // // //   getDoubts: (params) => api.get('/teachers/doubts/', { params }),
+// // // //   getDoubtDetail: (doubtId) => api.get(`/teachers/doubts/${doubtId}/`),
+// // // //   replyToDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data, {
+// // // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // // //   }),
+  
+// // // //   // Students
+// // // //   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+  
+// // // //   // Search
+// // // //   search: (query) => api.get(`/teachers/search/?q=${query}`),
+// // // // };
+
+// // // // // ============ ADMIN APIs ============
+// // // // export const adminAPI = {
+// // // //   // Dashboard
+// // // //   getStats: () => api.get('/admin/dashboard/stats/'),
+  
+// // // //   // User Management
+// // // //   getPendingUsers: () => api.get('/admin/users/pending/'),
+// // // //   approveUser: (userId) => api.post('/admin/users/approve/', { user_id: userId }),
+// // // //   rejectUser: (userId) => api.post('/admin/users/reject/', { user_id: userId }),
+// // // //   getAllUsers: (role) => api.get(`/admin/users/all/?role=${role || ''}`),
+  
+// // // //   // Classes
+// // // //   getClasses: () => api.get('/admin/classes/'),
+// // // //   createClass: (data) => api.post('/admin/classes/create/', data),
+// // // //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// // // //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/delete/`),
+  
+// // // //   // Subjects
+// // // //   getSubjects: (classId) => api.get(`/admin/subjects/?class_id=${classId || ''}`),
+// // // //   createSubject: (data) => api.post('/admin/subjects/create/', data),
+// // // //   getSubjectDetail: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+  
+// // // //   // Chapters
+// // // //   getChapters: (subjectId, classId) => 
+// // // //     api.get(`/admin/chapters/?subject_id=${subjectId}&class_id=${classId}`),
+// // // //   createChapter: (data) => api.post('/admin/chapters/create/', data),
+  
+// // // //   // Teacher Assignments
+// // // //   getTeacherAssignments: () => api.get('/admin/teacher-assignments/'),
+// // // //   createTeacherAssignment: (data) => api.post('/admin/teacher-assignments/create/', data),
+  
+// // // //   // Notifications
+// // // //   createNotification: (data) => api.post('/admin/notifications/create/', data),
+// // // //   getNotifications: () => api.get('/admin/notifications/'),
+  
+// // // //   // Fee Payments
+// // // //   createFeePayment: (data) => api.post('/admin/fees/create/', data, {
+// // // //     headers: { 'Content-Type': 'multipart/form-data' }
+// // // //   }),
+// // // //   getFeePayments: () => api.get('/admin/fees/'),
+// // // //   getFeePaymentDetail: (paymentId) => api.get(`/admin/fees/${paymentId}/`),
+// // // // };
+
+// // // // export { api };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // // import axios from 'axios';
+// // // // // import toast from 'react-hot-toast';
+
+// // // // // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // // const api = axios.create({
+// // // // //   baseURL: API_URL,
+// // // // //   headers: {
+// // // // //     'Content-Type': 'application/json',
+// // // // //   },
+// // // // //   timeout: 15000,
+// // // // // });
+
+// // // // // // Request interceptor
+// // // // // api.interceptors.request.use(
+// // // // //   (config) => {
+// // // // //     const token = localStorage.getItem('access_token');
+// // // // //     if (token) {
+// // // // //       config.headers.Authorization = `Bearer ${token}`;
+// // // // //     }
+// // // // //     return config;
+// // // // //   },
+// // // // //   (error) => Promise.reject(error)
+// // // // // );
+
+// // // // // // Response interceptor
+// // // // // api.interceptors.response.use(
+// // // // //   (response) => response,
+// // // // //   async (error) => {
+// // // // //     const originalRequest = error.config;
+
+// // // // //     if (error.response?.status === 401 && !originalRequest._retry) {
+// // // // //       originalRequest._retry = true;
+
+// // // // //       try {
+// // // // //         const refreshToken = localStorage.getItem('refresh_token');
+// // // // //         const response = await axios.post(`${API_URL}/users/token/refresh/`, {
+// // // // //           refresh: refreshToken,
+// // // // //         });
+
+// // // // //         const { access } = response.data;
+// // // // //         localStorage.setItem('access_token', access);
+// // // // //         originalRequest.headers.Authorization = `Bearer ${access}`;
+// // // // //         return api(originalRequest);
+// // // // //       } catch (refreshError) {
+// // // // //         localStorage.clear();
+// // // // //         window.location.href = '/login';
+// // // // //         return Promise.reject(refreshError);
+// // // // //       }
+// // // // //     }
+
+// // // // //     return Promise.reject(error);
+// // // // //   }
+// // // // // );
+
+// // // // // // AUTH ENDPOINTS
+// // // // // export const authAPI = {
+// // // // //   register: (data) => api.post('/users/register/', data),
+// // // // //   login: (data) => api.post('/users/login/', data),
+// // // // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+// // // // //   verifyOTP: (email, otp) => api.post('/users/verify-otp/', { email, otp }),
+// // // // //   resetPassword: (data) => api.post('/users/reset-password/', data),
+// // // // //   getProfile: () => api.get('/users/profile/'),
+// // // // //   updateProfile: (data) => api.patch('/users/profile/', data),
+// // // // //   logout: () => {
+// // // // //     localStorage.clear();
+// // // // //     return Promise.resolve();
+// // // // //   },
+// // // // // };
+
+// // // // // // STUDENT ENDPOINTS
+// // // // // export const studentAPI = {
+// // // // //   getDashboard: () => api.get('/students/dashboard/'),
+// // // // //   getSubjects: () => api.get('/students/subjects/'),
+// // // // //   getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
+// // // // //   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
+// // // // //   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
+// // // // //   getTestDetails: (testId) => api.get(`/students/tests/${testId}/`),
+// // // // //   startTest: (testId) => api.post(`/students/tests/${testId}/start/`),
+// // // // //   submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // // // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
+// // // // //   getMyTests: () => api.get('/students/my-tests/'),
+// // // // //   getAttendance: () => api.get('/students/attendance/'),
+// // // // //   getFees: () => api.get('/students/fees/'),
+// // // // //   getAssignments: () => api.get('/students/assignments/'),
+// // // // //   submitAssignment: (assignmentId, data) => api.post(`/students/assignments/${assignmentId}/submit/`, data),
+// // // // //   getDoubts: () => api.get('/students/doubts/'),
+// // // // //   postDoubt: (data) => api.post('/students/doubts/', data),
+// // // // //   getNotifications: () => api.get('/students/notifications/'),
+// // // // //   markNotificationRead: (notificationId) => api.patch(`/students/notifications/${notificationId}/read/`),
+// // // // // };
+
+// // // // // // TEACHER ENDPOINTS
+// // // // // export const teacherAPI = {
+// // // // //   getDashboard: () => api.get('/teachers/dashboard/'),
+// // // // //   getSubjects: () => api.get('/teachers/subjects/'),
+// // // // //   getSubjectClasses: (subjectId) => api.get(`/teachers/subjects/${subjectId}/classes/`),
+// // // // //   getChapters: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/chapters/`),
+// // // // //   getChapterTests: (chapterId) => api.get(`/teachers/chapters/${chapterId}/tests/`),
+// // // // //   createTest: (chapterId, data) => api.post(`/teachers/chapters/${chapterId}/tests/`, data),
+// // // // //   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/`, data),
+// // // // //   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/`),
+// // // // //   getTestSubmissions: (testId) => api.get(`/teachers/tests/${testId}/submissions/`),
+// // // // //   gradeTest: (attemptId, data) => api.post(`/teachers/test-attempts/${attemptId}/grade/`, data),
+// // // // //   markAttendance: (classId, subjectId, data) => api.post(`/teachers/classes/${classId}/subjects/${subjectId}/attendance/`, data),
+// // // // //   getAttendanceHistory: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/attendance/`),
+// // // // //   getAssignments: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/assignments/`),
+// // // // //   createAssignment: (classId, subjectId, data) => api.post(`/teachers/classes/${classId}/subjects/${subjectId}/assignments/`, data),
+// // // // //   getAssignmentSubmissions: (assignmentId) => api.get(`/teachers/assignments/${assignmentId}/submissions/`),
+// // // // //   gradeAssignment: (submissionId, data) => api.post(`/teachers/submissions/${submissionId}/grade/`, data),
+// // // // //   getDoubts: (classId, subjectId) => api.get(`/teachers/classes/${classId}/subjects/${subjectId}/doubts/`),
+// // // // //   answerDoubt: (doubtId, answer) => api.post(`/teachers/doubts/${doubtId}/answer/`, { answer }),
+// // // // // };
+
+// // // // // // ADMIN ENDPOINTS
+// // // // // export const adminAPI = {
+// // // // //   getDashboard: () => api.get('/admin/dashboard/'),
+// // // // //   getUsers: () => api.get('/admin/users/'),
+// // // // //   createUser: (data) => api.post('/admin/users/', data),
+// // // // //   updateUser: (userId, data) => api.put(`/admin/users/${userId}/`, data),
+// // // // //   deleteUser: (userId) => api.delete(`/admin/users/${userId}/`),
+// // // // //   getClasses: () => api.get('/admin/classes/'),
+// // // // //   createClass: (data) => api.post('/admin/classes/', data),
+// // // // //   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/`, data),
+// // // // //   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/`),
+// // // // //   getSubjects: () => api.get('/admin/subjects/'),
+// // // // //   createSubject: (data) => api.post('/admin/subjects/', data),
+// // // // //   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/`, data),
+// // // // //   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/`),
+// // // // //   getChapters: (subjectId) => api.get(`/admin/subjects/${subjectId}/chapters/`),
+// // // // //   createChapter: (subjectId, data) => api.post(`/admin/subjects/${subjectId}/chapters/`, data),
+// // // // //   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/`, data),
+// // // // //   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/`),
+// // // // //   enrollStudent: (data) => api.post('/admin/enrollments/', data),
+// // // // //   removeEnrollment: (enrollmentId) => api.delete(`/admin/enrollments/${enrollmentId}/`),
+// // // // //   assignTeacher: (data) => api.post('/admin/teacher-assignments/', data),
+// // // // //   removeTeacherAssignment: (assignmentId) => api.delete(`/admin/teacher-assignments/${assignmentId}/`),
+// // // // // };
+
+// // // // // export default api;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // // // import axios from 'axios';
+
+// // // // // // // Create axios instance
+// // // // // // const api = axios.create({
+// // // // // //   baseURL: 'http://localhost:8000', // Your Django backend URL
+// // // // // //   headers: {
+// // // // // //     'Content-Type': 'application/json',
+// // // // // //   },
+// // // // // //   timeout: 10000,
+// // // // // // });
+
+// // // // // // // Request interceptor
+// // // // // // api.interceptors.request.use(
+// // // // // //   (config) => {
+// // // // // //     const token = localStorage.getItem('token');
+// // // // // //     if (token) {
+// // // // // //       config.headers.Authorization = `Token ${token}`;
+// // // // // //     }
+// // // // // //     return config;
+// // // // // //   },
+// // // // // //   (error) => {
+// // // // // //     return Promise.reject(error);
+// // // // // //   }
+// // // // // // );
+
+// // // // // // // Response interceptor
+// // // // // // api.interceptors.response.use(
+// // // // // //   (response) => response,
+// // // // // //   (error) => {
+// // // // // //     if (error.response?.status === 401) {
+// // // // // //       // Unauthorized - clear auth and redirect to login
+// // // // // //       localStorage.removeItem('token');
+// // // // // //       localStorage.removeItem('user');
+// // // // // //       window.location.href = '/login';
+// // // // // //     }
+// // // // // //     return Promise.reject(error);
+// // // // // //   }
+// // // // // // );
+
+// // // // // // export default api;
+
+// // // // // // // ═══════════════════════════════════════════════════
+// // // // // // //  API HELPER FUNCTIONS
+// // // // // // // ═══════════════════════════════════════════════════
+
+// // // // // // // Auth APIs
+// // // // // // export const authAPI = {
+// // // // // //   login: (email, password) => api.post('/api/users/login/', { email, password }),
+// // // // // //   register: (data) => api.post('/api/users/register/', data),
+// // // // // //   verifyOTP: (email, otp) => api.post('/api/users/verify-registration-otp/', { email, otp }),
+// // // // // //   resendOTP: (email) => api.post('/api/users/resend-otp/', { email }),
+// // // // // //   forgotPassword: (email) => api.post('/api/users/forgot-password/', { email }),
+// // // // // //   resetPassword: (email, otp, newPassword) => 
+// // // // // //     api.post('/api/users/verify-otp-reset-password/', { email, otp, new_password: newPassword }),
+// // // // // //   logout: () => api.post('/api/users/logout/'),
+// // // // // //   getProfile: () => api.get('/api/users/profile/'),
+// // // // // // };
+
+// // // // // // // Student APIs
+// // // // // // export const studentAPI = {
+// // // // // //   getDashboard: () => api.get('/api/students/home/'),
+// // // // // //   getSubjectDetails: (subjectId) => api.get(`/api/students/subjects/${subjectId}/`),
+// // // // // //   getChapterTests: (chapterId) => api.get(`/api/students/chapters/${chapterId}/tests/`),
+// // // // // //   startTest: (testId) => api.post(`/api/students/tests/${testId}/start/`),
+// // // // // //   submitTest: (attemptId, answers) => 
+// // // // // //     api.post(`/api/students/test-attempts/${attemptId}/submit/`, { answers }),
+// // // // // //   getTestResult: (attemptId) => api.get(`/api/students/test-attempts/${attemptId}/result/`),
+// // // // // //   getMyTests: () => api.get('/api/students/my-test-attempts/'),
+// // // // // //   getAttendance: () => api.get('/api/students/my-attendance/'),
+// // // // // //   getFees: () => api.get('/api/students/my-fee-payments/'),
+// // // // // //   getAssignments: () => api.get('/api/students/my-assignments/'),
+// // // // // //   createDoubt: (data) => api.post('/api/students/doubts/create/', data),
+// // // // // //   getNotifications: () => api.get('/api/students/my-notifications/'),
+// // // // // // };
+
+// // // // // // // Teacher APIs
+// // // // // // export const teacherAPI = {
+// // // // // //   getDashboard: () => api.get('/api/teachers/home/'),
+// // // // // //   getSubjectClasses: (subjectId) => api.get(`/api/teachers/subject/${subjectId}/classes/`),
+// // // // // //   getChapters: (classId, subjectId) => 
+// // // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+// // // // // //   markChapterComplete: (chapterId) => 
+// // // // // //     api.post(`/api/teachers/chapters/${chapterId}/mark-complete/`),
+// // // // // //   getTests: (chapterId) => api.get(`/api/teachers/chapter/${chapterId}/tests/`),
+// // // // // //   createTest: (chapterId, data) => 
+// // // // // //     api.post(`/api/teachers/chapter/${chapterId}/tests/create/`, data),
+// // // // // //   getTestDetails: (testId) => api.get(`/api/teachers/tests/${testId}/`),
+// // // // // //   createQuestion: (testId, data) => 
+// // // // // //     api.post(`/api/teachers/tests/${testId}/questions/create/`, data),
+// // // // // //   updateQuestion: (questionId, data) => 
+// // // // // //     api.put(`/api/teachers/questions/${questionId}/update/`, data),
+// // // // // //   deleteQuestion: (questionId) => api.delete(`/api/teachers/questions/${questionId}/delete/`),
+// // // // // //   markAttendance: (classId, subjectId, data) => 
+// // // // // //     api.post(`/api/teachers/class/${classId}/subject/${subjectId}/attendance/mark/`, data),
+// // // // // //   getAttendanceList: (classId, subjectId) => 
+// // // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/attendance/`),
+// // // // // //   createAssignment: (classId, subjectId, data) => 
+// // // // // //     api.post(`/api/teachers/class/${classId}/subject/${subjectId}/assignments/create/`, data),
+// // // // // //   getAssignments: (classId, subjectId) => 
+// // // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/assignments/`),
+// // // // // //   getDoubts: (classId, subjectId) => 
+// // // // // //     api.get(`/api/teachers/class/${classId}/subject/${subjectId}/doubts/`),
+// // // // // //   replyDoubt: (doubtId, data) => 
+// // // // // //     api.post(`/api/teachers/doubts/${doubtId}/reply/`, data),
+// // // // // //   getClassStudents: (classId) => api.get(`/api/teachers/class/${classId}/students/`),
+// // // // // // };
+
+// // // // // // // Admin APIs
+// // // // // // export const adminAPI = {
+// // // // // //   getAllUsers: () => api.get('/api/admin/users/'),
+// // // // // //   approveUser: (userId) => api.post(`/api/admin/users/${userId}/approve/`),
+// // // // // //   createClass: (data) => api.post('/api/admin/classes/create/', data),
+// // // // // //   getAllClasses: () => api.get('/api/admin/classes/'),
+// // // // // //   createSubject: (data) => api.post('/api/admin/subjects/create/', data),
+// // // // // //   getAllSubjects: () => api.get('/api/admin/subjects/'),
+// // // // // //   createChapter: (data) => api.post('/api/admin/chapters/create/', data),
+// // // // // //   getAllChapters: () => api.get('/api/admin/chapters/'),
+// // // // // // };
+
+// // // // // // // Utility APIs
+// // // // // // export const utilityAPI = {
+// // // // // //   getClasses: () => api.get('/api/users/classes/'),
+// // // // // //   getSubjects: () => api.get('/api/users/subjects/'),
+// // // // // // };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // // // // // // import axios from 'axios';
+
+// // // // // // // const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// // // // // // // const api = axios.create({
+// // // // // // //   baseURL: API_BASE_URL,
+// // // // // // //   headers: {
+// // // // // // //     'Content-Type': 'application/json',
+// // // // // // //   },
+// // // // // // // });
+
+// // // // // // // // Request interceptor
+// // // // // // // api.interceptors.request.use(
+// // // // // // //   (config) => {
+// // // // // // //     const token = localStorage.getItem('access_token');
+// // // // // // //     if (token) {
+// // // // // // //       config.headers.Authorization = `Bearer ${token}`;
+// // // // // // //     }
+// // // // // // //     return config;
+// // // // // // //   },
+// // // // // // //   (error) => Promise.reject(error)
+// // // // // // // );
+
+// // // // // // // // Response interceptor
+// // // // // // // api.interceptors.response.use(
+// // // // // // //   (response) => response,
+// // // // // // //   async (error) => {
+// // // // // // //     const originalRequest = error.config;
+
+// // // // // // //     if (error.response?.status === 401 && !originalRequest._retry) {
+// // // // // // //       originalRequest._retry = true;
+
+// // // // // // //       try {
+// // // // // // //         const refreshToken = localStorage.getItem('refresh_token');
+// // // // // // //         const response = await axios.post(`${API_BASE_URL}/users/token/refresh/`, {
+// // // // // // //           refresh: refreshToken,
+// // // // // // //         });
+
+// // // // // // //         const { access } = response.data;
+// // // // // // //         localStorage.setItem('access_token', access);
+// // // // // // //         originalRequest.headers.Authorization = `Bearer ${access}`;
+// // // // // // //         return api(originalRequest);
+// // // // // // //       } catch (refreshError) {
+// // // // // // //         localStorage.clear();
+// // // // // // //         window.location.href = '/login';
+// // // // // // //         return Promise.reject(refreshError);
+// // // // // // //       }
+// // // // // // //     }
+
+// // // // // // //     return Promise.reject(error);
+// // // // // // //   }
+// // // // // // // );
+
+// // // // // // // // Authentication API
+// // // // // // // export const authAPI = {
+// // // // // // //   register: (userData) => api.post('/users/register/', userData),
+// // // // // // //   verifyOTP: (email, otp) => api.post('/users/verify-registration-otp/', { email, otp }),
+// // // // // // //   resendOTP: (email) => api.post('/users/resend-otp/', { email }),
+// // // // // // //   login: (identifier, password) => api.post('/users/login/', { identifier, password }),
+// // // // // // //   logout: (refreshToken) => api.post('/users/logout/', { refresh_token: refreshToken }),
+// // // // // // //   forgotPassword: (email) => api.post('/users/forgot-password/', { email }),
+// // // // // // //   resetPassword: (email, otp, newPassword) => 
+// // // // // // //     api.post('/users/reset-password/', { email, otp, new_password: newPassword }),
+// // // // // // //   getProfile: () => api.get('/users/me/'),
+// // // // // // //   updateProfile: (userData) => api.put('/users/profile/', userData),
+// // // // // // //   changePassword: (oldPassword, newPassword, newPasswordConfirm) => 
+// // // // // // //     api.post('/users/change-password/', {
+// // // // // // //       old_password: oldPassword,
+// // // // // // //       new_password: newPassword,
+// // // // // // //       new_password_confirm: newPasswordConfirm,
+// // // // // // //     }),
+// // // // // // // };
+
+// // // // // // // // Student API
+// // // // // // // export const studentAPI = {
+// // // // // // //   getDashboard: () => api.get('/students/dashboard/'),
+// // // // // // //   getAvailableTests: (params) => api.get('/students/available-tests/', { params }),
+// // // // // // //   startTest: (testId) => api.get(`/students/start-test/${testId}/`),
+// // // // // // //   submitTest: (testId, answers) => api.post(`/students/submit-test/${testId}/`, { answers }),
+// // // // // // //   getTestAttempts: () => api.get('/students/test-attempts/'),
+// // // // // // //   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/`),
+// // // // // // //   getStatistics: () => api.get('/students/test-attempts/statistics/'),
+// // // // // // //   getAttendance: (params) => api.get('/students/attendance/', { params }),
+// // // // // // //   getAssignments: (params) => api.get('/students/assignments/', { params }),
+// // // // // // //   getDoubts: () => api.get('/students/doubts/'),
+// // // // // // //   postDoubt: (doubtData) => api.post('/students/doubts/', doubtData),
+// // // // // // //   getDoubtDetail: (doubtId) => api.get(`/students/doubts/${doubtId}/`),
+// // // // // // // };
+
+// // // // // // // // Teacher API
+// // // // // // // export const teacherAPI = {
+// // // // // // //   getDashboard: () => api.get('/teachers/dashboard/'),
+// // // // // // //   getAssignments: () => api.get('/teachers/assignments/my-assignments/'),
+// // // // // // //   getTests: (params) => api.get('/teachers/tests/my-tests/', { params }),
+// // // // // // //   createTest: (testData) => api.post('/teachers/tests/', testData),
+// // // // // // //   getTestDetail: (testId) => api.get(`/teachers/tests/${testId}/`),
+// // // // // // //   addQuestion: (testId, questionData) => api.post(`/teachers/tests/${testId}/add-question/`, questionData),
+// // // // // // //   getTestStatistics: (testId) => api.get(`/teachers/tests/${testId}/statistics/`),
+// // // // // // //   markAttendance: (attendanceData) => api.post('/teachers/attendance/mark-bulk/', attendanceData),
+// // // // // // //   getAttendanceByDate: (params) => api.get('/teachers/attendance/by-date/', { params }),
+// // // // // // //   getStudentReport: (studentId, params) => api.get(`/teachers/attendance/student-report/${studentId}/`, { params }),
+// // // // // // //   getClassReport: (classId, params) => api.get(`/teachers/attendance/class-report/${classId}/`, { params }),
+// // // // // // //   createAssignment: (assignmentData) => api.post('/teachers/assignments/', assignmentData),
+// // // // // // //   getDoubts: (params) => api.get('/teachers/doubts/my-subject-doubts/', { params }),
+// // // // // // //   replyToDoubt: (doubtId, replyData) => api.post(`/teachers/doubts/${doubtId}/reply/`, replyData),
+// // // // // // // };
+
+// // // // // // // // Admin API
+// // // // // // // export const adminAPI = {
+// // // // // // //   getDashboard: () => api.get('/admin/dashboard/'),
+// // // // // // //   getPendingUsers: () => api.get('/users/pending/'),
+// // // // // // //   approveUser: (userId) => api.post(`/users/${userId}/approve/`),
+// // // // // // //   rejectUser: (userId) => api.post(`/users/${userId}/reject/`),
+// // // // // // //   getClasses: () => api.get('/admin/classes/'),
+// // // // // // //   createClass: (classData) => api.post('/admin/classes/', classData),
+// // // // // // //   getClassDetail: (classId) => api.get(`/admin/classes/${classId}/`),
+// // // // // // //   getSubjects: () => api.get('/admin/subjects/'),
+// // // // // // //   createSubject: (subjectData) => api.post('/admin/subjects/', subjectData),
+// // // // // // //   getChapters: (params) => api.get('/admin/chapters/', { params }),
+// // // // // // //   createChapter: (chapterData) => api.post('/admin/chapters/', chapterData),
+// // // // // // //   markChapterComplete: (chapterId, isCompleted) => 
+// // // // // // //     api.post(`/admin/chapters/${chapterId}/mark-completed/`, { is_completed: isCompleted }),
+// // // // // // //   getFeePayments: (params) => api.get('/admin/fee-payments/', { params }),
+// // // // // // //   createFeePayment: (paymentData) => api.post('/admin/fee-payments/', paymentData),
+// // // // // // //   getNotifications: () => api.get('/admin/notifications/'),
+// // // // // // //   createNotification: (notificationData) => api.post('/admin/notifications/', notificationData),
+// // // // // // //   broadcastNotification: (message, role) => 
+// // // // // // //     api.post('/admin/notifications/broadcast/', { message, role }),
+// // // // // // // };
+
+// // // // // // // export default api;
