@@ -319,33 +319,51 @@ class GoogleAuthView(APIView):
     """Handle Google Sign-In for both login and registration"""
 
     def post(self, request):
-        credential = request.data.get('credential')  # Google JWT token from frontend
-        role = request.data.get('role', 'student')    # Only needed for new registrations
+        credential = request.data.get('credential')
+        role = request.data.get('role', 'student')
+
+        print(f"🔵 GoogleAuth: Received request for role: {role}")
 
         if not credential:
+            print("❌ GoogleAuth: No credential provided")
             return Response({'error': 'Google credential required.'}, status=400)
 
         try:
+            # Get Client ID from Django settings (NOT os.environ)
+            google_client_id = settings.GOOGLE_CLIENT_ID
+            
+            print(f"🔍 GoogleAuth: Using Client ID: {google_client_id[:30]}...")
+            print(f"🔍 GoogleAuth: Token length: {len(credential)}")
+            
             # Verify the Google token
-            google_client_id = os.environ.get('GOOGLE_CLIENT_ID')
+            # idinfo = id_token.verify_oauth2_token(
+            #     credential,
+            #     google_requests.Request(),
+            #     google_client_id
+            # )
             idinfo = id_token.verify_oauth2_token(
-                credential,
-                google_requests.Request(),
-                google_client_id
-            )
+                 credential,
+                 google_requests.Request(),
+                 google_client_id,
+                 clock_skew_in_seconds=120  # ✅ ADD THIS LINE
+              )
 
             email = idinfo.get('email')
             first_name = idinfo.get('given_name', '')
             last_name = idinfo.get('family_name', '')
 
+            print(f"✅ GoogleAuth: Token verified for {email}")
+
             if not email:
+                print("❌ GoogleAuth: No email in token")
                 return Response({'error': 'Could not retrieve email from Google.'}, status=400)
 
             # Check if user already exists
             user = CustomUser.objects.filter(email=email).first()
 
             if user:
-                # Existing user — just log them in
+                # Existing user — log them in
+                print(f"👤 GoogleAuth: Existing user login: {email}")
                 token, _ = Token.objects.get_or_create(user=user)
                 return Response({
                     'token': token.key,
@@ -360,9 +378,10 @@ class GoogleAuthView(APIView):
                 })
             else:
                 # New user — create account
-                # Note: phone, dob, class/subjects still needed for full profile
-                # Google signup creates a partial account pending completion
+                print(f"🆕 GoogleAuth: Creating new user: {email}")
+                
                 if role not in ['student', 'teacher']:
+                    print(f"❌ GoogleAuth: Invalid role: {role}")
                     return Response({'error': 'Invalid role.'}, status=400)
 
                 user = CustomUser(
@@ -373,13 +392,16 @@ class GoogleAuthView(APIView):
                     role=role,
                     is_approved=False,
                 )
-                user.set_unusable_password()  # No password needed for Google users
+                user.set_unusable_password()
                 user.save()
 
                 token, _ = Token.objects.get_or_create(user=user)
+                
+                print(f"✅ GoogleAuth: New user created: {email}")
+                
                 return Response({
                     'token': token.key,
-                    'is_new_user': True,   # Frontend can redirect to complete profile
+                    'is_new_user': True,
                     'user': {
                         'email': user.email,
                         'role': user.role,
@@ -390,9 +412,15 @@ class GoogleAuthView(APIView):
                 }, status=201)
 
         except ValueError as e:
+            print(f"❌ GoogleAuth: Token verification failed: {str(e)}")
             return Response({'error': f'Invalid Google token: {str(e)}'}, status=400)
         except Exception as e:
+            print(f"❌ GoogleAuth: Unexpected error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return Response({'error': 'Google authentication failed.'}, status=500)
+
+
 
 
 
