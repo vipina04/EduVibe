@@ -9,6 +9,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import CompleteProfilePage from './pages/CompleteProfilePage';
 
 // Student Pages
+import StudentSubjects from './pages/student/StudentSubjects';
 
 import SubjectTests from './pages/student/SubjectTests';
 import StudentDashboard from './pages/student/StudentDashboard';
@@ -84,6 +85,9 @@ function App() {
       <Route path="/student/doubts"                           element={<ProtectedRoute allowedRoles={['student']}><StudentDoubts /></ProtectedRoute>} />
       <Route path="/student/notifications"                    element={<ProtectedRoute allowedRoles={['student']}><StudentNotifications /></ProtectedRoute>} />
       {/* Student Routes */}
+      <Route path="/student/dashboard" element={<ProtectedRoute allowedRoles={['student']}><StudentDashboard /></ProtectedRoute>} />
+      <Route path="/student/subjects" element={<ProtectedRoute allowedRoles={['student']}><StudentSubjects /></ProtectedRoute>} />
+      <Route path="/student/subject/:subjectId" element={<ProtectedRoute allowedRoles={['student']}><SubjectDetails /></ProtectedRoute>} />
       <Route path="/student/my-tests" element={<ProtectedRoute allowedRoles={['student']}><MyTests /></ProtectedRoute>} />
       <Route path="/student/subject/:subjectId/tests" element={<ProtectedRoute allowedRoles={['student']}><SubjectTests /></ProtectedRoute>} />
       <Route path="/student/test/:testId/take" element={<ProtectedRoute allowedRoles={['student']}><TakeTest /></ProtectedRoute>} />

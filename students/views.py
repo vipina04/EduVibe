@@ -1347,9 +1347,104 @@ class SubjectTestsView(APIView):
 
 
 
-
+class StudentDashboardView(APIView):
+    """
+    Student Dashboard - Returns overview data
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            student = request.user
+            
+            # Check if user is a student
+            if student.role != 'student':
+                return Response({
+                    'error': 'Only students can access this endpoint'
+                }, status=403)
+            
+            # Get enrolled subjects
+            enrollments = Enrollment.objects.filter(
+                student=student,
+                is_active=True
+            ).select_related('subject', 'subject__teacher')
+            
+            subjects_data = []
+            for enrollment in enrollments:
+                subjects_data.append({
+                    '_id': str(enrollment.subject.id),
+                    'name': enrollment.subject.name,
+                    'description': enrollment.subject.description or 'No description available',
+                    'teacher': {
+                        'name': f'{enrollment.subject.teacher.first_name} {enrollment.subject.teacher.last_name}' if enrollment.subject.teacher else 'No teacher assigned'
+                    },
+                    'enrolledCount': Enrollment.objects.filter(subject=enrollment.subject, is_active=True).count(),
+                    'duration': f'{enrollment.subject.duration} hours' if hasattr(enrollment.subject, 'duration') else 'N/A',
+                    'progress': 0  # You can calculate progress based on completed chapters/tests
+                })
+            
+            # Get assignments
+            assignments = Assignment.objects.filter(
+                student=student
+            ).select_related('subject').order_by('-due_date')[:5]
+            
+            assignments_data = []
+            for assignment in assignments:
+                assignments_data.append({
+                    '_id': str(assignment.id),
+                    'title': assignment.title,
+                    'subject': assignment.subject.name if assignment.subject else 'General',
+                    'dueDate': assignment.due_date.isoformat() if assignment.due_date else None,
+                    'status': assignment.status if hasattr(assignment, 'status') else 'pending'
+                })
+            
+            # Get test attempts for stats
+            test_attempts = TestAttempt.objects.filter(student=student)
+            total_tests = test_attempts.count()
+            avg_score = test_attempts.aggregate(Avg('score_obtained'))['score_obtained__avg'] or 0
+            
+            # Count assignments
+            total_assignments = Assignment.objects.filter(student=student).count()
+            pending_assignments = Assignment.objects.filter(
+                student=student,
+                status='pending'
+            ).count() if hasattr(Assignment, 'status') else 0
+            completed_assignments = Assignment.objects.filter(
+                student=student,
+                status='completed'
+            ).count() if hasattr(Assignment, 'status') else 0
+            
+            # Check for recent doubt (placeholder - implement when you have doubts model)
+            recent_doubt = None
+            
+            # Prepare response
+            dashboard_data = {
+                'subjects': subjects_data,
+                'recentDoubt': recent_doubt,
+                'assignments': assignments_data,
+                'stats': {
+                    'totalSubjects': len(subjects_data),
+                    'totalAssignments': total_assignments,
+                    'pendingAssignments': pending_assignments,
+                    'completedAssignments': completed_assignments,
+                    'totalTests': total_tests,
+                    'averageScore': round(avg_score, 2)
+                }
+            }
+            
+            return Response(dashboard_data, status=200)
+            
+        except Exception as e:
+            print(f"❌ Error in StudentDashboardView: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response({
+                'error': 'Failed to fetch dashboard data',
+                'details': str(e)
+            }, status=500)
 
 # PASTE THIS AT THE END OF YOUR students/views.py file (after all other classes)
+
 
 class DiagnosticView(APIView):
     """Diagnostic view to check what's wrong"""
@@ -1457,6 +1552,324 @@ class DiagnosticView(APIView):
                 'traceback': traceback.format_exc()
             }, status=200)
 
+
+# class StudentAttendanceView(APIView):
+#     """
+#     Student Attendance View - Get attendance records
+#     """
+#     permission_classes = [IsAuthenticated]
+    
+#     def get(self, request):
+#         try:
+#             student = request.user
+            
+#             if student.role != 'student':
+#                 return Response({
+#                     'error': 'Only students can access this endpoint'
+#                 }, status=403)
+            
+#             # Get query parameters
+#             subject_id = request.GET.get('subject_id')
+#             start_date = request.GET.get('start_date')
+#             end_date = request.GET.get('end_date')
+            
+#             # Base query for attendance records
+#             from academics.models import Attendance  # Adjust import based on your model location
+            
+#             attendance_query = Attendance.objects.filter(
+#                 student=student
+#             ).select_related('subject', 'teacher')
+            
+#             # Apply filters
+#             if subject_id and subject_id != 'all':
+#                 attendance_query = attendance_query.filter(subject_id=subject_id)
+            
+#             if start_date:
+#                 attendance_query = attendance_query.filter(date__gte=start_date)
+            
+#             if end_date:
+#                 attendance_query = attendance_query.filter(date__lte=end_date)
+            
+#             # Get all enrolled subjects
+#             from students.models import Enrollment
+#             enrollments = Enrollment.objects.filter(
+#                 student=student,
+#                 is_active=True
+#             ).select_related('subject')
+            
+#             subjects_list = []
+#             for enrollment in enrollments:
+#                 subject = enrollment.subject
+                
+#                 # Calculate subject-wise attendance
+#                 subject_attendance = Attendance.objects.filter(
+#                     student=student,
+#                     subject=subject
+#                 )
+                
+#                 if start_date:
+#                     subject_attendance = subject_attendance.filter(date__gte=start_date)
+#                 if end_date:
+#                     subject_attendance = subject_attendance.filter(date__lte=end_date)
+                
+#                 total_classes = subject_attendance.count()
+#                 present_count = subject_attendance.filter(is_present=True).count()
+#                 absent_count = total_classes - present_count
+#                 percentage = (present_count / total_classes * 100) if total_classes > 0 else 0
+                
+#                 subjects_list.append({
+#                     'id': subject.id,
+#                     'name': subject.name,
+#                     'total_classes': total_classes,
+#                     'present': present_count,
+#                     'absent': absent_count,
+#                     'percentage': round(percentage, 2)
+#                 })
+            
+#             # Overall statistics
+#             total_records = attendance_query.count()
+#             present_records = attendance_query.filter(is_present=True).count()
+#             absent_records = total_records - present_records
+#             overall_percentage = (present_records / total_records * 100) if total_records > 0 else 0
+            
+#             # Attendance records
+#             records = []
+#             for record in attendance_query.order_by('-date')[:50]:  # Limit to last 50 records
+#                 records.append({
+#                     'id': record.id,
+#                     'date': record.date.isoformat(),
+#                     'subject': record.subject.name if record.subject else 'N/A',
+#                     'teacher_name': f'{record.teacher.first_name} {record.teacher.last_name}' if record.teacher else 'N/A',
+#                     'time': record.time.strftime('%H:%M') if hasattr(record, 'time') and record.time else 'N/A',
+#                     'from_time': record.from_time.strftime('%H:%M') if hasattr(record, 'from_time') and record.from_time else None,
+#                     'to_time': record.to_time.strftime('%H:%M') if hasattr(record, 'to_time') and record.to_time else None,
+#                     'duration_minutes': record.duration_minutes if hasattr(record, 'duration_minutes') else None,
+#                     'is_present': record.is_present,
+#                 })
+            
+#             response_data = {
+#                 'overall_stats': {
+#                     'total_classes': total_records,
+#                     'present': present_records,
+#                     'absent': absent_records,
+#                     'percentage': round(overall_percentage, 2)
+#                 },
+#                 'subjects': subjects_list,
+#                 'records': records
+#             }
+            
+#             return Response(response_data, status=200)
+            
+#         except Exception as e:
+#             print(f"❌ Error in StudentAttendanceView: {str(e)}")
+#             import traceback
+#             traceback.print_exc()
+#             return Response({
+#                 'error': 'Failed to fetch attendance data',
+#                 'details': str(e)
+#             }, status=500)
+# students/views.py
+
+
+class StudentAttendanceView(APIView):
+    """
+    Student Attendance View - Get attendance records
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            student = request.user
+            
+            if student.role != 'student':
+                return Response({
+                    'error': 'Only students can access this endpoint'
+                }, status=403)
+            
+            print(f"📊 Fetching attendance for student: {student.email}")
+            
+            # Get query parameters
+            subject_id = request.GET.get('subject_id')
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
+            
+            # Import models
+            try:
+                from students.models import Enrollment
+            except ImportError:
+                from academics.models import Enrollment
+            
+            # Get all enrolled subjects
+            enrollments = Enrollment.objects.filter(
+                student=student,
+                is_active=True
+            ).select_related('subject', 'subject__teacher')
+            
+            print(f"📚 Found {enrollments.count()} enrollments")
+            
+            subjects_list = []
+            for enrollment in enrollments:
+                subject = enrollment.subject
+                subjects_list.append({
+                    'id': subject.id,
+                    'name': subject.name,
+                    'total_classes': 0,  # Will be updated if Attendance model exists
+                    'present': 0,
+                    'absent': 0,
+                    'percentage': 0
+                })
+            
+            # Try to get attendance records (if model exists)
+            try:
+                from academics.models import Attendance
+                
+                # Base query for attendance records
+                attendance_query = Attendance.objects.filter(
+                    student=student
+                ).select_related('subject', 'teacher')
+                
+                # Apply filters
+                if subject_id and subject_id != 'all':
+                    attendance_query = attendance_query.filter(subject_id=subject_id)
+                
+                if start_date:
+                    attendance_query = attendance_query.filter(date__gte=start_date)
+                
+                if end_date:
+                    attendance_query = attendance_query.filter(date__lte=end_date)
+                
+                # Update subjects with attendance data
+                for subject_data in subjects_list:
+                    subject_attendance = Attendance.objects.filter(
+                        student=student,
+                        subject_id=subject_data['id']
+                    )
+                    
+                    if start_date:
+                        subject_attendance = subject_attendance.filter(date__gte=start_date)
+                    if end_date:
+                        subject_attendance = subject_attendance.filter(date__lte=end_date)
+                    
+                    total_classes = subject_attendance.count()
+                    present_count = subject_attendance.filter(is_present=True).count()
+                    absent_count = total_classes - present_count
+                    percentage = (present_count / total_classes * 100) if total_classes > 0 else 0
+                    
+                    subject_data['total_classes'] = total_classes
+                    subject_data['present'] = present_count
+                    subject_data['absent'] = absent_count
+                    subject_data['percentage'] = round(percentage, 2)
+                
+                # Overall statistics
+                total_records = attendance_query.count()
+                present_records = attendance_query.filter(is_present=True).count()
+                absent_records = total_records - present_records
+                overall_percentage = (present_records / total_records * 100) if total_records > 0 else 0
+                
+                # Attendance records
+                records = []
+                for record in attendance_query.order_by('-date')[:50]:
+                    records.append({
+                        'id': record.id,
+                        'date': record.date.isoformat(),
+                        'subject': record.subject.name if record.subject else 'N/A',
+                        'teacher_name': f'{record.teacher.first_name} {record.teacher.last_name}' if record.teacher else 'N/A',
+                        'time': record.time.strftime('%H:%M') if hasattr(record, 'time') and record.time else 'N/A',
+                        'from_time': record.from_time.strftime('%H:%M') if hasattr(record, 'from_time') and record.from_time else None,
+                        'to_time': record.to_time.strftime('%H:%M') if hasattr(record, 'to_time') and record.to_time else None,
+                        'duration_minutes': record.duration_minutes if hasattr(record, 'duration_minutes') else None,
+                        'is_present': record.is_present,
+                    })
+                
+            except ImportError:
+                print("⚠️ Attendance model not found, returning empty attendance data")
+                total_records = 0
+                present_records = 0
+                absent_records = 0
+                overall_percentage = 0
+                records = []
+            
+            response_data = {
+                'overall_stats': {
+                    'total_classes': total_records,
+                    'present': present_records,
+                    'absent': absent_records,
+                    'percentage': round(overall_percentage, 2)
+                },
+                'subjects': subjects_list,
+                'records': records
+            }
+            
+            print(f"✅ Returning {len(subjects_list)} subjects and {len(records)} records")
+            
+            return Response(response_data, status=200)
+            
+        except Exception as e:
+            print(f"❌ Error in StudentAttendanceView: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response({
+                'error': 'Failed to fetch attendance data',
+                'details': str(e)
+            }, status=500)
+    
+
+
+class StudentSubjectsView(APIView):
+    """
+    Get all subjects enrolled by the student
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            student = request.user
+            
+            if student.role != 'student':
+                return Response({
+                    'error': 'Only students can access this endpoint'
+                }, status=403)
+            
+            # Import models (adjust based on your project structure)
+            from students.models import Enrollment
+            from academics.models import Subject
+            
+            # Get enrolled subjects
+            enrollments = Enrollment.objects.filter(
+                student=student,
+                is_active=True
+            ).select_related('subject', 'subject__teacher')
+            
+            subjects_data = []
+            for enrollment in enrollments:
+                subject = enrollment.subject
+                subjects_data.append({
+                    'id': subject.id,
+                    '_id': str(subject.id),
+                    'name': subject.name,
+                    'description': getattr(subject, 'description', '') or '',
+                    'teacher': {
+                        'id': subject.teacher.id if subject.teacher else None,
+                        'name': f'{subject.teacher.first_name} {subject.teacher.last_name}' if subject.teacher else 'Not assigned',
+                        'first_name': subject.teacher.first_name if subject.teacher else '',
+                        'last_name': subject.teacher.last_name if subject.teacher else '',
+                    },
+                    'chaptersCount': subject.chapters.count() if hasattr(subject, 'chapters') else 0,
+                    'testsCount': 0,  # Calculate based on your Test model
+                    'isActive': enrollment.is_active,
+                    'progress': 0,  # Calculate progress if needed
+                })
+            
+            return Response(subjects_data, status=200)
+            
+        except Exception as e:
+            print(f"❌ Error in StudentSubjectsView: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response({
+                'error': 'Failed to fetch subjects',
+                'details': str(e)
+            }, status=500)
 
 
 

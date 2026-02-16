@@ -11,6 +11,7 @@ from .views import (
     StudentHomeView,
     SubjectDetailView,
     ChapterTestsView,
+    StudentSubjectsView,
     
     
     # Test Taking
@@ -23,6 +24,7 @@ from .views import (
     # Attendance & Fees
     MyAttendanceView,
     MyFeePaymentsView,
+    StudentAttendanceView,
     
     # Assignments
     MyAssignmentsView,
@@ -37,6 +39,7 @@ from .views import (
     # Search
     StudentSearchView,
     DiagnosticView,
+    StudentDashboardView,
 )
 
 # Import doubt views from separate file
@@ -66,6 +69,11 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════
     path('my-attendance/', MyAttendanceView.as_view(), name='my-attendance'),
     path('my-fee-payments/', MyFeePaymentsView.as_view(), name='my-fee-payments'),
+    path('dashboard/', StudentDashboardView.as_view(), name='student-dashboard'),
+    path('home/', StudentDashboardView.as_view(), name='student-home'),
+    path('subjects/', StudentSubjectsView.as_view(), name='student-subjects'),
+    path('my-attendance/', StudentAttendanceView.as_view(), name='student-attendance'),
+
     
     # ═══════════════════════════════════════════════════════════
     #  ASSIGNMENTS
@@ -90,6 +98,10 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════
     path('search/', StudentSearchView.as_view(), name='search'),
     path('diagnostic/', DiagnosticView.as_view(), name='diagnostic'),
+
+    path('dashboard/', StudentDashboardView.as_view(), name='student-dashboard'),
+    path('home/', StudentDashboardView.as_view(), name='student-home'),  # Alias
+    
 ]
 
 

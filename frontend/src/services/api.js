@@ -90,6 +90,8 @@ export const studentAPI = {
   getSubjects: () => api.get('/students/subjects/'),
   getSubjectDetail: (subjectId) => api.get(`/students/subjects/${subjectId}/`),
   getSubjectDetails: (subjectId) => api.get(`/students/subjects/${subjectId}/`), // Alias
+  getEnrolledSubjects: () => api.get('/students/enrolled-subjects/'),
+  getSubjectChapters: (subjectId) => api.get(`/students/subject/${subjectId}/`),
   
   // Chapters
   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
@@ -124,6 +126,10 @@ export const studentAPI = {
   getNotifications: () => api.get('/students/notifications/'),
   markNotificationRead: (notificationId) => 
     api.post(`/students/notifications/${notificationId}/mark-read/`),
+
+//   Attendance
+  getMyAttendance: (params) => api.get('/students/my-attendance/', { params }),
+  getAttendance: (params) => api.get('/students/my-attendance/', { params }), 
 };
 
 // ============ TEACHER APIs ============
@@ -173,6 +179,7 @@ export const teacherAPI = {
   replyDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data),
   
   // Attendance
+  
   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
   getAttendance: (classId, date) => 
     api.get(`/teachers/class/${classId}/attendance/`, { params: { date } }),
