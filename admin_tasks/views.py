@@ -1030,7 +1030,47 @@ class ManageChaptersView(APIView):
 
 
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from academics.models import TeacherSubjectAssignment
+from users.models import CustomUser
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def assign_teacher_to_subject(request):
+    """Admin assigns a teacher to teach a subject in a class"""
+    
+    if request.user.role != 'admin':
+        return Response(
+            {'error': 'Only admins can assign teachers'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    teacher_id = request.data.get('teacher_id')
+    subject_id = request.data.get('subject_id')
+    class_id = request.data.get('class_id')
+    
+    # Validate teacher
+    try:
+        teacher = CustomUser.objects.get(id=teacher_id, role='teacher', is_approved=True)
+    except CustomUser.DoesNotExist:
+        return Response({'error': 'Teacher not found or not approved'}, status=400)
+    
+    # Create assignment (unique_together prevents duplicates)
+    try:
+        assignment = TeacherSubjectAssignment.objects.create(
+            teacher_id=teacher_id,
+            subject_id=subject_id,
+            class_assigned_id=class_id
+        )
+        return Response({
+            'message': 'Teacher assigned successfully',
+            'assignment_id': assignment.id
+        }, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
 
 
 

@@ -1345,11 +1345,12 @@ class SubjectTestsView(APIView):
 
 
 
-
+# students/views.py - ADD OR REPLACE StudentDashboardView
 
 class StudentDashboardView(APIView):
     """
-    Student Dashboard - Returns overview data
+    Student Dashboard/Home - Returns overview data
+    GET /api/students/home/ or /api/students/dashboard/
     """
     permission_classes = [IsAuthenticated]
     
@@ -1363,85 +1364,242 @@ class StudentDashboardView(APIView):
                     'error': 'Only students can access this endpoint'
                 }, status=403)
             
-            # Get enrolled subjects
-            enrollments = Enrollment.objects.filter(
-                student=student,
-                is_active=True
-            ).select_related('subject', 'subject__teacher')
+            # Get student's class
+            student_class = student.class_assigned
             
-            subjects_data = []
-            for enrollment in enrollments:
-                subjects_data.append({
-                    '_id': str(enrollment.subject.id),
-                    'name': enrollment.subject.name,
-                    'description': enrollment.subject.description or 'No description available',
-                    'teacher': {
-                        'name': f'{enrollment.subject.teacher.first_name} {enrollment.subject.teacher.last_name}' if enrollment.subject.teacher else 'No teacher assigned'
+            if not student_class:
+                return Response({
+                    'message': 'No class assigned yet. Please contact admin.',
+                    'stats': {
+                        'total_subjects': 0,
+                        'tests_taken': 0,
+                        'average_score': 0,
+                        'attendance_percentage': 0,
                     },
-                    'enrolledCount': Enrollment.objects.filter(subject=enrollment.subject, is_active=True).count(),
-                    'duration': f'{enrollment.subject.duration} hours' if hasattr(enrollment.subject, 'duration') else 'N/A',
-                    'progress': 0  # You can calculate progress based on completed chapters/tests
-                })
+                    'subjects': [],
+                    'recent_tests': [],
+                    'upcoming_tests': [],
+                }, status=200)
             
-            # Get assignments
-            assignments = Assignment.objects.filter(
-                student=student
-            ).select_related('subject').order_by('-due_date')[:5]
+            # Get subjects for student's class
+            from admin_tasks.models import Subject
+            subjects = student_class.subjects.all()
             
-            assignments_data = []
-            for assignment in assignments:
-                assignments_data.append({
-                    '_id': str(assignment.id),
-                    'title': assignment.title,
-                    'subject': assignment.subject.name if assignment.subject else 'General',
-                    'dueDate': assignment.due_date.isoformat() if assignment.due_date else None,
-                    'status': assignment.status if hasattr(assignment, 'status') else 'pending'
-                })
+            # Get test statistics
+            from teachers.models import Test
+            from students.models import TestAttempt
             
-            # Get test attempts for stats
             test_attempts = TestAttempt.objects.filter(student=student)
-            total_tests = test_attempts.count()
-            avg_score = test_attempts.aggregate(Avg('score_obtained'))['score_obtained__avg'] or 0
+            total_tests_taken = test_attempts.count()
             
-            # Count assignments
-            total_assignments = Assignment.objects.filter(student=student).count()
-            pending_assignments = Assignment.objects.filter(
+            # Calculate average score
+            avg_score = 0
+            if total_tests_taken > 0:
+                total_score = sum(attempt.score for attempt in test_attempts)
+                total_max = sum(attempt.test.marks for attempt in test_attempts)
+                if total_max > 0:
+                    avg_score = round((total_score / total_max) * 100, 2)
+            
+            # Get attendance statistics
+            from teachers.models import Attendance
+            attendance_records = Attendance.objects.filter(
                 student=student,
-                status='pending'
-            ).count() if hasattr(Assignment, 'status') else 0
-            completed_assignments = Assignment.objects.filter(
-                student=student,
-                status='completed'
-            ).count() if hasattr(Assignment, 'status') else 0
+                class_assigned=student_class
+            )
+            total_attendance = attendance_records.count()
+            present_count = attendance_records.filter(is_present=True).count()
+            attendance_percentage = round((present_count / total_attendance * 100), 2) if total_attendance > 0 else 0
             
-            # Check for recent doubt (placeholder - implement when you have doubts model)
-            recent_doubt = None
+            # Build subjects data
+            subjects_data = []
+            for subject in subjects:
+                # Count tests for this subject
+                test_count = Test.objects.filter(
+                    chapter__subject=subject,
+                    chapter__class_assigned=student_class
+                ).count()
+                
+                # Count student's attempts
+                attempts = TestAttempt.objects.filter(
+                    student=student,
+                    test__chapter__subject=subject
+                ).count()
+                
+                subjects_data.append({
+                    'id': subject.id,
+                    'name': subject.name,
+                    'description': subject.description or '',
+                    'test_count': test_count,
+                    'attempts': attempts
+                })
             
-            # Prepare response
-            dashboard_data = {
-                'subjects': subjects_data,
-                'recentDoubt': recent_doubt,
-                'assignments': assignments_data,
+            # Get recent test attempts (last 5)
+            recent_attempts = TestAttempt.objects.filter(
+                student=student
+            ).select_related('test', 'test__chapter', 'test__chapter__subject').order_by('-attempted_at')[:5]
+            
+            recent_tests_data = []
+            for attempt in recent_attempts:
+                recent_tests_data.append({
+                    'test_id': attempt.test.id,
+                    'test_name': attempt.test.name,
+                    'subject': attempt.test.chapter.subject.name,
+                    'chapter': attempt.test.chapter.name,
+                    'score': attempt.score,
+                    'total_marks': attempt.test.marks,
+                    'percentage': round((attempt.score / attempt.test.marks) * 100, 2) if attempt.test.marks > 0 else 0,
+                    'attempted_at': attempt.attempted_at
+                })
+            
+            # Get upcoming tests (tests not yet attempted)
+            attempted_test_ids = test_attempts.values_list('test_id', flat=True)
+            upcoming_tests = Test.objects.filter(
+                chapter__class_assigned=student_class
+            ).exclude(id__in=attempted_test_ids).select_related('chapter', 'chapter__subject')[:5]
+            
+            upcoming_tests_data = []
+            for test in upcoming_tests:
+                upcoming_tests_data.append({
+                    'id': test.id,
+                    'name': test.name,
+                    'subject': test.chapter.subject.name,
+                    'chapter': test.chapter.name,
+                    'marks': test.marks,
+                    'duration_minutes': test.duration_minutes,
+                    'type': test.type,
+                })
+            
+            # Return dashboard data
+            return Response({
+                'user': {
+                    'name': student.get_full_name() or student.username,
+                    'email': student.email,
+                    'unique_id': student.unique_id,
+                    'class': student_class.name,
+                },
                 'stats': {
-                    'totalSubjects': len(subjects_data),
-                    'totalAssignments': total_assignments,
-                    'pendingAssignments': pending_assignments,
-                    'completedAssignments': completed_assignments,
-                    'totalTests': total_tests,
-                    'averageScore': round(avg_score, 2)
-                }
-            }
-            
-            return Response(dashboard_data, status=200)
+                    'total_subjects': subjects.count(),
+                    'tests_taken': total_tests_taken,
+                    'average_score': avg_score,
+                    'attendance_percentage': attendance_percentage,
+                    'total_classes': total_attendance,
+                    'present_days': present_count,
+                },
+                'subjects': subjects_data,
+                'recent_tests': recent_tests_data,
+                'upcoming_tests': upcoming_tests_data,
+            }, status=200)
             
         except Exception as e:
-            print(f"❌ Error in StudentDashboardView: {str(e)}")
             import traceback
-            traceback.print_exc()
+            print(f"❌ Error in StudentDashboardView: {str(e)}")
+            print(traceback.format_exc())
             return Response({
-                'error': 'Failed to fetch dashboard data',
-                'details': str(e)
+                'error': 'Failed to load dashboard',
+                'detail': str(e)
             }, status=500)
+
+
+# Also create an alias for backward compatibility
+StudentHomeView = StudentDashboardView
+
+# class StudentDashboardView(APIView):
+#     """
+#     Student Dashboard - Returns overview data
+#     """
+#     permission_classes = [IsAuthenticated]
+    
+#     def get(self, request):
+#         try:
+#             student = request.user
+            
+#             # Check if user is a student
+#             if student.role != 'student':
+#                 return Response({
+#                     'error': 'Only students can access this endpoint'
+#                 }, status=403)
+            
+#             # Get enrolled subjects
+#             enrollments = Enrollment.objects.filter(
+#                 student=student,
+#                 is_active=True
+#             ).select_related('subject', 'subject__teacher')
+            
+#             subjects_data = []
+#             for enrollment in enrollments:
+#                 subjects_data.append({
+#                     '_id': str(enrollment.subject.id),
+#                     'name': enrollment.subject.name,
+#                     'description': enrollment.subject.description or 'No description available',
+#                     'teacher': {
+#                         'name': f'{enrollment.subject.teacher.first_name} {enrollment.subject.teacher.last_name}' if enrollment.subject.teacher else 'No teacher assigned'
+#                     },
+#                     'enrolledCount': Enrollment.objects.filter(subject=enrollment.subject, is_active=True).count(),
+#                     'duration': f'{enrollment.subject.duration} hours' if hasattr(enrollment.subject, 'duration') else 'N/A',
+#                     'progress': 0  # You can calculate progress based on completed chapters/tests
+#                 })
+            
+#             # Get assignments
+#             assignments = Assignment.objects.filter(
+#                 student=student
+#             ).select_related('subject').order_by('-due_date')[:5]
+            
+#             assignments_data = []
+#             for assignment in assignments:
+#                 assignments_data.append({
+#                     '_id': str(assignment.id),
+#                     'title': assignment.title,
+#                     'subject': assignment.subject.name if assignment.subject else 'General',
+#                     'dueDate': assignment.due_date.isoformat() if assignment.due_date else None,
+#                     'status': assignment.status if hasattr(assignment, 'status') else 'pending'
+#                 })
+            
+#             # Get test attempts for stats
+#             test_attempts = TestAttempt.objects.filter(student=student)
+#             total_tests = test_attempts.count()
+#             avg_score = test_attempts.aggregate(Avg('score_obtained'))['score_obtained__avg'] or 0
+            
+#             # Count assignments
+#             total_assignments = Assignment.objects.filter(student=student).count()
+#             pending_assignments = Assignment.objects.filter(
+#                 student=student,
+#                 status='pending'
+#             ).count() if hasattr(Assignment, 'status') else 0
+#             completed_assignments = Assignment.objects.filter(
+#                 student=student,
+#                 status='completed'
+#             ).count() if hasattr(Assignment, 'status') else 0
+            
+#             # Check for recent doubt (placeholder - implement when you have doubts model)
+#             recent_doubt = None
+            
+#             # Prepare response
+#             dashboard_data = {
+#                 'subjects': subjects_data,
+#                 'recentDoubt': recent_doubt,
+#                 'assignments': assignments_data,
+#                 'stats': {
+#                     'totalSubjects': len(subjects_data),
+#                     'totalAssignments': total_assignments,
+#                     'pendingAssignments': pending_assignments,
+#                     'completedAssignments': completed_assignments,
+#                     'totalTests': total_tests,
+#                     'averageScore': round(avg_score, 2)
+#                 }
+#             }
+            
+#             return Response(dashboard_data, status=200)
+            
+#         except Exception as e:
+#             print(f"❌ Error in StudentDashboardView: {str(e)}")
+#             import traceback
+#             traceback.print_exc()
+#             return Response({
+#                 'error': 'Failed to fetch dashboard data',
+#                 'details': str(e)
+#             }, status=500)
+
+
 
 # PASTE THIS AT THE END OF YOUR students/views.py file (after all other classes)
 
@@ -1875,7 +2033,311 @@ class StudentSubjectsView(APIView):
 
 
 
+# students/views.py - ADD THESE VIEWS TO YOUR EXISTING FILE
+"""
+Student Subject & Chapter Views
+Add these to your existing students/views.py
+"""
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from django.db.models import Count, Q
+from admin_tasks.models import Subject, Chapter
+from teachers.models import Test, Question 
+from students.models import TestAttempt  
+
+
+class IsStudentRole(IsAuthenticated):
+    """Permission class to check if user is a student"""
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and request.user.role == 'student'
+
+
+class StudentSubjectsView(APIView):
+    """
+    GET: Get all subjects for student's class with statistics
+    Endpoint: /api/students/subjects/
+    """
+    permission_classes = [IsStudentRole]
+    
+    def get(self, request):
+        try:
+            student = request.user
+            
+            # Check if student has a class assigned
+            if not student.class_assigned:
+                return Response({
+                    'message': 'No class assigned. Please contact administrator.',
+                    'class': None,
+                    'subjects': []
+                }, status=status.HTTP_200_OK)
+            
+            student_class = student.class_assigned
+            
+            # Get all subjects for student's class
+            subjects = student_class.subjects.all()
+            
+            if not subjects.exists():
+                return Response({
+                    'message': 'No subjects available for your class yet.',
+                    'class': student_class.name,
+                    'subjects': []
+                }, status=status.HTTP_200_OK)
+            
+            # Build subjects data with statistics
+            subjects_data = []
+            for subject in subjects:
+                # Count chapters for this subject in student's class
+                chapter_count = Chapter.objects.filter(
+                    subject=subject,
+                    class_assigned=student_class
+                ).count()
+                
+                # Count completed chapters
+                completed_chapters = Chapter.objects.filter(
+                    subject=subject,
+                    class_assigned=student_class,
+                    is_completed=True
+                ).count()
+                
+                # Count available tests
+                test_count = Test.objects.filter(
+                    chapter__subject=subject,
+                    chapter__class_assigned=student_class
+                ).count()
+                
+                # Count student's test attempts for this subject
+                attempt_count = TestAttempt.objects.filter(
+                    student=student,
+                    test__chapter__subject=subject,
+                    test__chapter__class_assigned=student_class
+                ).count()
+                
+                # Calculate average score for this subject
+                attempts = TestAttempt.objects.filter(
+                    student=student,
+                    test__chapter__subject=subject,
+                    test__chapter__class_assigned=student_class
+                )
+                
+                avg_score = 0
+                if attempts.exists():
+                    total_score = sum(attempt.score for attempt in attempts)
+                    total_max = sum(attempt.test.total_marks for attempt in attempts)
+                    if total_max > 0:
+                        avg_score = round((total_score / total_max) * 100, 2)
+                
+                subjects_data.append({
+                    'id': subject.id,
+                    'name': subject.name,
+                    'description': subject.description or '',
+                    'chapter_count': chapter_count,
+                    'completed_chapters': completed_chapters,
+                    'test_count': test_count,
+                    'attempt_count': attempt_count,
+                    'average_score': avg_score
+                })
+            
+            return Response({
+                'class': {
+                    'id': student_class.id,
+                    'name': student_class.name
+                },
+                'subjects': subjects_data,
+                'total_subjects': len(subjects_data)
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({
+                'error': 'Failed to fetch subjects',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class StudentSubjectChaptersView(APIView):
+    """
+    GET: Get all chapters for a specific subject in student's class
+    Endpoint: /api/students/subjects/<subject_id>/chapters/
+    """
+    permission_classes = [IsStudentRole]
+    
+    def get(self, request, subject_id):
+        try:
+            student = request.user
+            
+            # Check if student has class assigned
+            if not student.class_assigned:
+                return Response({
+                    'error': 'No class assigned to you'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Verify subject exists
+            try:
+                subject = Subject.objects.get(id=subject_id)
+            except Subject.DoesNotExist:
+                return Response({
+                    'error': 'Subject not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Verify subject is assigned to student's class
+            if not subject.classes.filter(id=student.class_assigned.id).exists():
+                return Response({
+                    'error': 'This subject is not assigned to your class'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Get chapters for this subject in student's class
+            chapters = Chapter.objects.filter(
+                subject=subject,
+                class_assigned=student.class_assigned
+            ).order_by('order', 'name')
+            
+            if not chapters.exists():
+                return Response({
+                    'message': 'No chapters available for this subject yet.',
+                    'subject': {
+                        'id': subject.id,
+                        'name': subject.name,
+                        'description': subject.description
+                    },
+                    'chapters': []
+                }, status=status.HTTP_200_OK)
+            
+            # Build chapters data
+            chapters_data = []
+            for chapter in chapters:
+                # Get tests for this chapter
+                tests = Test.objects.filter(chapter=chapter)
+                
+                # Get student's attempts for this chapter
+                attempts = TestAttempt.objects.filter(
+                    student=student,
+                    test__chapter=chapter
+                )
+                
+                # Calculate chapter statistics
+                test_list = []
+                for test in tests:
+                    student_attempt = attempts.filter(test=test).first()
+                    test_list.append({
+                        'id': test.id,
+                        'title': test.title,
+                        'total_marks': test.total_marks,
+                        'time_limit': test.time_limit,
+                        'attempted': student_attempt is not None,
+                        'score': student_attempt.score if student_attempt else None,
+                        'percentage': round((student_attempt.score / test.total_marks) * 100, 2) if student_attempt else None
+                    })
+                
+                chapters_data.append({
+                    'id': chapter.id,
+                    'name': chapter.name,
+                    'description': chapter.description or '',
+                    'order': chapter.order,
+                    'is_completed': chapter.is_completed,
+                    'test_count': tests.count(),
+                    'tests': test_list,
+                    'attempts_count': attempts.count()
+                })
+            
+            return Response({
+                'subject': {
+                    'id': subject.id,
+                    'name': subject.name,
+                    'description': subject.description
+                },
+                'class': {
+                    'id': student.class_assigned.id,
+                    'name': student.class_assigned.name
+                },
+                'chapters': chapters_data,
+                'total_chapters': len(chapters_data)
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({
+                'error': 'Failed to fetch chapters',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class StudentSubjectTestsView(APIView):
+    """
+    GET: Get all available tests for a subject
+    Endpoint: /api/students/subjects/<subject_id>/tests/
+    """
+    permission_classes = [IsStudentRole]
+    
+    def get(self, request, subject_id):
+        try:
+            student = request.user
+            
+            if not student.class_assigned:
+                return Response({
+                    'error': 'No class assigned'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get all tests for this subject in student's class
+            tests = Test.objects.filter(
+                chapter__subject_id=subject_id,
+                chapter__class_assigned=student.class_assigned
+            ).select_related('chapter').order_by('-created_at')
+            
+            tests_data = []
+            for test in tests:
+                # Check if student has attempted
+                attempt = TestAttempt.objects.filter(
+                    student=student,
+                    test=test
+                ).first()
+                
+                tests_data.append({
+                    'id': test.id,
+                    'title': test.title,
+                    'chapter': {
+                        'id': test.chapter.id,
+                        'name': test.chapter.name
+                    },
+                    'total_marks': test.total_marks,
+                    'time_limit': test.time_limit,
+                    'question_count': test.questions.count(),
+                    'attempted': attempt is not None,
+                    'score': attempt.score if attempt else None,
+                    'attempted_at': attempt.attempted_at if attempt else None
+                })
+            
+            return Response({
+                'tests': tests_data,
+                'total_tests': len(tests_data)
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({
+                'error': 'Failed to fetch tests',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ============================================================
+# ADD THESE URL PATTERNS TO students/urls.py
+# ============================================================
+"""
+from .views import (
+    StudentSubjectsView,
+    StudentSubjectChaptersView,
+    StudentSubjectTestsView
+)
+
+urlpatterns = [
+    # ... existing patterns ...
+    
+    # Subject & Chapter endpoints
+    path('subjects/', StudentSubjectsView.as_view(), name='student-subjects'),
+    path('subjects/<int:subject_id>/chapters/', StudentSubjectChaptersView.as_view(), name='subject-chapters'),
+    path('subjects/<int:subject_id>/tests/', StudentSubjectTestsView.as_view(), name='subject-tests'),
+]
+"""
 
 
 

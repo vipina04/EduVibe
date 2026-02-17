@@ -60,7 +60,95 @@ class Chapter(models.Model):
     def __str__(self):
         return f"{self.name} ({self.subject.name})"
 
+class TeacherSubjectAssignment(models.Model):
+    """
+    Links teachers to specific subjects in specific classes
+    Example: Teacher John teaches Math in Grade 10 and Physics in Grade 11
+    """
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='subject_assignments',
+        limit_choices_to={'role': 'teacher'}
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.CASCADE,
+        related_name='teacher_assignments'
+    )
+    class_assigned = models.ForeignKey(
+        AcademicClass,
+        on_delete=models.CASCADE,
+        related_name='teacher_assignments'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('teacher', 'subject', 'class_assigned')
+        verbose_name = "Teacher Subject Assignment"
+        verbose_name_plural = "Teacher Subject Assignments"
+        ordering = ['teacher', 'class_assigned', 'subject']
+    
+    def __str__(self):
+        return f"{self.teacher.get_full_name()} - {self.subject.name} - {self.class_assigned.name}"
 
+
+# ✅ ADD DOUBT MODELS
+class Doubt(models.Model):
+    """Student doubts/questions"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('answered', 'Answered'),
+    ]
+    
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='doubts',
+        limit_choices_to={'role': 'student'}
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.CASCADE,
+        related_name='doubts'
+    )
+    doubt_text = models.TextField(blank=True)
+    doubt_image = models.ImageField(upload_to='doubts/', blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Doubt by {self.student.get_full_name()} - {self.subject.name}"
+
+
+class DoubtReply(models.Model):
+    """Replies to doubts"""
+    doubt = models.ForeignKey(
+        Doubt,
+        on_delete=models.CASCADE,
+        related_name='replies'
+    )
+    replied_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='doubt_replies'
+    )
+    reply_text = models.TextField(blank=True)
+    reply_image = models.ImageField(upload_to='doubt_replies/', blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['created_at']
+        verbose_name = "Doubt Reply"
+        verbose_name_plural = "Doubt Replies"
+    
+    def __str__(self):
+        return f"Reply by {self.replied_by.get_full_name()} to Doubt #{self.doubt.id}"
 
 
 
