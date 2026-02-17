@@ -50,6 +50,7 @@ import ManageUsers from './pages/admin/ManageUsers';
 import ManageClasses from './pages/admin/ManageClasses';
 import ManageSubjects from './pages/admin/ManageSubjects';
 import ManageChapters from './pages/admin/ManageChapters';
+import AdminUsers from './pages/admin/AdminUsers';
 
 // ── Protected Route ──────────────────────────────────────────────────────────
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -129,7 +130,9 @@ function App() {
       <Route path="/teacher/class/:classId/subject/:subjectId/doubts"             element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDoubts /></ProtectedRoute>} />
 
       {/* ── Admin ── */}
+
       <Route path="/admin/dashboard" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+      <Route path="/admin/users" element={<AdminUsers />} />
       <Route path="/admin/users"     element={<ProtectedRoute allowedRoles={['admin']}><ManageUsers /></ProtectedRoute>} />
       <Route path="/admin/classes"   element={<ProtectedRoute allowedRoles={['admin']}><ManageClasses /></ProtectedRoute>} />
       <Route path="/admin/subjects"  element={<ProtectedRoute allowedRoles={['admin']}><ManageSubjects /></ProtectedRoute>} />

@@ -220,37 +220,80 @@ export const teacherAPI = {
 };
 
 // ============ ADMIN APIs ============
+
+
 export const adminAPI = {
   // Dashboard
   getDashboard: () => api.get('/admin/dashboard/'),
+  getDashboardStats: () => api.get('/admin/dashboard/stats/'),
   
   // User Management
-  getPendingUsers: () => api.get('/admin/pending-users/'),
-  approveUser: (userId) => api.post(`/admin/users/${userId}/approve/`),
-  rejectUser: (userId) => api.post(`/admin/users/${userId}/reject/`),
-  getAllUsers: () => api.get('/admin/users/'),
-  getUserDetails: (userId) => api.get(`/admin/users/${userId}/`),
+//   getPendingUsers: () => api.get('/admin/pending-users/'),
+//   approveUser: (userId) => api.post(`/admin/users/${userId}/approve/`),
+//   rejectUser: (userId) => api.post(`/admin/users/${userId}/reject/`),
+//   getAllUsers: () => api.get('/admin/users/'),
+//   getUserDetails: (userId) => api.get(`/admin/users/${userId}/`),
+
+
+  getPendingUsers:  ()               => api.get('/admin/users/pending/'),
+  getAllUsers:       (role)           => api.get(`/admin/users/all/${role ? `?role=${role}` : ''}`),
+  approveUser:      (userId)         => api.post('/admin/users/approve/', { user_id: userId }),
+  rejectUser:       (userId)         => api.post('/admin/users/reject/',  { user_id: userId }),
+  deleteUser:       (userId)         => api.delete(`/admin/users/${userId}/delete/`),
+  updateUser:       (userId, data)   => api.patch(`/admin/users/${userId}/update/`, data),
+
+
+
+
+
+
+
+
   
   // Class Management
-  createClass: (data) => api.post('/admin/classes/create/', data),
-  getAllClasses: () => api.get('/admin/classes/'),
-  getClassDetails: (classId) => api.get(`/admin/classes/${classId}/`),
-  updateClass: (classId, data) => api.put(`/admin/classes/${classId}/`, data),
-  deleteClass: (classId) => api.delete(`/admin/classes/${classId}/`),
+
+ getClasses:    ()               => api.get('/admin/classes/'),
+ getAllClasses: ()               => api.get('/admin/classes/'),
+  createClass:   (data)           => api.post('/admin/classes/', data),
+  updateClass:   (id, data)       => api.patch(`/admin/classes/${id}/`, data),
+  deleteClass:   (id)             => api.delete(`/admin/classes/${id}/`),
+
+
+
+
+
+//   createClass: (data) => api.post('/admin/classes/create/', data),
+  
+//   getClassDetails: (classId) => api.get(`/admin/classes/${classId}/`),
+//   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/`, data),
+//   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/`),
   
   // Subject Management
-  createSubject: (data) => api.post('/admin/subjects/create/', data),
-  getAllSubjects: () => api.get('/admin/subjects/'),
-  getSubjectDetails: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
-  updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/`, data),
-  deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/`),
+  getSubjects:   ()               => api.get('/admin/subjects/'),
+  createSubject: (data)           => api.post('/admin/subjects/create/', data),
+  updateSubject: (id, data)       => api.patch(`/admin/subjects/${id}/`, data),
+  deleteSubject: (id)             => api.delete(`/admin/subjects/${id}/`),
+//   createSubject: (data) => api.post('/admin/subjects/create/', data),
+   getAllSubjects: () => api.get('/admin/subjects/'),
+//   getSubjectDetails: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
+//   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/`, data),
+//   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/`),
   
   // Chapter Management
-  createChapter: (data) => api.post('/admin/chapters/create/', data),
-  getAllChapters: () => api.get('/admin/chapters/'),
-  getChapterDetails: (chapterId) => api.get(`/admin/chapters/${chapterId}/`),
-  updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/`, data),
-  deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/`),
+
+  getChapters:   ()               => api.get('/admin/chapters/'),
+  createChapter: (data)           => api.post('/admin/chapters/create/', data),
+  updateChapter: (id, data)       => api.patch(`/admin/chapters/${id}/`, data),
+  deleteChapter: (id)             => api.delete(`/admin/chapters/${id}/`),
+
+
+
+
+//   createChapter: (data) => api.post('/admin/chapters/create/', data),
+   getAllChapters: () => api.get('/admin/chapters/'),
+//   getChapterDetails: (chapterId) => api.get(`/admin/chapters/${chapterId}/`),
+//   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/`, data),
+//   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/`),
   
   // Fee Management
   recordFeePayment: (data) => api.post('/admin/fees/record-payment/', data),

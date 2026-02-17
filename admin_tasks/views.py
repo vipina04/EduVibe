@@ -116,27 +116,45 @@ class RejectUserView(APIView):
 
 
 class AllUsersView(APIView):
-    """GET: List all approved users (students and teachers)"""
+    """GET: List all approved users WITH is_approved, class, and subjects"""
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         if not is_admin(request.user):
             return Response({'error': 'Admin access required'}, status=403)
-        
-        role_filter = request.GET.get('role')  # ?role=student or ?role=teacher
-        
-        query = CustomUser.objects.filter(is_approved=True)
-        
+
+        role_filter = request.GET.get('role')
+
+        query = CustomUser.objects.filter(
+            is_approved=True
+        ).select_related('class_assigned').prefetch_related('subjects')
+
         if role_filter:
             query = query.filter(role=role_filter)
-        
-        users = query.values(
-            'id', 'unique_id', 'username', 'email', 
-            'first_name', 'last_name', 'role', 'phone', 
-            'dob', 'date_joined', 'class_assigned__name'
-        )
-        
-        return Response(list(users), status=200)
+
+        users_data = []
+        for user in query:
+            users_data.append({
+                'id':           user.id,
+                'unique_id':    user.unique_id,
+                'username':     user.username,
+                'email':        user.email,
+                'first_name':   user.first_name,
+                'last_name':    user.last_name,
+                'role':         user.role,
+                'phone':        user.phone,
+                'dob':          str(user.dob) if user.dob else None,
+                'date_joined':  user.date_joined.isoformat(),
+                'is_approved':  user.is_approved,
+                'class_assigned_id':   user.class_assigned.id   if user.class_assigned else None,
+                'class_assigned_name': user.class_assigned.name if user.class_assigned else None,
+                'subjects': [
+                    {'id': s.id, 'name': s.name}
+                    for s in user.subjects.all()
+                ],
+            })
+
+        return Response(users_data, status=200)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1071,6 +1089,136 @@ def assign_teacher_to_subject(request):
         }, status=status.HTTP_201_CREATED)
     except Exception as e:
         return Response({'error': str(e)}, status=400)
+
+class DeleteUserView(APIView):
+    """DELETE: Permanently delete a user"""
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, user_id):
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+        try:
+            user = CustomUser.objects.get(id=user_id)
+            if user.id == request.user.id:
+                return Response({'error': 'Cannot delete your own account'}, status=400)
+            name = user.get_full_name() or user.username
+            user.delete()
+            return Response({'message': f'{name} deleted successfully'}, status=200)
+        except CustomUser.DoesNotExist:
+            return Response({'error': 'User not found'}, status=404)
+
+# class DeleteUserView(APIView):
+#     """DELETE: Permanently delete an approved user"""
+#     permission_classes = [IsAuthenticated]
+
+#     def delete(self, request, user_id):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         try:
+#             user = CustomUser.objects.get(id=user_id)
+
+#             # Prevent admin from deleting themselves
+#             if user.id == request.user.id:
+#                 return Response({'error': 'You cannot delete your own account'}, status=400)
+
+#             name  = user.get_full_name() or user.username
+#             email = user.email
+#             user.delete()
+
+#             return Response({'message': f'User {name} ({email}) deleted successfully'}, status=200)
+
+#         except CustomUser.DoesNotExist:
+#             return Response({'error': 'User not found'}, status=404)
+
+
+# class UpdateUserView(APIView):
+#     """PATCH: Update user details (first_name, last_name, email, phone)"""
+#     permission_classes = [IsAuthenticated]
+
+#     def patch(self, request, user_id):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         try:
+#             user = CustomUser.objects.get(id=user_id)
+
+#             allowed_fields = ['first_name', 'last_name', 'phone', 'email']
+#             for field in allowed_fields:
+#                 if field in request.data:
+#                     setattr(user, field, request.data[field])
+
+#             user.save()
+
+#             return Response({
+#                 'message': 'User updated successfully',
+#                 'user': {
+#                     'id':         user.id,
+#                     'first_name': user.first_name,
+#                     'last_name':  user.last_name,
+#                     'email':      user.email,
+#                     'phone':      user.phone,
+#                 }
+#             }, status=200)
+
+#         except CustomUser.DoesNotExist:
+#             return Response({'error': 'User not found'}, status=404)
+class UpdateUserView(APIView):
+    """PATCH: Update user — basic fields + class (students) + subjects (teachers)"""
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, user_id):
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+
+        try:
+            user = CustomUser.objects.get(id=user_id)
+
+            # Basic fields anyone can update
+            for field in ['first_name', 'last_name', 'phone', 'email']:
+                if field in request.data:
+                    setattr(user, field, request.data[field])
+
+            # Student: update class assignment
+            if user.role == 'student' and 'class_assigned_id' in request.data:
+                class_id = request.data['class_assigned_id']
+                if class_id:
+                    try:
+                        from .models import Class as AdminClass
+                        user.class_assigned = AdminClass.objects.get(id=class_id)
+                    except Exception:
+                        try:
+                            from academics.models import AcademicClass
+                            user.class_assigned = AcademicClass.objects.get(id=class_id)
+                        except Exception:
+                            return Response({'error': f'Class id {class_id} not found'}, status=404)
+                else:
+                    user.class_assigned = None
+
+            user.save()
+
+            # Teacher: update subjects (ManyToMany must be done after save)
+            if user.role == 'teacher' and 'subject_ids' in request.data:
+                from .models import Subject
+                subjects = Subject.objects.filter(id__in=request.data['subject_ids'])
+                user.subjects.set(subjects)
+
+            return Response({
+                'message': 'User updated successfully',
+                'user': {
+                    'id':                  user.id,
+                    'first_name':          user.first_name,
+                    'last_name':           user.last_name,
+                    'email':               user.email,
+                    'phone':               user.phone,
+                    'class_assigned_id':   user.class_assigned.id   if user.class_assigned else None,
+                    'class_assigned_name': user.class_assigned.name if user.class_assigned else None,
+                    'subjects': [{'id': s.id, 'name': s.name} for s in user.subjects.all()],
+                }
+            }, status=200)
+
+        except CustomUser.DoesNotExist:
+            return Response({'error': 'User not found'}, status=404)
 
 
 

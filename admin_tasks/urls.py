@@ -9,7 +9,7 @@ from .views import (
     TeacherAssignmentListView, TeacherAssignmentCreateView,
     NotificationCreateView, NotificationListView,
     FeePaymentCreateView, FeePaymentListView, FeePaymentDetailView,
-    AdminDashboardStatsView, GetTeachersView,
+    AdminDashboardStatsView, GetTeachersView,DeleteUserView, UpdateUserView,
 )
 
 app_name = 'admin_tasks'
@@ -20,6 +20,8 @@ urlpatterns = [
     path('users/approve/', ApproveUserView.as_view(), name='approve-user'),
     path('users/reject/', RejectUserView.as_view(), name='reject-user'),
     path('users/all/', AllUsersView.as_view(), name='all-users'),
+    path('users/<int:user_id>/delete/',    DeleteUserView.as_view(),    name='delete-user'), 
+    path('users/<int:user_id>/update/',    UpdateUserView.as_view(),    name='update-user'),  
     
     # Class Management
     path('classes/', ManageAcademicClassesView.as_view(), name='manage-academic-classes'),
