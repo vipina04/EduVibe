@@ -19,7 +19,8 @@ import random
 from .models import CustomUser
 # from admin_tasks.models import Class, Subject
 # from academics.models import AcademicClass as Class, Subject
-from academics.models import AcademicClass as Class, Subject as AcademicSubject
+# from academics.models import AcademicClass as Class, Subject as AcademicSubject
+from academics.models import AcademicClass as Class, Subject as AcademicSubject, ClassSubject
 # ═══════════════════════════════════════════════════════════
 #  REGISTRATION & OTP VERIFICATION
 # ═══════════════════════════════════════════════════════════

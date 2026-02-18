@@ -5,6 +5,7 @@ EduVibe Platform - 2026
 ✅ Fixed IndentationError
 ✅ Removed Duplicate AttendanceMarkView
 ✅ All functionality preserved
+✅ Updated to use ClassSubject model
 """
 
 # ═══════════════════════════════════════════════════════════
@@ -23,7 +24,7 @@ from django.db import transaction
 import traceback
 
 from users.models import CustomUser
-from admin_tasks.models import Class, Subject, Chapter
+from academics.models import AcademicClass as Class, Subject, ClassSubject, Chapter
 from .models import (
     TeacherAssignment, Test, Question, Attendance, Assignment, Doubt, DoubtReply, Option
 )
@@ -35,7 +36,7 @@ from students.models import TestAttempt, StudentAnswer
 
 class IsTeacherRole(IsAuthenticated):
     """Only allow authenticated users with the 'teacher' role"""
-    
+
     def has_permission(self, request, view):
         return (
             super().has_permission(request, view) and
@@ -53,37 +54,31 @@ def get_all_teacher_tests(request):
     try:
         teacher = request.user
         print(f"\n=== Fetching tests for teacher: {teacher.email} ===")
-        
-        # Get all tests created by this teacher
+
         all_tests = Test.objects.filter(
             created_by=teacher
-        ).select_related('chapter__subject', 'chapter__class_assigned')
-        
+        ).select_related('chapter__class_subject__subject', 'chapter__class_subject__academic_class')
+
         print(f"Total tests found: {all_tests.count()}")
-        
-        # Group tests by subject
+
         tests_by_subject = {}
-        
+
         for test in all_tests:
-            subject_id = test.chapter.subject.id
-            
-            # Initialize subject group if not exists
+            cs = test.chapter.class_subject if test.chapter else None
+            subject_id = cs.subject.id if cs else 0
+
             if subject_id not in tests_by_subject:
                 tests_by_subject[subject_id] = {
                     'subject_id': subject_id,
-                    'subject_name': test.chapter.subject.name,
-                    'class_id': test.chapter.class_assigned.id if hasattr(test.chapter, 'class_assigned') else None,
-                    'class_name': test.chapter.class_assigned.name if hasattr(test.chapter, 'class_assigned') else 'Unknown',
+                    'subject_name': cs.subject.name if cs else 'Unknown',
+                    'class_id': cs.academic_class.id if cs else None,
+                    'class_name': cs.academic_class.name if cs else 'Unknown',
                     'tests': []
                 }
-            
-            # Count questions manually
+
             questions_count = Question.objects.filter(test=test).count()
-            
-            # Count attempts manually
             attempts_count = TestAttempt.objects.filter(test=test).count()
-            
-            # Add test to subject group
+
             tests_by_subject[subject_id]['tests'].append({
                 'id': test.id,
                 'name': test.name,
@@ -97,16 +92,12 @@ def get_all_teacher_tests(request):
                 'attempts_count': attempts_count,
                 'created_at': test.created_at
             })
-        
-        # Convert dict to list
+
         tests_by_subject_list = list(tests_by_subject.values())
-        
         print(f"Returning {len(tests_by_subject_list)} subject groups")
-        
-        return Response({
-            'tests_by_subject': tests_by_subject_list
-        })
-        
+
+        return Response({'tests_by_subject': tests_by_subject_list})
+
     except Exception as e:
         error_trace = traceback.format_exc()
         print("=" * 80)
@@ -125,34 +116,30 @@ def get_test_results(request, test_id):
     """Get all student attempts and scores for a specific test"""
     try:
         teacher = request.user
-        
-        # Get the test and verify it belongs to this teacher
+
         try:
             test = Test.objects.select_related(
-                'chapter__subject',
-                'chapter__class_assigned'
+                'chapter__class_subject__subject',
+                'chapter__class_subject__academic_class'
             ).get(id=test_id, created_by=teacher)
         except Test.DoesNotExist:
             return Response(
                 {'error': 'Test not found or you do not have permission to view it'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
-        # Get all test attempts with student info
+
         attempts = TestAttempt.objects.filter(
             test=test,
             is_submitted=True
         ).select_related('student').order_by('-score', 'submitted_at')
-        
-        # Calculate statistics
+
         stats = attempts.aggregate(
             total_attempts=Count('id'),
             average_score=Avg('percentage'),
             highest_score=Max('percentage'),
             lowest_score=Min('percentage')
         )
-        
-        # Format results
+
         results = []
         for attempt in attempts:
             results.append({
@@ -164,7 +151,7 @@ def get_test_results(request, test_id):
                 'submitted_at': attempt.submitted_at,
                 'time_taken_minutes': attempt.time_taken_minutes
             })
-        
+
         return Response({
             'test_info': {
                 'id': test.id,
@@ -173,19 +160,16 @@ def get_test_results(request, test_id):
                 'type': test.type,
                 'marks': test.marks,
                 'duration_minutes': test.duration_minutes,
-                'subject_name': test.chapter.subject.name,
-                'class_name': test.chapter.class_assigned.name,
-                'chapter_name': test.chapter.name
+                'subject_name': test.chapter.class_subject.subject.name if test.chapter and test.chapter.class_subject else '',
+                'class_name': test.chapter.class_subject.academic_class.name if test.chapter and test.chapter.class_subject else '',
+                'chapter_name': test.chapter.name if test.chapter else ''
             },
             'results': results,
             'stats': stats
         })
-        
+
     except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -193,7 +177,6 @@ def get_test_results(request, test_id):
 def create_question(request):
     """Create a new question for a test"""
     try:
-        # Get data from request.POST (FormData fields)
         test_id = request.POST.get('test')
         question_text = request.POST.get('question_text', '')
         option1 = request.POST.get('option1', '')
@@ -203,13 +186,10 @@ def create_question(request):
         correct_option = request.POST.get('correct_option', None)
         explanation = request.POST.get('explanation', '')
         question_image = request.FILES.get('question_image', None)
-        
+
         if not test_id:
-            return Response({
-                'error': 'Test ID is required.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Validate test exists
+            return Response({'error': 'Test ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             test = Test.objects.get(id=test_id)
         except Test.DoesNotExist:
@@ -217,15 +197,13 @@ def create_question(request):
                 {'error': f'Test with id {test_id} does not exist'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
-        # Check if user is the creator of the test
+
         if test.created_by != request.user:
             return Response(
                 {'error': 'You are not authorized to add questions to this test'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
-        # Create question
+
         question = Question.objects.create(
             test=test,
             question_text=question_text,
@@ -237,7 +215,7 @@ def create_question(request):
             correct_option=int(correct_option) if correct_option else None,
             explanation=explanation
         )
-        
+
         return Response({
             'message': 'Question created successfully',
             'question_id': question.id,
@@ -251,7 +229,7 @@ def create_question(request):
                 'correct_option': question.correct_option,
             }
         }, status=status.HTTP_201_CREATED)
-        
+
     except Exception as e:
         print("Error creating question:", str(e))
         import traceback
@@ -261,73 +239,6 @@ def create_question(request):
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# @api_view(['POST'])
-# @permission_classes([IsAuthenticated])
-# def create_question(request):
-#     """Create a new question for a test"""
-#     try:
-#         # Get data from FormData
-#         test_id = request.data.get('test')
-#         question_text = request.data.get('question_text', '')
-#         question_image = request.FILES.get('question_image', None)
-#         option1 = request.data.get('option1', '')
-#         option2 = request.data.get('option2', '')
-#         option3 = request.data.get('option3', '')
-#         option4 = request.data.get('option4', '')
-#         correct_option = request.data.get('correct_option', None)
-#         explanation = request.data.get('explanation', '')
-        
-#         # Validate test exists
-#         try:
-#             test = Test.objects.get(id=test_id)
-#         except Test.DoesNotExist:
-#             return Response(
-#                 {'error': f'Test with id {test_id} does not exist'},
-#                 status=status.HTTP_404_NOT_FOUND
-#             )
-        
-#         # Check if user is the creator of the test
-#         if test.created_by != request.user:
-#             return Response(
-#                 {'error': 'You are not authorized to add questions to this test'},
-#                 status=status.HTTP_403_FORBIDDEN
-#             )
-        
-#         # Create question
-#         question = Question.objects.create(
-#             test=test,
-#             question_text=question_text,
-#             question_image=question_image,
-#             option1=option1,
-#             option2=option2,
-#             option3=option3,
-#             option4=option4,
-#             correct_option=int(correct_option) if correct_option else None,
-#             explanation=explanation
-#         )
-        
-#         return Response({
-#             'message': 'Question created successfully',
-#             'question_id': question.id,
-#             'question': {
-#                 'id': question.id,
-#                 'question_text': question.question_text,
-#                 'option1': question.option1,
-#                 'option2': question.option2,
-#                 'option3': question.option3,
-#                 'option4': question.option4,
-#                 'correct_option': question.correct_option,
-#             }
-#         }, status=status.HTTP_201_CREATED)
-        
-#     except Exception as e:
-#         print("Error creating question:", str(e))
-#         print("Traceback:", traceback.format_exc())
-#         return Response({
-#             'error': 'Failed to create question',
-#             'details': str(e)
-#         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -336,17 +247,15 @@ def create_test(request):
     try:
         data = request.data
         print("Received data for test creation:", data)
-        
-        # Validate required fields
+
         required_fields = ['chapter', 'name', 'type', 'marks', 'duration_minutes']
         for field in required_fields:
             if field not in data:
                 return Response(
-                    {'error': f'Missing required field: {field}'}, 
+                    {'error': f'Missing required field: {field}'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-        
-        # Create the test
+
         test = Test.objects.create(
             chapter_id=data['chapter'],
             name=data['name'],
@@ -356,9 +265,9 @@ def create_test(request):
             duration_minutes=data['duration_minutes'],
             created_by=request.user
         )
-        
+
         print(f"Test created successfully with ID: {test.id}")
-        
+
         return Response({
             'id': test.id,
             'message': 'Test created successfully',
@@ -372,7 +281,7 @@ def create_test(request):
                 'chapter': test.chapter_id
             }
         }, status=status.HTTP_201_CREATED)
-        
+
     except Exception as e:
         print("Error creating test:", str(e))
         print("Traceback:", traceback.format_exc())
@@ -387,11 +296,8 @@ def create_test(request):
 def get_assigned_classes(request):
     """Get all classes assigned to the teacher"""
     try:
-        from admin_tasks.models import Class
-        
-        # For now, return all classes
         classes = Class.objects.all()
-        
+
         classes_data = []
         for cls in classes:
             classes_data.append({
@@ -400,12 +306,12 @@ def get_assigned_classes(request):
                 'subjects': [],
                 'student_count': 0
             })
-        
+
         return Response({
             'classes': classes_data,
             'total_classes': len(classes_data)
         }, status=status.HTTP_200_OK)
-        
+
     except Exception as e:
         print("Error fetching assigned classes:", str(e))
         print("Traceback:", traceback.format_exc())
@@ -417,60 +323,57 @@ def get_assigned_classes(request):
 # ═══════════════════════════════════════════════════════════
 #  TEACHER DASHBOARD & CORE LISTS
 # ═══════════════════════════════════════════════════════════
+
 class TeacherHomeView(APIView):
     """Teacher dashboard/home - Returns dashboard statistics for frontend"""
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request):
         teacher = request.user
-        
+
         # Get teacher's assignments
         assignments = TeacherAssignment.objects.filter(
             teacher=teacher
-        ).select_related('class_assigned', 'subject')
-        
+        ).select_related('class_subject__academic_class', 'class_subject__subject')
+
         assignments_data = []
         for assignment in assignments:
-            # Get chapters for this class-subject
-            chapters = Chapter.objects.filter(
-                subject=assignment.subject,
-                class_assigned=assignment.class_assigned
-            )
-            
+            chapters = Chapter.objects.filter(class_subject=assignment.class_subject)
             assignments_data.append({
                 'id': assignment.id,
                 'class': {
-                    'id': assignment.class_assigned.id,
-                    'name': assignment.class_assigned.name
+                    'id': assignment.class_subject.academic_class.id,
+                    'name': assignment.class_subject.academic_class.name
                 },
                 'subject': {
-                    'id': assignment.subject.id,
-                    'name': assignment.subject.name
+                    'id': assignment.class_subject.subject.id,
+                    'name': assignment.class_subject.subject.name
                 },
                 'total_chapters': chapters.count(),
                 'completed_chapters': chapters.filter(is_completed=True).count()
             })
-        
-        # ✅ Calculate statistics for dashboard cards
+
         # Count unique classes assigned to this teacher
         assigned_classes_count = TeacherAssignment.objects.filter(
             teacher=teacher
-        ).values('class_assigned').distinct().count()
-        
-        # Count unique subjects assigned to this teacher (from teacher's registered subjects)
-        total_subjects_count = teacher.subjects.count()
-        
+        ).values('class_subject__academic_class').distinct().count()
+
+        # Count unique subjects assigned to this teacher
+        total_subjects_count = TeacherAssignment.objects.filter(
+            teacher=teacher
+        ).values('class_subject__subject').distinct().count()
+
         # Count total tests created by this teacher
         total_tests_count = Test.objects.filter(created_by=teacher).count()
-        
+
         # Get recent tests (last 5)
         recent_tests = Test.objects.filter(
             created_by=teacher
         ).select_related(
-            'chapter__subject',
-            'chapter__class_assigned'
+            'chapter__class_subject__subject',
+            'chapter__class_subject__academic_class'
         ).order_by('-created_at')[:5]
-        
+
         recent_tests_data = []
         for test in recent_tests:
             recent_tests_data.append({
@@ -478,28 +381,23 @@ class TeacherHomeView(APIView):
                 'name': test.name,
                 'type': test.type,
                 'marks': test.marks,
-                'subject_name': test.chapter.subject.name,
-                'class_name': test.chapter.class_assigned.name,
-                'chapter_name': test.chapter.name,
+                'subject_name': test.chapter.class_subject.subject.name if test.chapter and test.chapter.class_subject else '',
+                'class_name': test.chapter.class_subject.academic_class.name if test.chapter and test.chapter.class_subject else '',
+                'chapter_name': test.chapter.name if test.chapter else '',
                 'created_at': test.created_at.isoformat()
             })
-        
-        # Get stats for backward compatibility
+
         stats = {
             'total_tests': total_tests_count,
             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
             'classes_teaching': assigned_classes_count
         }
-        
-        # ✅ Return data in the format expected by frontend TeacherDashboard
+
         return Response({
-            # Dashboard statistics (for the stats cards)
             'assigned_classes': assigned_classes_count,
             'total_subjects': total_subjects_count,
             'total_tests': total_tests_count,
             'recent_tests': recent_tests_data,
-            
-            # Additional data (for other parts of the dashboard)
             'teacher': {
                 'name': f'{teacher.first_name} {teacher.last_name}'.strip(),
                 'unique_id': teacher.unique_id,
@@ -509,101 +407,43 @@ class TeacherHomeView(APIView):
                 ]
             },
             'assignments': assignments_data,
-            'stats': stats  # Keep for backward compatibility
+            'stats': stats
         })
-
-# class TeacherHomeView(APIView):
-#     """Teacher dashboard/home"""
-#     permission_classes = [IsTeacherRole]
-    
-#     def get(self, request):
-#         teacher = request.user
-        
-#         # Get teacher's assignments
-#         assignments = TeacherAssignment.objects.filter(
-#             teacher=teacher
-#         ).select_related('class_assigned', 'subject')
-        
-#         assignments_data = []
-#         for assignment in assignments:
-#             # Get chapters for this class-subject
-#             chapters = Chapter.objects.filter(
-#                 subject=assignment.subject,
-#                 class_assigned=assignment.class_assigned
-#             )
-            
-#             assignments_data.append({
-#                 'id': assignment.id,
-#                 'class': {
-#                     'id': assignment.class_assigned.id,
-#                     'name': assignment.class_assigned.name
-#                 },
-#                 'subject': {
-#                     'id': assignment.subject.id,
-#                     'name': assignment.subject.name
-#                 },
-#                 'total_chapters': chapters.count(),
-#                 'completed_chapters': chapters.filter(is_completed=True).count()
-#             })
-        
-#         # Get stats
-#         stats = {
-#             'total_tests': Test.objects.filter(created_by=teacher).count(),
-#             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
-#             'classes_teaching': TeacherAssignment.objects.filter(teacher=teacher).values('class_assigned').distinct().count()
-#         }
-        
-#         return Response({
-#             'teacher': {
-#                 'name': f'{teacher.first_name} {teacher.last_name}'.strip(),
-#                 'unique_id': teacher.unique_id,
-#                 'subjects': [
-#                     {'id': s.id, 'name': s.name}
-#                     for s in teacher.subjects.all()
-#                 ]
-#             },
-#             'assignments': assignments_data,
-#             'stats': stats
-#         })
 
 
 class TeacherClassesListView(APIView):
     """Get all classes assigned to teacher with statistics"""
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request):
-        # Get unique classes assigned to this teacher
         assignments = TeacherAssignment.objects.filter(
             teacher=request.user
-        ).select_related('class_assigned').values(
-            'class_assigned__id', 
-            'class_assigned__name'
+        ).select_related('class_subject__academic_class').values(
+            'class_subject__academic_class__id',
+            'class_subject__academic_class__name'
         ).distinct()
-        
+
         classes_data = []
         for assignment in assignments:
-            class_id = assignment['class_assigned__id']
-            class_name = assignment['class_assigned__name']
-            
-            # Count subjects assigned to this teacher for this class
+            class_id = assignment['class_subject__academic_class__id']
+            class_name = assignment['class_subject__academic_class__name']
+
             subjects_count = TeacherAssignment.objects.filter(
                 teacher=request.user,
-                class_assigned_id=class_id
-            ).values('subject').distinct().count()
-            
-            # Count students in this class
+                class_subject__academic_class_id=class_id
+            ).values('class_subject__subject').distinct().count()
+
             students_count = CustomUser.objects.filter(
                 role='student',
                 class_assigned_id=class_id,
                 is_approved=True
             ).count()
-            
-            # Count tests created by this teacher for this class
+
             tests_count = Test.objects.filter(
                 created_by=request.user,
-                chapter__class_assigned_id=class_id
+                chapter__class_subject__academic_class_id=class_id
             ).count()
-            
+
             classes_data.append({
                 'id': class_id,
                 'name': class_name,
@@ -611,79 +451,75 @@ class TeacherClassesListView(APIView):
                 'students_count': students_count,
                 'tests_count': tests_count
             })
-        
+
         return Response(classes_data)
 
 
 class TeacherSubjectsListView(APIView):
     """Get subjects assigned to teacher, optionally filtered by class"""
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request):
         class_id = request.GET.get('class_id')
         assignments = TeacherAssignment.objects.filter(teacher=request.user)
-        
+
         if class_id:
-            assignments = assignments.filter(class_assigned_id=class_id)
-        
-        subjects = assignments.values('subject__id', 'subject__name').distinct()
-        return Response([{'id': s['subject__id'], 'name': s['subject__name']} for s in subjects])
+            assignments = assignments.filter(class_subject__academic_class_id=class_id)
+
+        subjects = assignments.values(
+            'class_subject__subject__id',
+            'class_subject__subject__name'
+        ).distinct()
+
+        return Response([{
+            'id': s['class_subject__subject__id'],
+            'name': s['class_subject__subject__name']
+        } for s in subjects])
 
 
 class TeacherClassSubjectsView(APIView):
     """Get all subjects for a specific class assigned to this teacher"""
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request, class_id):
-        # Verify teacher is assigned to this class
         if not TeacherAssignment.objects.filter(
             teacher=request.user,
-            class_assigned_id=class_id
+            class_subject__academic_class_id=class_id
         ).exists():
-            return Response({
-                'error': 'You are not assigned to this class.'
-            }, status=status.HTTP_403_FORBIDDEN)
-        
-        # Get all subjects this teacher teaches in this class
+            return Response(
+                {'error': 'You are not assigned to this class.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         assignments = TeacherAssignment.objects.filter(
             teacher=request.user,
-            class_assigned_id=class_id
-        ).select_related('subject', 'class_assigned')
-        
+            class_subject__academic_class_id=class_id
+        ).select_related('class_subject__subject', 'class_subject__academic_class')
+
         subjects_data = []
         for assignment in assignments:
-            # Count chapters for this subject in this class
-            chapters_count = Chapter.objects.filter(
-                subject=assignment.subject,
-                class_assigned_id=class_id
-            ).count()
-            
-            completed_chapters = Chapter.objects.filter(
-                subject=assignment.subject,
-                class_assigned_id=class_id,
-                is_completed=True
-            ).count()
-            
-            # Count tests for this subject in this class
+            cs = assignment.class_subject
+            chapters_count = Chapter.objects.filter(class_subject=cs).count()
+            completed_chapters = Chapter.objects.filter(class_subject=cs, is_completed=True).count()
             tests_count = Test.objects.filter(
                 created_by=request.user,
-                chapter__subject=assignment.subject,
-                chapter__class_assigned_id=class_id
+                chapter__class_subject=cs
             ).count()
-            
+
             subjects_data.append({
-                'id': assignment.subject.id,
-                'name': assignment.subject.name,
+                'id': cs.subject.id,
+                'name': cs.subject.name,
+                'class_subject_id': cs.id,
                 'class_id': class_id,
-                'class_name': assignment.class_assigned.name,
+                'class_name': cs.academic_class.name,
                 'chapters_count': chapters_count,
                 'completed_chapters': completed_chapters,
                 'tests_count': tests_count
             })
-        
+
         return Response({
             'class_id': class_id,
-            'class_name': assignments.first().class_assigned.name if assignments.exists() else None,
+            'class_name': assignments.first().class_subject.academic_class.name if assignments.exists() else None,
             'subjects': subjects_data
         })
 
@@ -691,27 +527,40 @@ class TeacherClassSubjectsView(APIView):
 class TeacherSubjectClassesView(APIView):
     """Returns classes filtered by subject for the teacher"""
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request):
         subject_id = request.GET.get('subject_id')
         assignments = TeacherAssignment.objects.filter(teacher=request.user)
+
         if subject_id:
-            assignments = assignments.filter(subject_id=subject_id)
-        classes = assignments.values('class_assigned__id', 'class_assigned__name').distinct()
-        return Response([{'id': c['class_assigned__id'], 'name': c['class_assigned__name']} for c in classes])
+            assignments = assignments.filter(class_subject__subject_id=subject_id)
+
+        classes = assignments.values(
+            'class_subject__academic_class__id',
+            'class_subject__academic_class__name'
+        ).distinct()
+
+        return Response([{
+            'id': c['class_subject__academic_class__id'],
+            'name': c['class_subject__academic_class__name']
+        } for c in classes])
 
 
 class TeacherSearchView(APIView):
     """Search for students or resources"""
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request):
         query = request.GET.get('q', '')
         students = CustomUser.objects.filter(
             Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(unique_id__icontains=query),
             role='student'
         )[:10]
-        return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'uid': s.unique_id} for s in students])
+        return Response([{
+            'id': s.id,
+            'name': f"{s.first_name} {s.last_name}",
+            'uid': s.unique_id
+        } for s in students])
 
 # ═══════════════════════════════════════════════════════════
 #  CHAPTER & TEST MANAGEMENT
@@ -720,52 +569,59 @@ class TeacherSearchView(APIView):
 class TeacherChaptersView(APIView):
     """Get chapters for class-subject"""
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request, class_id=None, subject_id=None):
-        # Accept both URL params and query params
         class_id = class_id or request.GET.get('class_id')
         subject_id = subject_id or request.GET.get('subject_id')
-        
+
         if not class_id or not subject_id:
             return Response(
                 {'error': 'class_id and subject_id required.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         if not TeacherAssignment.objects.filter(
             teacher=request.user,
-            class_assigned_id=class_id,
-            subject_id=subject_id
+            class_subject__academic_class_id=class_id,
+            class_subject__subject_id=subject_id
         ).exists():
             return Response(
                 {'error': 'Not assigned to this class-subject.'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
-        chapters = Chapter.objects.filter(
-            class_assigned_id=class_id,
-            subject_id=subject_id
-        )
-        
+
+        try:
+            cs = ClassSubject.objects.get(academic_class_id=class_id, subject_id=subject_id)
+        except ClassSubject.DoesNotExist:
+            return Response(
+                {'error': 'Class-subject combination not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        chapters = Chapter.objects.filter(class_subject=cs)
+
         chapters_data = [{
             'id': c.id,
             'name': c.name,
             'is_completed': c.is_completed,
             'tests_count': Test.objects.filter(chapter=c).count()
         } for c in chapters]
-        
+
         return Response(chapters_data)
 
 
 class MarkChapterCompleteView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def post(self, request, chapter_id):
         try:
             chapter = Chapter.objects.get(id=chapter_id)
-            if not TeacherAssignment.objects.filter(teacher=request.user, class_assigned=chapter.class_assigned, subject=chapter.subject).exists():
+            if not TeacherAssignment.objects.filter(
+                teacher=request.user,
+                class_subject=chapter.class_subject
+            ).exists():
                 return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-            
+
             chapter.is_completed = True
             chapter.save()
             return Response({'message': 'Chapter marked as completed!'})
@@ -775,15 +631,20 @@ class MarkChapterCompleteView(APIView):
 
 class TestListView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request):
         tests = Test.objects.filter(created_by=request.user).select_related('chapter')
-        return Response([{'id': t.id, 'chapter': t.chapter.name, 'type': t.type, 'marks': t.marks} for t in tests])
+        return Response([{
+            'id': t.id,
+            'chapter': t.chapter.name,
+            'type': t.type,
+            'marks': t.marks
+        } for t in tests])
 
 
 class TestCreateView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def post(self, request):
         """Create a new test"""
         name = request.data.get('name')
@@ -792,50 +653,45 @@ class TestCreateView(APIView):
         marks = request.data.get('marks')
         duration_minutes = request.data.get('duration_minutes')
         chapter_id = request.data.get('chapter') or request.data.get('chapter_id')
-        
-        # Validate required fields
+
         if not name:
-            return Response({
-                'error': 'Test name is required.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response({'error': 'Test name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
         if test_type not in ['mcq', 'descriptive']:
-            return Response({
-                'error': 'Invalid test type. Must be "mcq" or "descriptive".'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(
+                {'error': 'Invalid test type. Must be "mcq" or "descriptive".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         if not marks or int(marks) <= 0:
-            return Response({
-                'error': 'Valid marks required (must be greater than 0).'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(
+                {'error': 'Valid marks required (must be greater than 0).'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         if not duration_minutes or int(duration_minutes) <= 0:
-            return Response({
-                'error': 'Valid duration required (must be greater than 0).'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(
+                {'error': 'Valid duration required (must be greater than 0).'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         if not chapter_id:
-            return Response({
-                'error': 'Chapter is required.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response({'error': 'Chapter is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            # Verify chapter exists
             chapter = Chapter.objects.get(id=chapter_id)
-            
-            # Verify teacher is assigned to this subject and class
+
             assignment_exists = TeacherAssignment.objects.filter(
                 teacher=request.user,
-                subject=chapter.subject,
-                class_assigned=chapter.class_assigned
+                class_subject=chapter.class_subject
             ).exists()
-            
+
             if not assignment_exists:
-                return Response({
-                    'error': 'You are not assigned to teach this subject in this class.'
-                }, status=status.HTTP_403_FORBIDDEN)
-            
-            # Create test
+                return Response(
+                    {'error': 'You are not assigned to teach this subject in this class.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
             test = Test.objects.create(
                 name=name,
                 description=description,
@@ -845,7 +701,7 @@ class TestCreateView(APIView):
                 duration_minutes=int(duration_minutes),
                 created_by=request.user
             )
-            
+
             return Response({
                 'message': 'Test created successfully!',
                 'test': {
@@ -858,23 +714,21 @@ class TestCreateView(APIView):
                     'chapter_name': test.chapter.name
                 }
             }, status=status.HTTP_201_CREATED)
-            
+
         except Chapter.DoesNotExist:
-            return Response({
-                'error': 'Chapter not found.'
-            }, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             print(f"Error creating test: {str(e)}")
             print(traceback.format_exc())
-            
-            return Response({
-                'error': f'Failed to create test: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {'error': f'Failed to create test: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class TestDetailView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request, test_id):
         try:
             test = Test.objects.get(id=test_id, created_by=request.user)
@@ -890,10 +744,13 @@ class TestDetailView(APIView):
 
 class TestResultsView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request, test_id):
         attempts = TestAttempt.objects.filter(test_id=test_id).select_related('student')
-        return Response([{'student': a.student.first_name, 'score': a.score} for a in attempts])
+        return Response([{
+            'student': a.student.first_name,
+            'score': a.score
+        } for a in attempts])
 
 # ═══════════════════════════════════════════════════════════
 #  QUESTION MANAGEMENT
@@ -901,74 +758,67 @@ class TestResultsView(APIView):
 
 class QuestionCreateView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def post(self, request, test_id=None):
         """Create a new question for a test"""
         test_id = test_id or request.data.get('test')
-        
+
         if not test_id:
-            return Response({
-                'error': 'Test ID is required.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response({'error': 'Test ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            # Verify test exists and belongs to this teacher
             test = Test.objects.get(id=test_id, created_by=request.user)
-            
-            # Get question data
             question_text = request.data.get('question_text', '')
-            
+
             if not question_text:
-                return Response({
-                    'error': 'Question text is required.'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Create question
+                return Response({'error': 'Question text is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
             question = Question.objects.create(
                 test=test,
                 question_text=question_text,
                 explanation=request.data.get('explanation', '')
             )
-            
-            # For MCQ tests, add options
+
             if test.type == 'mcq':
                 option1 = request.data.get('option1', '')
                 option2 = request.data.get('option2', '')
                 option3 = request.data.get('option3', '')
                 option4 = request.data.get('option4', '')
                 correct_option = request.data.get('correct_option')
-                
+
                 if not all([option1, option2, option3, option4, correct_option]):
                     question.delete()
-                    return Response({
-                        'error': 'All options and correct option are required for MCQ.'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
+                    return Response(
+                        {'error': 'All options and correct option are required for MCQ.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
                 try:
                     correct_option = int(correct_option)
                     if correct_option not in [1, 2, 3, 4]:
                         question.delete()
-                        return Response({
-                            'error': 'Correct option must be between 1 and 4.'
-                        }, status=status.HTTP_400_BAD_REQUEST)
+                        return Response(
+                            {'error': 'Correct option must be between 1 and 4.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
                 except (ValueError, TypeError):
                     question.delete()
-                    return Response({
-                        'error': 'Invalid correct option value.'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
+                    return Response(
+                        {'error': 'Invalid correct option value.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
                 question.option1 = option1
                 question.option2 = option2
                 question.option3 = option3
                 question.option4 = option4
                 question.correct_option = correct_option
                 question.save()
-            
-            # Handle image upload if present
+
             if request.FILES.get('question_image'):
                 question.question_image = request.FILES['question_image']
                 question.save()
-            
+
             return Response({
                 'message': 'Question created successfully!',
                 'question': {
@@ -977,58 +827,58 @@ class QuestionCreateView(APIView):
                     'has_image': bool(question.question_image)
                 }
             }, status=status.HTTP_201_CREATED)
-            
+
         except Test.DoesNotExist:
-            return Response({
-                'error': 'Test not found or you do not have permission to add questions to this test.'
-            }, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'Test not found or you do not have permission to add questions to this test.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
             print(f"Error creating question: {str(e)}")
             print(traceback.format_exc())
-            
-            return Response({
-                'error': f'Failed to create question: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {'error': f'Failed to create question: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class QuestionUpdateView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def put(self, request, question_id):
         return Response({'message': 'Update placeholder'})
 
 
 class QuestionDeleteView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def delete(self, request, question_id):
         return Response(status=204)
 
 # ═══════════════════════════════════════════════════════════
-#  ATTENDANCE - FIXED INDENTATION
+#  ATTENDANCE
 # ═══════════════════════════════════════════════════════════
 
 class ClassStudentsView(APIView):
     """Get all students in a class"""
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request, class_id):
-        # Verify teacher is assigned to this class
         if not TeacherAssignment.objects.filter(
             teacher=request.user,
-            class_assigned_id=class_id
+            class_subject__academic_class_id=class_id
         ).exists():
-            return Response({
-                'error': 'You are not assigned to this class.'
-            }, status=status.HTTP_403_FORBIDDEN)
-        
-        # Get all students in the class
+            return Response(
+                {'error': 'You are not assigned to this class.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         students = CustomUser.objects.filter(
             role='student',
             class_assigned_id=class_id,
             is_approved=True
         ).order_by('first_name', 'last_name')
-        
+
         students_data = [{
             'id': student.id,
             'first_name': student.first_name,
@@ -1038,140 +888,14 @@ class ClassStudentsView(APIView):
             'email': student.email,
             'unique_id': student.unique_id
         } for student in students]
-        
+
         return Response(students_data)
 
-
-# class AttendanceMarkView(APIView):
-#     """Mark attendance for students"""
-#     permission_classes = [IsTeacherRole]
-    
-#     def post(self, request):  # ✅ FIXED INDENTATION HERE
-#         class_id = request.data.get('class_id')
-#         subject_id = request.data.get('subject_id')
-#         date_str = request.data.get('date')
-#         student_ids = request.data.get('student_ids', [])
-#         from_time_str = request.data.get('from_time')
-#         to_time_str = request.data.get('to_time')
-        
-#         if not all([class_id, subject_id, date_str]):
-#             return Response({
-#                 'error': 'class_id, subject_id, and date are required.'
-#             }, status=status.HTTP_400_BAD_REQUEST)
-        
-#         try:
-#             # Verify teacher assignment
-#             TeacherAssignment.objects.get(
-#                 teacher=request.user,
-#                 class_assigned_id=class_id,
-#                 subject_id=subject_id
-#             )
-            
-#             # Parse date
-#             attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
-            
-#             # Validate date is not in the future
-#             if attendance_date > timezone.now().date():
-#                 return Response({
-#                     'error': 'Cannot mark attendance for future dates.'
-#                 }, status=status.HTTP_400_BAD_REQUEST)
-            
-#             # Parse time fields
-#             from_time = None
-#             to_time = None
-#             duration_minutes = None
-            
-#             if from_time_str and to_time_str:
-#                 try:
-#                     from_time = timezone.datetime.strptime(from_time_str, '%H:%M').time()
-#                     to_time = timezone.datetime.strptime(to_time_str, '%H:%M').time()
-                    
-#                     # Calculate duration
-#                     from_datetime = timezone.datetime.combine(attendance_date, from_time)
-#                     to_datetime = timezone.datetime.combine(attendance_date, to_time)
-#                     duration_minutes = int((to_datetime - from_datetime).total_seconds() / 60)
-                    
-#                     if duration_minutes < 0:
-#                         return Response({
-#                             'error': 'End time must be after start time.'
-#                         }, status=status.HTTP_400_BAD_REQUEST)
-                        
-#                 except ValueError:
-#                     return Response({
-#                         'error': 'Invalid time format. Use HH:MM (24-hour format).'
-#                     }, status=status.HTTP_400_BAD_REQUEST)
-            
-#             # Get all students in class
-#             all_students = CustomUser.objects.filter(
-#                 role='student',
-#                 class_assigned_id=class_id,
-#                 is_approved=True
-#             )
-            
-#             if not all_students.exists():
-#                 return Response({
-#                     'error': 'No students found in this class.'
-#                 }, status=status.HTTP_404_NOT_FOUND)
-            
-#             # Mark attendance for each student
-#             marked_count = 0
-#             for student in all_students:
-#                 # Check if already marked for this date
-#                 attendance, created = Attendance.objects.update_or_create(
-#                     teacher=request.user,
-#                     student=student,
-#                     class_assigned_id=class_id,
-#                     date=attendance_date,
-#                     defaults={
-#                         'is_present': student.id in student_ids,
-#                         'time': timezone.now().time(),
-#                         'from_time': from_time,
-#                         'to_time': to_time,
-#                         'duration_minutes': duration_minutes
-#                     }
-#                 )
-#                 marked_count += 1
-            
-#             present_count = len(student_ids)
-#             absent_count = marked_count - present_count
-            
-#             response_data = {
-#                 'message': f'Attendance marked successfully for {marked_count} students!',
-#                 'date': date_str,
-#                 'total_students': marked_count,
-#                 'present_count': present_count,
-#                 'absent_count': absent_count
-#             }
-            
-#             # Add time info if provided
-#             if from_time and to_time:
-#                 response_data.update({
-#                     'from_time': from_time_str,
-#                     'to_time': to_time_str,
-#                     'duration_minutes': duration_minutes
-#                 })
-            
-#             return Response(response_data, status=status.HTTP_201_CREATED)
-        
-#         except TeacherAssignment.DoesNotExist:
-#             return Response({
-#                 'error': 'You are not assigned to this class-subject combination.'
-#             }, status=status.HTTP_403_FORBIDDEN)
-#         except ValueError:
-#             return Response({
-#                 'error': 'Invalid date format. Use YYYY-MM-DD.'
-#             }, status=status.HTTP_400_BAD_REQUEST)
-#         except Exception as e:
-#             return Response({
-#                 'error': f'An error occurred: {str(e)}'
-#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-# UPDATED AttendanceMarkView - Add this to teachers/views.py
 
 class AttendanceMarkView(APIView):
     """Mark attendance for students"""
     permission_classes = [IsTeacherRole]
-    
+
     def post(self, request):
         class_id = request.data.get('class_id')
         subject_id = request.data.get('subject_id')
@@ -1179,75 +903,78 @@ class AttendanceMarkView(APIView):
         student_ids = request.data.get('student_ids', [])
         from_time_str = request.data.get('from_time')
         to_time_str = request.data.get('to_time')
-        
+
         if not all([class_id, subject_id, date_str]):
-            return Response({
-                'error': 'class_id, subject_id, and date are required.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(
+                {'error': 'class_id, subject_id, and date are required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         try:
+            # Get ClassSubject
+            try:
+                cs = ClassSubject.objects.get(academic_class_id=class_id, subject_id=subject_id)
+            except ClassSubject.DoesNotExist:
+                return Response(
+                    {'error': 'Class-subject not found.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             # Verify teacher assignment
             assignment = TeacherAssignment.objects.get(
                 teacher=request.user,
-                class_assigned_id=class_id,
-                subject_id=subject_id
+                class_subject=cs
             )
-            
+
             # Parse date
             attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
-            
-            # Validate date is not in the future
+
             if attendance_date > timezone.now().date():
-                return Response({
-                    'error': 'Cannot mark attendance for future dates.'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Parse time fields
+                return Response(
+                    {'error': 'Cannot mark attendance for future dates.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             from_time = None
             to_time = None
             duration_minutes = None
-            
+
             if from_time_str and to_time_str:
                 try:
                     from_time = timezone.datetime.strptime(from_time_str, '%H:%M').time()
                     to_time = timezone.datetime.strptime(to_time_str, '%H:%M').time()
-                    
-                    # Calculate duration
                     from_datetime = timezone.datetime.combine(attendance_date, from_time)
                     to_datetime = timezone.datetime.combine(attendance_date, to_time)
                     duration_minutes = int((to_datetime - from_datetime).total_seconds() / 60)
-                    
                     if duration_minutes < 0:
-                        return Response({
-                            'error': 'End time must be after start time.'
-                        }, status=status.HTTP_400_BAD_REQUEST)
-                        
+                        return Response(
+                            {'error': 'End time must be after start time.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
                 except ValueError:
-                    return Response({
-                        'error': 'Invalid time format. Use HH:MM (24-hour format).'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Get all students in class
+                    return Response(
+                        {'error': 'Invalid time format. Use HH:MM (24-hour format).'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
             all_students = CustomUser.objects.filter(
                 role='student',
                 class_assigned_id=class_id,
                 is_approved=True
             )
-            
+
             if not all_students.exists():
-                return Response({
-                    'error': 'No students found in this class.'
-                }, status=status.HTTP_404_NOT_FOUND)
-            
-            # Mark attendance for each student
+                return Response(
+                    {'error': 'No students found in this class.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
             marked_count = 0
             for student in all_students:
-                # ✅ UPDATED: Now includes subject_id in update_or_create
-                attendance, created = Attendance.objects.update_or_create(
+                Attendance.objects.update_or_create(
                     teacher=request.user,
                     student=student,
-                    class_assigned_id=class_id,
-                    subject_id=subject_id,  # ✅ NEW: Added subject to unique lookup
+                    class_subject=cs,
                     date=attendance_date,
                     defaults={
                         'is_present': student.id in student_ids,
@@ -1258,507 +985,122 @@ class AttendanceMarkView(APIView):
                     }
                 )
                 marked_count += 1
-            
+
             present_count = len(student_ids)
             absent_count = marked_count - present_count
-            
+
             response_data = {
                 'message': f'Attendance marked successfully for {marked_count} students!',
                 'date': date_str,
-                'subject': assignment.subject.name,  # ✅ NEW: Include subject name in response
+                'subject': cs.subject.name,
                 'total_students': marked_count,
                 'present_count': present_count,
                 'absent_count': absent_count
             }
-            
-            # Add time info if provided
+
             if from_time and to_time:
                 response_data.update({
                     'from_time': from_time_str,
                     'to_time': to_time_str,
                     'duration_minutes': duration_minutes
                 })
-            
+
             return Response(response_data, status=status.HTTP_201_CREATED)
-        
+
         except TeacherAssignment.DoesNotExist:
-            return Response({
-                'error': 'You are not assigned to this class-subject combination.'
-            }, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'error': 'You are not assigned to this class-subject combination.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         except ValueError:
-            return Response({
-                'error': 'Invalid date format. Use YYYY-MM-DD.'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'Invalid date format. Use YYYY-MM-DD.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             import traceback
             print("Error in attendance marking:")
             print(traceback.format_exc())
-            return Response({
-                'error': f'An error occurred: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)            
+            return Response(
+                {'error': f'An error occurred: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class AttendanceListView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request):
         return Response([])
 
 
 class StudentAttendanceHistoryView(APIView):
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request, student_id):
         return Response([])
 
-# ═══════════════════════════════════════════════════════════
-#  ASSIGNMENTS
-# ═══════════════════════════════════════════════════════════
 
-class AssignmentCreateView(APIView):
-    permission_classes = [IsTeacherRole]
-    
-    def post(self, request):
-        chapter_id = request.data.get('chapter_id')
-        description = request.data.get('description', '').strip()
-        file = request.FILES.get('file')
-        
-        if not description:
-            return Response({'error': 'Description is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            chapter = Chapter.objects.get(id=chapter_id)
-            assignment = Assignment.objects.create(teacher=request.user, chapter=chapter, description=description, file=file)
-            return Response({'message': 'Assignment created!', 'id': assignment.id}, status=status.HTTP_201_CREATED)
-        except Chapter.DoesNotExist:
-            return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-
-class AssignmentListView(APIView):
-    permission_classes = [IsTeacherRole]
-    
-    def get(self, request):
-        assignments = Assignment.objects.filter(teacher=request.user)
-        return Response([{'id': a.id, 'desc': a.description} for a in assignments])
-
-
-class AssignmentDetailView(APIView):
-    permission_classes = [IsTeacherRole]
-    
-    def get(self, request, assignment_id):
-        return Response({'id': assignment_id})
-
-# ═══════════════════════════════════════════════════════════
-#  DOUBTS
-# ═══════════════════════════════════════════════════════════
-
-class DoubtListView(APIView):
-    """Get doubts filtered by class and/or subject"""
-    permission_classes = [IsAuthenticated]
-    
-    def get(self, request):
-        class_id = request.GET.get('class_id')
-        subject_id = request.GET.get('subject_id')
-        
-        if request.user.role == 'teacher':
-            teacher_subjects = request.user.subjects.all()
-            doubts = Doubt.objects.filter(subject__in=teacher_subjects)
-            if class_id:
-                doubts = doubts.filter(student__class_assigned_id=class_id)
-            if subject_id:
-                doubts = doubts.filter(subject_id=subject_id)
-        
-        elif request.user.role == 'student':
-            if not request.user.class_assigned:
-                return Response([], status=status.HTTP_200_OK)
-            doubts = Doubt.objects.filter(student__class_assigned=request.user.class_assigned)
-            if subject_id:
-                doubts = doubts.filter(subject_id=subject_id)
-        else:
-            return Response({'error': 'Invalid role.'}, status=status.HTTP_403_FORBIDDEN)
-        
-        doubts = doubts.select_related('student', 'subject').prefetch_related('doubtreply_set__user').order_by('-created_at')
-        
-        doubts_data = []
-        for doubt in doubts:
-            replies = doubt.doubtreply_set.all()
-            replies_data = [{
-                'id': r.id,
-                'user': {'id': r.user.id, 'name': f'{r.user.first_name} {r.user.last_name}'.strip() or r.user.username, 'role': r.user.role},
-                'text': r.text,
-                'image_url': request.build_absolute_uri(r.image.url) if r.image else None,
-                'created_at': r.created_at
-            } for r in replies]
-            
-            doubts_data.append({
-                'id': doubt.id,
-                'student': {'id': doubt.student.id, 'name': f'{doubt.student.first_name} {doubt.student.last_name}'.strip(), 'unique_id': doubt.student.unique_id},
-                'subject': {'id': doubt.subject.id, 'name': doubt.subject.name},
-                'text': doubt.text,
-                'image_url': request.build_absolute_uri(doubt.image.url) if doubt.image else None,
-                'created_at': doubt.created_at,
-                'reply_count': len(replies_data),
-                'replies': replies_data
-            })
-        return Response(doubts_data)
-
-
-class DoubtDetailView(APIView):
-    permission_classes = [IsTeacherRole]
-    
-    def get(self, request, doubt_id):
-        return Response({'id': doubt_id})
-
-
-class DoubtReplyCreateView(APIView):
-    """Teachers can reply to doubts in their subjects"""
-    permission_classes = [IsAuthenticated]
-    
-    def post(self, request, doubt_id):
-        text = request.data.get('text', '').strip()
-        image = request.FILES.get('image')
-        
-        if not text and not image:
-            return Response({'error': 'Provide text or image.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            doubt = Doubt.objects.get(id=doubt_id)
-            if request.user.role == 'teacher':
-                if doubt.subject not in request.user.subjects.all():
-                    return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-            elif request.user.role == 'student':
-                if request.user.class_assigned != doubt.student.class_assigned:
-                    return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-            
-            reply = DoubtReply.objects.create(doubt=doubt, user=request.user, text=text, image=image)
-            return Response({
-                'message': 'Reply posted successfully!',
-                'reply': {'id': reply.id, 'text': text, 'created_at': reply.created_at}
-            }, status=status.HTTP_201_CREATED)
-        except Doubt.DoesNotExist:
-            return Response({'error': 'Doubt not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-
-
-
-# class TeacherAttendanceHistoryView(APIView):
-#     """Get teacher's attendance history with time tracking"""
-#     permission_classes = [IsTeacherRole]
-    
-#     def get(self, request):
-#         teacher = request.user
-        
-#         # Get query parameters
-#         class_id = request.GET.get('class_id')
-#         subject_id = request.GET.get('subject_id')
-#         start_date = request.GET.get('start_date')
-#         end_date = request.GET.get('end_date')
-        
-#         # Base query - all attendance marked by this teacher
-#         attendance_records = Attendance.objects.filter(
-#             teacher=teacher
-#         ).select_related(
-#             'class_assigned',
-#             'student'
-#         ).order_by('-date', '-time')
-        
-#         # Apply filters
-#         if class_id:
-#             attendance_records = attendance_records.filter(class_assigned_id=class_id)
-        
-#         if start_date:
-#             attendance_records = attendance_records.filter(date__gte=start_date)
-        
-#         if end_date:
-#             attendance_records = attendance_records.filter(date__lte=end_date)
-        
-#         # Group by date, class, and subject
-#         from collections import defaultdict
-#         from datetime import datetime
-        
-#         sessions_by_date = defaultdict(list)
-        
-#         # Get unique sessions (date + class combination)
-#         unique_sessions = attendance_records.values(
-#             'date', 'class_assigned_id', 'from_time', 'to_time', 'duration_minutes'
-#         ).distinct()
-        
-#         for session in unique_sessions:
-#             date = session['date']
-#             class_id_val = session['class_assigned_id']
-            
-#             # Get class and subject info
-#             from admin_tasks.models import Class
-#             class_obj = Class.objects.get(id=class_id_val)
-            
-#             # Get subject from teacher assignment
-#             if subject_id:
-#                 assignment = TeacherAssignment.objects.filter(
-#                     teacher=teacher,
-#                     class_assigned_id=class_id_val,
-#                     subject_id=subject_id
-#                 ).select_related('subject').first()
-#             else:
-#                 assignment = TeacherAssignment.objects.filter(
-#                     teacher=teacher,
-#                     class_assigned_id=class_id_val
-#                 ).select_related('subject').first()
-            
-#             if assignment:
-#                 # Get attendance count for this session
-#                 session_attendance = attendance_records.filter(
-#                     date=date,
-#                     class_assigned_id=class_id_val
-#                 )
-                
-#                 total_students = session_attendance.count()
-#                 present_count = session_attendance.filter(is_present=True).count()
-#                 absent_count = total_students - present_count
-                
-#                 sessions_by_date[str(date)].append({
-#                     'date': date,
-#                     'class_id': class_id_val,
-#                     'class_name': class_obj.name,
-#                     'subject_id': assignment.subject.id,
-#                     'subject_name': assignment.subject.name,
-#                     'from_time': session['from_time'],
-#                     'to_time': session['to_time'],
-#                     'duration_minutes': session['duration_minutes'],
-#                     'total_students': total_students,
-#                     'present': present_count,
-#                     'absent': absent_count
-#                 })
-        
-#         # Convert to list and sort
-#         sessions_list = []
-#         for date_str, sessions in sessions_by_date.items():
-#             sessions_list.extend(sessions)
-        
-#         sessions_list.sort(key=lambda x: x['date'], reverse=True)
-        
-#         # Calculate statistics by class and subject
-#         stats_by_class = defaultdict(lambda: {
-#             'total_sessions': 0,
-#             'total_duration': 0,
-#             'subjects': defaultdict(lambda: {
-#                 'sessions': 0,
-#                 'duration': 0
-#             })
-#         })
-        
-#         for session in sessions_list:
-#             class_id_val = session['class_id']
-#             subject_id_val = session['subject_id']
-#             duration = session['duration_minutes'] or 0
-            
-#             stats_by_class[class_id_val]['class_name'] = session['class_name']
-#             stats_by_class[class_id_val]['total_sessions'] += 1
-#             stats_by_class[class_id_val]['total_duration'] += duration
-            
-#             stats_by_class[class_id_val]['subjects'][subject_id_val]['subject_name'] = session['subject_name']
-#             stats_by_class[class_id_val]['subjects'][subject_id_val]['sessions'] += 1
-#             stats_by_class[class_id_val]['subjects'][subject_id_val]['duration'] += duration
-        
-#         # Format statistics
-#         stats_formatted = []
-#         for class_id_val, class_data in stats_by_class.items():
-#             subjects_list = []
-#             for subject_id_val, subject_data in class_data['subjects'].items():
-#                 subjects_list.append({
-#                     'subject_id': subject_id_val,
-#                     'subject_name': subject_data['subject_name'],
-#                     'sessions': subject_data['sessions'],
-#                     'duration_minutes': subject_data['duration'],
-#                     'duration_hours': round(subject_data['duration'] / 60, 2)
-#                 })
-            
-#             stats_formatted.append({
-#                 'class_id': class_id_val,
-#                 'class_name': class_data['class_name'],
-#                 'total_sessions': class_data['total_sessions'],
-#                 'total_duration_minutes': class_data['total_duration'],
-#                 'total_duration_hours': round(class_data['total_duration'] / 60, 2),
-#                 'subjects': subjects_list
-#             })
-        
-#         # Overall statistics
-#         total_sessions = len(sessions_list)
-#         total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
-        
-#         return Response({
-#             'overall_stats': {
-#                 'total_sessions': total_sessions,
-#                 'total_duration_minutes': total_duration,
-#                 'total_duration_hours': round(total_duration / 60, 2)
-#             },
-#             'stats_by_class': stats_formatted,
-#             'sessions': sessions_list
-#         })
-
-
-# UPDATED TeacherAttendanceHistoryView - Add this to teachers/views.py
-
-# class TeacherAttendanceHistoryView(APIView):
-#     """Get teacher's attendance history with time tracking"""
-#     permission_classes = [IsTeacherRole]
-    
-#     def get(self, request):
-#         try:
-#             teacher = request.user
-            
-#             # Get query parameters
-#             class_id = request.GET.get('class_id')
-#             subject_id = request.GET.get('subject_id')
-#             start_date = request.GET.get('start_date')
-#             end_date = request.GET.get('end_date')
-            
-#             # Base query
-#             attendance_records = Attendance.objects.filter(
-#                 teacher=teacher
-#             ).select_related(
-#                 'class_assigned',
-#                 'subject',
-#                 'student'
-#             ).order_by('-date', '-from_time')
-            
-#             # Apply filters
-#             if class_id:
-#                 attendance_records = attendance_records.filter(class_assigned_id=int(class_id))
-#             if subject_id:
-#                 attendance_records = attendance_records.filter(subject_id=int(subject_id))
-#             if start_date:
-#                 attendance_records = attendance_records.filter(date__gte=start_date)
-#             if end_date:
-#                 attendance_records = attendance_records.filter(date__lte=end_date)
-            
-#             # Group by session
-#             from collections import defaultdict
-#             sessions_dict = defaultdict(lambda: {
-#                 'students': [],
-#                 'present_count': 0,
-#                 'absent_count': 0
-#             })
-            
-#             for record in attendance_records:
-#                 session_key = (
-#                     str(record.date),
-#                     record.class_assigned_id,
-#                     record.subject_id
-#                 )
-                
-#                 session = sessions_dict[session_key]
-#                 session['date'] = str(record.date)
-#                 session['class_id'] = record.class_assigned_id
-#                 session['class_name'] = record.class_assigned.name
-#                 # session['subject_id'] = record.subject_id
-#                 session['subject_id'] = record.subject_id if record.subject_id else 0
-#                 # session['subject_name'] = record.subject.name
-#                 session['subject_name'] = record.subject.name if record.subject else 'Unknown'
-#                 session['from_time'] = record.from_time
-#                 session['to_time'] = record.to_time
-#                 session['duration_minutes'] = record.duration_minutes
-                
-#                 session['students'].append(record.student_id)
-#                 if record.is_present:
-#                     session['present_count'] += 1
-#                 else:
-#                     session['absent_count'] += 1
-            
-#             # Convert to list
-#             sessions_list = []
-#             for session_key, session_data in sessions_dict.items():
-#                 sessions_list.append({
-#                     'date': session_data['date'],
-#                     'class_id': session_data['class_id'],
-#                     'class_name': session_data['class_name'],
-#                     'subject_id': session_data['subject_id'],
-#                     'subject_name': session_data['subject_name'],
-#                     'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
-#                     'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
-#                     'duration_minutes': session_data['duration_minutes'] or 0,
-#                     'total_students': len(session_data['students']),
-#                     'present': session_data['present_count'],
-#                     'absent': session_data['absent_count']
-#                 })
-            
-#             sessions_list.sort(key=lambda x: x['date'], reverse=True)
-            
-#             return Response({
-#                 'sessions': sessions_list
-#             })
-            
-#         except Exception as e:
-#             import traceback
-#             print(f"Error: {str(e)}")
-#             print(traceback.format_exc())
-#             return Response({
-#                 'error': str(e)
-#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 class TeacherAttendanceHistoryView(APIView):
     """Get teacher's attendance history with time tracking"""
     permission_classes = [IsTeacherRole]
-    
+
     def get(self, request):
         try:
             teacher = request.user
-            
-            # Get query parameters
+
             class_id = request.GET.get('class_id')
             subject_id = request.GET.get('subject_id')
             start_date = request.GET.get('start_date')
             end_date = request.GET.get('end_date')
-            
-            # Base query
+
             attendance_records = Attendance.objects.filter(
                 teacher=teacher
             ).select_related(
-                'class_assigned',
-                'subject',
+                'class_subject__academic_class',
+                'class_subject__subject',
                 'student'
             ).order_by('-date', '-from_time')
-            
-            # Apply filters
+
             if class_id:
-                attendance_records = attendance_records.filter(class_assigned_id=int(class_id))
+                attendance_records = attendance_records.filter(
+                    class_subject__academic_class_id=int(class_id)
+                )
             if subject_id:
-                attendance_records = attendance_records.filter(subject_id=int(subject_id))
+                attendance_records = attendance_records.filter(
+                    class_subject__subject_id=int(subject_id)
+                )
             if start_date:
                 attendance_records = attendance_records.filter(date__gte=start_date)
             if end_date:
                 attendance_records = attendance_records.filter(date__lte=end_date)
-            
-            # Group by session
+
             from collections import defaultdict
             sessions_dict = defaultdict(lambda: {
                 'students': [],
                 'present_count': 0,
                 'absent_count': 0
             })
-            
+
             for record in attendance_records:
-                session_key = (
-                    str(record.date),
-                    record.class_assigned_id,
-                    record.subject_id
-                )
-                
+                session_key = (str(record.date), record.class_subject_id)
+
                 session = sessions_dict[session_key]
                 session['date'] = str(record.date)
-                session['class_id'] = record.class_assigned_id
-                session['class_name'] = record.class_assigned.name
-                session['subject_id'] = record.subject_id if record.subject_id else 0
-                session['subject_name'] = record.subject.name if record.subject else 'Unknown'
+                session['class_id'] = record.class_subject.academic_class_id
+                session['class_name'] = record.class_subject.academic_class.name
+                session['subject_id'] = record.class_subject.subject_id
+                session['subject_name'] = record.class_subject.subject.name
                 session['from_time'] = record.from_time
                 session['to_time'] = record.to_time
                 session['duration_minutes'] = record.duration_minutes
-                
+
                 session['students'].append(record.student_id)
                 if record.is_present:
                     session['present_count'] += 1
                 else:
                     session['absent_count'] += 1
-            
-            # Convert to list
+
             sessions_list = []
             for session_key, session_data in sessions_dict.items():
                 sessions_list.append({
@@ -1774,14 +1116,12 @@ class TeacherAttendanceHistoryView(APIView):
                     'present': session_data['present_count'],
                     'absent': session_data['absent_count']
                 })
-            
+
             sessions_list.sort(key=lambda x: x['date'], reverse=True)
-            
-            # ✅ FIXED: Calculate overall statistics
+
             total_sessions = len(sessions_list)
             total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
-            
-            # ✅ FIXED: Return with overall_stats
+
             return Response({
                 'overall_stats': {
                     'total_sessions': total_sessions,
@@ -1790,233 +1130,184 @@ class TeacherAttendanceHistoryView(APIView):
                 },
                 'sessions': sessions_list
             })
-            
+
         except Exception as e:
             import traceback
             print(f"Error: {str(e)}")
             print(traceback.format_exc())
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ═══════════════════════════════════════════════════════════
+#  ASSIGNMENTS
+# ═══════════════════════════════════════════════════════════
+
+class AssignmentCreateView(APIView):
+    permission_classes = [IsTeacherRole]
+
+    def post(self, request):
+        chapter_id = request.data.get('chapter_id')
+        description = request.data.get('description', '').strip()
+        file = request.FILES.get('file')
+
+        if not description:
+            return Response(
+                {'error': 'Description is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            chapter = Chapter.objects.get(id=chapter_id)
+            assignment = Assignment.objects.create(
+                teacher=request.user,
+                chapter=chapter,
+                description=description,
+                file=file
+            )
+            return Response(
+                {'message': 'Assignment created!', 'id': assignment.id},
+                status=status.HTTP_201_CREATED
+            )
+        except Chapter.DoesNotExist:
+            return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class AssignmentListView(APIView):
+    permission_classes = [IsTeacherRole]
+
+    def get(self, request):
+        assignments = Assignment.objects.filter(teacher=request.user)
+        return Response([{'id': a.id, 'desc': a.description} for a in assignments])
+
+
+class AssignmentDetailView(APIView):
+    permission_classes = [IsTeacherRole]
+
+    def get(self, request, assignment_id):
+        return Response({'id': assignment_id})
+
+# ═══════════════════════════════════════════════════════════
+#  DOUBTS
+# ═══════════════════════════════════════════════════════════
+
+class DoubtListView(APIView):
+    """Get doubts filtered by class and/or subject"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        class_id = request.GET.get('class_id')
+        subject_id = request.GET.get('subject_id')
+
+        if request.user.role == 'teacher':
+            teacher_assignments = TeacherAssignment.objects.filter(teacher=request.user)
+            doubts = Doubt.objects.filter(
+                class_subject__in=teacher_assignments.values('class_subject')
+            )
+            if class_id:
+                doubts = doubts.filter(class_subject__academic_class_id=class_id)
+            if subject_id:
+                doubts = doubts.filter(class_subject__subject_id=subject_id)
+
+        elif request.user.role == 'student':
+            if not request.user.class_assigned:
+                return Response([], status=status.HTTP_200_OK)
+            doubts = Doubt.objects.filter(
+                class_subject__academic_class=request.user.class_assigned
+            )
+            if subject_id:
+                doubts = doubts.filter(class_subject__subject_id=subject_id)
+        else:
+            return Response({'error': 'Invalid role.'}, status=status.HTTP_403_FORBIDDEN)
+
+        doubts = doubts.select_related(
+            'student',
+            'class_subject__subject'
+        ).prefetch_related('replies__replied_by').order_by('-created_at')
+
+        doubts_data = []
+        for doubt in doubts:
+            replies = doubt.replies.all()
+            replies_data = [{
+                'id': r.id,
+                'user': {
+                    'id': r.replied_by.id,
+                    'name': f'{r.replied_by.first_name} {r.replied_by.last_name}'.strip() or r.replied_by.username,
+                    'role': r.replied_by.role
+                },
+                'text': r.reply_text,
+                'image_url': request.build_absolute_uri(r.reply_image.url) if r.reply_image else None,
+                'created_at': r.created_at
+            } for r in replies]
+
+            doubts_data.append({
+                'id': doubt.id,
+                'student': {
+                    'id': doubt.student.id,
+                    'name': f'{doubt.student.first_name} {doubt.student.last_name}'.strip(),
+                    'unique_id': doubt.student.unique_id
+                },
+                'subject': {
+                    'id': doubt.class_subject.subject.id,
+                    'name': doubt.class_subject.subject.name
+                },
+                'text': doubt.doubt_text,
+                'image_url': request.build_absolute_uri(doubt.doubt_image.url) if doubt.doubt_image else None,
+                'created_at': doubt.created_at,
+                'reply_count': len(replies_data),
+                'replies': replies_data
+            })
+
+        return Response(doubts_data)
+
+
+class DoubtDetailView(APIView):
+    permission_classes = [IsTeacherRole]
+
+    def get(self, request, doubt_id):
+        return Response({'id': doubt_id})
+
+
+class DoubtReplyCreateView(APIView):
+    """Teachers and students can reply to doubts"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, doubt_id):
+        text = request.data.get('text', '').strip()
+        image = request.FILES.get('image')
+
+        if not text and not image:
+            return Response(
+                {'error': 'Provide text or image.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            doubt = Doubt.objects.get(id=doubt_id)
+
+            if request.user.role == 'teacher':
+                if not TeacherAssignment.objects.filter(
+                    teacher=request.user,
+                    class_subject=doubt.class_subject
+                ).exists():
+                    return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+
+            elif request.user.role == 'student':
+                if request.user.class_assigned != doubt.student.class_assigned:
+                    return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+
+            reply = DoubtReply.objects.create(
+                doubt=doubt,
+                replied_by=request.user,
+                reply_text=text,
+                reply_image=image
+            )
+
             return Response({
-                'error': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-# class TeacherAttendanceHistoryView(APIView):
-#     """Get teacher's attendance history with time tracking - UPDATED TO INCLUDE SUBJECT"""
-#     permission_classes = [IsTeacherRole]
-    
-#     def get(self, request):
-#         teacher = request.user
-        
-#         # Get query parameters
-#         class_id = request.GET.get('class_id')
-#         subject_id = request.GET.get('subject_id')
-#         start_date = request.GET.get('start_date')
-#         end_date = request.GET.get('end_date')
-        
-#         # Base query - all attendance marked by this teacher
-#         attendance_records = Attendance.objects.filter(
-#             teacher=teacher
-#         ).select_related(
-#             'class_assigned',
-#             'subject',  # ✅ NEW: Added subject to select_related
-#             'student'
-#         ).order_by('-date', '-time')
-        
-#         # Apply filters
-#         if class_id:
-#             attendance_records = attendance_records.filter(class_assigned_id=class_id)
-        
-#         if subject_id:  # ✅ NEW: Can now filter by subject properly!
-#             attendance_records = attendance_records.filter(subject_id=subject_id)
-        
-#         if start_date:
-#             attendance_records = attendance_records.filter(date__gte=start_date)
-        
-#         if end_date:
-#             attendance_records = attendance_records.filter(date__lte=end_date)
-        
-#         # Group by date, class, and subject
-#         from collections import defaultdict
-        
-#         sessions_by_key = defaultdict(lambda: {
-#             'students': set(),
-#             'present_students': set(),
-#             'from_time': None,
-#             'to_time': None,
-#             'duration_minutes': None
-#         })
-        
-#         # ✅ UPDATED: Group by date + class + subject (not just date + class)
-#         for record in attendance_records:
-#             # Create unique key for each session (date + class + subject)
-#             session_key = f"{record.date}_{record.class_assigned_id}_{record.subject_id}"
-            
-#             session = sessions_by_key[session_key]
-#             session['date'] = record.date
-#             session['class_id'] = record.class_assigned.id
-#             session['class_name'] = record.class_assigned.name
-#             session['subject_id'] = record.subject.id  # ✅ NEW
-#             session['subject_name'] = record.subject.name  # ✅ NEW
-            
-#             # Store time info (same for all students in this session)
-#             if record.from_time and not session['from_time']:
-#                 session['from_time'] = record.from_time
-#             if record.to_time and not session['to_time']:
-#                 session['to_time'] = record.to_time
-#             if record.duration_minutes and not session['duration_minutes']:
-#                 session['duration_minutes'] = record.duration_minutes
-            
-#             # Track students
-#             session['students'].add(record.student.id)
-#             if record.is_present:
-#                 session['present_students'].add(record.student.id)
-        
-#         # Convert to list format
-#         sessions_list = []
-#         for session_key, session_data in sessions_by_key.items():
-#             total_students = len(session_data['students'])
-#             present_count = len(session_data['present_students'])
-            
-#             sessions_list.append({
-#                 'date': session_data['date'],
-#                 'class_id': session_data['class_id'],
-#                 'class_name': session_data['class_name'],
-#                 'subject_id': session_data['subject_id'],  # ✅ NEW
-#                 'subject_name': session_data['subject_name'],  # ✅ NEW
-#                 'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
-#                 'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
-#                 'duration_minutes': session_data['duration_minutes'] or 0,
-#                 'total_students': total_students,
-#                 'present': present_count,
-#                 'absent': total_students - present_count
-#             })
-        
-#         # Sort by date (newest first)
-#         sessions_list.sort(key=lambda x: x['date'], reverse=True)
-        
-#         # Calculate statistics by class and subject
-#         stats_by_class = defaultdict(lambda: {
-#             'total_sessions': 0,
-#             'total_duration': 0,
-#             'subjects': defaultdict(lambda: {
-#                 'sessions': 0,
-#                 'duration': 0
-#             })
-#         })
-        
-#         for session in sessions_list:
-#             class_id_val = session['class_id']
-#             subject_id_val = session['subject_id']  # ✅ NEW
-#             duration = session['duration_minutes'] or 0
-            
-#             stats_by_class[class_id_val]['class_name'] = session['class_name']
-#             stats_by_class[class_id_val]['total_sessions'] += 1
-#             stats_by_class[class_id_val]['total_duration'] += duration
-            
-#             # ✅ UPDATED: Now properly tracks by subject
-#             stats_by_class[class_id_val]['subjects'][subject_id_val]['subject_name'] = session['subject_name']
-#             stats_by_class[class_id_val]['subjects'][subject_id_val]['sessions'] += 1
-#             stats_by_class[class_id_val]['subjects'][subject_id_val]['duration'] += duration
-        
-#         # Format statistics
-#         stats_formatted = []
-#         for class_id_val, class_data in stats_by_class.items():
-#             subjects_list = []
-#             for subject_id_val, subject_data in class_data['subjects'].items():
-#                 subjects_list.append({
-#                     'subject_id': subject_id_val,
-#                     'subject_name': subject_data['subject_name'],
-#                     'sessions': subject_data['sessions'],
-#                     'duration_minutes': subject_data['duration'],
-#                     'duration_hours': round(subject_data['duration'] / 60, 2)
-#                 })
-            
-#             stats_formatted.append({
-#                 'class_id': class_id_val,
-#                 'class_name': class_data['class_name'],
-#                 'total_sessions': class_data['total_sessions'],
-#                 'total_duration_minutes': class_data['total_duration'],
-#                 'total_duration_hours': round(class_data['total_duration'] / 60, 2),
-#                 'subjects': subjects_list
-#             })
-        
-#         # Overall statistics
-#         total_sessions = len(sessions_list)
-#         total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
-        
-#         return Response({
-#             'overall_stats': {
-#                 'total_sessions': total_sessions,
-#                 'total_duration_minutes': total_duration,
-#                 'total_duration_hours': round(total_duration / 60, 2)
-#             },
-#             'stats_by_class': stats_formatted,
-#             'sessions': sessions_list
-#         })
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+                'message': 'Reply posted successfully!',
+                'reply': {'id': reply.id, 'text': text, 'created_at': reply.created_at}
+            }, status=status.HTTP_201_CREATED)
+
+        except Doubt.DoesNotExist:
+            return Response({'error': 'Doubt not found.'}, status=status.HTTP_404_NOT_FOUND)
 
 
 
@@ -2057,7 +1348,8 @@ class TeacherAttendanceHistoryView(APIView):
 # import traceback
 
 # from users.models import CustomUser
-# from admin_tasks.models import Class, Subject, Chapter
+# # from admin_tasks.models import Class, Subject, Chapter
+# from academics.models import AcademicClass as Class, Subject, Chapter
 # from .models import (
 #     TeacherAssignment, Test, Question, Attendance, Assignment, Doubt, DoubtReply, Option
 # )
@@ -2421,10 +1713,11 @@ class TeacherAttendanceHistoryView(APIView):
 # def get_assigned_classes(request):
 #     """Get all classes assigned to the teacher"""
 #     try:
-#         from admin_tasks.models import Class
-        
-#         # For now, return all classes
+#         # from admin_tasks.models import Class
+#         from academics.models import AcademicClass as Class
 #         classes = Class.objects.all()
+#         # For now, return all classes
+#         # classes = Class.objects.all()
         
 #         classes_data = []
 #         for cls in classes:
@@ -2459,32 +1752,57 @@ class TeacherAttendanceHistoryView(APIView):
 #         teacher = request.user
         
 #         # Get teacher's assignments
-#         assignments = TeacherAssignment.objects.filter(
-#             teacher=teacher
-#         ).select_related('class_assigned', 'subject')
+#         # assignments = TeacherAssignment.objects.filter(
+#         #     teacher=teacher
+#         # ).select_related('class_assigned', 'subject')
         
+#         # assignments_data = []
+#         # for assignment in assignments:
+#         #     # Get chapters for this class-subject
+#         #     chapters = Chapter.objects.filter(
+#         #         subject=assignment.subject,
+#         #         class_assigned=assignment.class_assigned
+#         #     )
+            
+#         #     assignments_data.append({
+#         #         'id': assignment.id,
+#         #         'class': {
+#         #             'id': assignment.class_assigned.id,
+#         #             'name': assignment.class_assigned.name
+#         #         },
+#         #         'subject': {
+#         #             'id': assignment.subject.id,
+#         #             'name': assignment.subject.name
+#         #         },
+#         #         'total_chapters': chapters.count(),
+#         #         'completed_chapters': chapters.filter(is_completed=True).count()
+#         #     })
+        
+#         assignments = TeacherAssignment.objects.filter(
+#         teacher=teacher
+#          ).select_related('class_subject__academic_class', 'class_subject__subject')
+
 #         assignments_data = []
 #         for assignment in assignments:
-#             # Get chapters for this class-subject
-#             chapters = Chapter.objects.filter(
-#                 subject=assignment.subject,
-#                 class_assigned=assignment.class_assigned
-#             )
-            
-#             assignments_data.append({
-#                 'id': assignment.id,
-#                 'class': {
-#                     'id': assignment.class_assigned.id,
-#                     'name': assignment.class_assigned.name
-#                 },
-#                 'subject': {
-#                     'id': assignment.subject.id,
-#                     'name': assignment.subject.name
-#                 },
-#                 'total_chapters': chapters.count(),
-#                 'completed_chapters': chapters.filter(is_completed=True).count()
-#             })
-        
+#         chapters = Chapter.objects.filter(class_subject=assignment.class_subject)
+    
+#         assignments_data.append({
+#             'id': assignment.id,
+#             'class': {
+#             'id': assignment.class_subject.academic_class.id,
+#             'name': assignment.class_subject.academic_class.name
+#         },
+#             'subject': {
+#             'id': assignment.class_subject.subject.id,
+#             'name': assignment.class_subject.subject.name
+#         },
+#             'total_chapters': chapters.count(),
+#              'completed_chapters': chapters.filter(is_completed=True).count()
+#     })
+
+#        assigned_classes_count = TeacherAssignment.objects.filter(
+#        teacher=teacher
+#         ).values('class_subject__academic_class').distinct().count()
 #         # ✅ Calculate statistics for dashboard cards
 #         # Count unique classes assigned to this teacher
 #         assigned_classes_count = TeacherAssignment.objects.filter(
@@ -2498,25 +1816,25 @@ class TeacherAttendanceHistoryView(APIView):
 #         total_tests_count = Test.objects.filter(created_by=teacher).count()
         
 #         # Get recent tests (last 5)
+#         # 
 #         recent_tests = Test.objects.filter(
-#             created_by=teacher
-#         ).select_related(
-#             'chapter__subject',
-#             'chapter__class_assigned'
-#         ).order_by('-created_at')[:5]
-        
-#         recent_tests_data = []
-#         for test in recent_tests:
-#             recent_tests_data.append({
-#                 'id': test.id,
-#                 'name': test.name,
-#                 'type': test.type,
-#                 'marks': test.marks,
-#                 'subject_name': test.chapter.subject.name,
-#                 'class_name': test.chapter.class_assigned.name,
-#                 'chapter_name': test.chapter.name,
-#                 'created_at': test.created_at.isoformat()
-#             })
+#     created_by=teacher).select_related(
+#     'chapter__class_subject__subject',
+#     'chapter__class_subject__academic_class'
+#   ).order_by('-created_at')[:5]
+
+#    recent_tests_data = []
+#     for test in recent_tests:
+#     recent_tests_data.append({
+#         'id': test.id,
+#         'name': test.name,
+#         'type': test.type,
+#         'marks': test.marks,
+#         'subject_name': test.chapter.class_subject.subject.name if test.chapter and test.chapter.class_subject else '',
+#         'class_name': test.chapter.class_subject.academic_class.name if test.chapter and test.chapter.class_subject else '',
+#         'chapter_name': test.chapter.name if test.chapter else '',
+#         'created_at': test.created_at.isoformat()
+#     })
         
 #         # Get stats for backward compatibility
 #         stats = {
@@ -2670,56 +1988,91 @@ class TeacherAttendanceHistoryView(APIView):
     
 #     def get(self, request, class_id):
 #         # Verify teacher is assigned to this class
+#         # if not TeacherAssignment.objects.filter(
+#         #     teacher=request.user,
+#         #     class_assigned_id=class_id
+#         # ).exists():
 #         if not TeacherAssignment.objects.filter(
-#             teacher=request.user,
-#             class_assigned_id=class_id
-#         ).exists():
+#              teacher=request.user,
+#              class_subject__academic_class_id=class_id
+#          ).exists():
 #             return Response({
 #                 'error': 'You are not assigned to this class.'
 #             }, status=status.HTTP_403_FORBIDDEN)
         
 #         # Get all subjects this teacher teaches in this class
+#         # assignments = TeacherAssignment.objects.filter(
+#         #     teacher=request.user,
+#         #     class_assigned_id=class_id
+#         # ).select_related('subject', 'class_assigned')
+        
+#         # subjects_data = []
+#         # for assignment in assignments:
+#         #     # Count chapters for this subject in this class
+#         #     chapters_count = Chapter.objects.filter(
+#         #         subject=assignment.subject,
+#         #         class_assigned_id=class_id
+#         #     ).count()
+            
+#         #     completed_chapters = Chapter.objects.filter(
+#         #         subject=assignment.subject,
+#         #         class_assigned_id=class_id,
+#         #         is_completed=True
+#         #     ).count()
+            
+#         #     # Count tests for this subject in this class
+#         #     tests_count = Test.objects.filter(
+#         #         created_by=request.user,
+#         #         chapter__subject=assignment.subject,
+#         #         chapter__class_assigned_id=class_id
+#         #     ).count()
+            
+#         #     subjects_data.append({
+#         #         'id': assignment.subject.id,
+#         #         'name': assignment.subject.name,
+#         #         'class_id': class_id,
+#         #         'class_name': assignment.class_assigned.name,
+#         #         'chapters_count': chapters_count,
+#         #         'completed_chapters': completed_chapters,
+#         #         'tests_count': tests_count
+#         #     })
+        
+#         # return Response({
+#         #     'class_id': class_id,
+#         #     'class_name': assignments.first().class_assigned.name if assignments.exists() else None,
+#         #     'subjects': subjects_data
+#         # })
 #         assignments = TeacherAssignment.objects.filter(
-#             teacher=request.user,
-#             class_assigned_id=class_id
-#         ).select_related('subject', 'class_assigned')
-        
-#         subjects_data = []
-#         for assignment in assignments:
-#             # Count chapters for this subject in this class
-#             chapters_count = Chapter.objects.filter(
-#                 subject=assignment.subject,
-#                 class_assigned_id=class_id
-#             ).count()
-            
-#             completed_chapters = Chapter.objects.filter(
-#                 subject=assignment.subject,
-#                 class_assigned_id=class_id,
-#                 is_completed=True
-#             ).count()
-            
-#             # Count tests for this subject in this class
-#             tests_count = Test.objects.filter(
-#                 created_by=request.user,
-#                 chapter__subject=assignment.subject,
-#                 chapter__class_assigned_id=class_id
-#             ).count()
-            
-#             subjects_data.append({
-#                 'id': assignment.subject.id,
-#                 'name': assignment.subject.name,
-#                 'class_id': class_id,
-#                 'class_name': assignment.class_assigned.name,
-#                 'chapters_count': chapters_count,
-#                 'completed_chapters': completed_chapters,
-#                 'tests_count': tests_count
-#             })
-        
-#         return Response({
-#             'class_id': class_id,
-#             'class_name': assignments.first().class_assigned.name if assignments.exists() else None,
-#             'subjects': subjects_data
-#         })
+#     teacher=request.user,
+#     class_subject__academic_class_id=class_id
+# ).select_related('class_subject__subject', 'class_subject__academic_class')
+
+# subjects_data = []
+# for assignment in assignments:
+#     cs = assignment.class_subject
+#     chapters_count = Chapter.objects.filter(class_subject=cs).count()
+#     completed_chapters = Chapter.objects.filter(class_subject=cs, is_completed=True).count()
+#     tests_count = Test.objects.filter(
+#         created_by=request.user,
+#         chapter__class_subject=cs
+#     ).count()
+    
+#     subjects_data.append({
+#         'id': cs.subject.id,
+#         'name': cs.subject.name,
+#         'class_subject_id': cs.id,
+#         'class_id': class_id,
+#         'class_name': cs.academic_class.name,
+#         'chapters_count': chapters_count,
+#         'completed_chapters': completed_chapters,
+#         'tests_count': tests_count
+#     })
+
+# return Response({
+#     'class_id': class_id,
+#     'class_name': assignments.first().class_subject.academic_class.name if assignments.exists() else None,
+#     'subjects': subjects_data
+#                 })
 
 
 # class TeacherSubjectClassesView(APIView):
@@ -4066,30 +3419,14 @@ class TeacherAttendanceHistoryView(APIView):
 
 
 
-
-
-
-
-
-
-
-# # # teachers/views.py - COMPLETE WITH ALL ENDPOINTS
+# # # teachers/views.py - FIXED VERSION
 # # """
 # # Complete Teacher Module Views - ALL ENDPOINTS INCLUDED
 # # EduVibe Platform - 2026
-# # ✅ Resolved IsTeacherRole NameError
-# # ✅ Removed Duplicate Code & Imports
+# # ✅ Fixed IndentationError
+# # ✅ Removed Duplicate AttendanceMarkView
 # # ✅ All functionality preserved
-# # ✅ Added new function-based views for tests
 # # """
-# # from rest_framework.decorators import api_view, permission_classes
-# # from rest_framework.permissions import IsAuthenticated
-# # from rest_framework.response import Response
-# # from rest_framework import status
-# # from .models import Test, Question, Option
-
-
-
 
 # # # ═══════════════════════════════════════════════════════════
 # # #  IMPORTS
@@ -4099,8 +3436,8 @@ class TeacherAttendanceHistoryView(APIView):
 # # from rest_framework.response import Response
 # # from rest_framework import status
 # # from rest_framework.permissions import IsAuthenticated
-# # from rest_framework.decorators import api_view, permission_classes  # ✅ ADDED FOR FUNCTION-BASED VIEWS
-# # from django.db.models import Count, Q, Avg, Max, Min  # ✅ ADDED Max, Min
+# # from rest_framework.decorators import api_view, permission_classes
+# # from django.db.models import Count, Q, Avg, Max, Min
 # # from django.utils import timezone
 # # from datetime import date
 # # from django.db import transaction
@@ -4109,7 +3446,8 @@ class TeacherAttendanceHistoryView(APIView):
 # # from users.models import CustomUser
 # # from admin_tasks.models import Class, Subject, Chapter
 # # from .models import (
-# # TeacherAssignment, Test, Question, Attendance,Assignment, Doubt, DoubtReply,Test, Question, Option)
+# #     TeacherAssignment, Test, Question, Attendance, Assignment, Doubt, DoubtReply, Option
+# # )
 # # from students.models import TestAttempt, StudentAnswer
 
 # # # ═══════════════════════════════════════════════════════════
@@ -4126,12 +3464,8 @@ class TeacherAttendanceHistoryView(APIView):
 # #         )
 
 # # # ═══════════════════════════════════════════════════════════
-# # #  NEW FUNCTION-BASED VIEWS FOR TESTS
+# # #  FUNCTION-BASED VIEWS FOR TESTS
 # # # ═══════════════════════════════════════════════════════════
-
-# # # 
-
-
 
 # # @api_view(['GET'])
 # # @permission_classes([IsAuthenticated])
@@ -4168,7 +3502,6 @@ class TeacherAttendanceHistoryView(APIView):
 # #             questions_count = Question.objects.filter(test=test).count()
             
 # #             # Count attempts manually
-# #             from students.models import TestAttempt
 # #             attempts_count = TestAttempt.objects.filter(test=test).count()
             
 # #             # Add test to subject group
@@ -4190,14 +3523,12 @@ class TeacherAttendanceHistoryView(APIView):
 # #         tests_by_subject_list = list(tests_by_subject.values())
         
 # #         print(f"Returning {len(tests_by_subject_list)} subject groups")
-# #         print(f"Tests by subject: {tests_by_subject_list}")
         
 # #         return Response({
 # #             'tests_by_subject': tests_by_subject_list
 # #         })
         
 # #     except Exception as e:
-# #         import traceback
 # #         error_trace = traceback.format_exc()
 # #         print("=" * 80)
 # #         print("ERROR in get_all_teacher_tests:")
@@ -4207,78 +3538,6 @@ class TeacherAttendanceHistoryView(APIView):
 # #             {'error': str(e), 'details': error_trace},
 # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
 # #         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-# # # @api_view(['GET'])
-# # # @permission_classes([IsAuthenticated])
-# # # def get_all_teacher_tests(request):
-# # #     """Get all tests created by the logged-in teacher, grouped by subject"""
-# # #     try:
-# # #         teacher = request.user
-        
-# # #         # Get all assignments for this teacher
-# # #         assignments = TeacherAssignment.objects.filter(
-# # #             teacher=teacher
-# # #         ).select_related('class_assigned', 'subject')
-        
-# # #         tests_by_subject = []
-        
-# # #         for assignment in assignments:
-# # #             # Get all tests for this subject-class combination
-# # #             tests = Test.objects.filter(
-# # #                 chapter__subject=assignment.subject,
-# # #                 chapter__class_for=assignment.class_assigned,
-# # #                 created_by=teacher
-# # #             ).select_related('chapter').annotate(
-# # #                 questions_count=Count('questions'),
-# # #                 attempts_count=Count('testattempt')
-# # #             ).order_by('-created_at')
-            
-# # #             if tests.exists():
-# # #                 tests_data = []
-# # #                 for test in tests:
-# # #                     tests_data.append({
-# # #                         'id': test.id,
-# # #                         'name': test.name,
-# # #                         'description': test.description,
-# # #                         'type': test.type,
-# # #                         'marks': test.marks,
-# # #                         'duration_minutes': test.duration_minutes,
-# # #                         'chapter_name': test.chapter.name,
-# # #                         'chapter_id': test.chapter.id,
-# # #                         'questions_count': test.questions_count,
-# # #                         'attempts_count': test.attempts_count,
-# # #                         'created_at': test.created_at
-# # #                     })
-                
-# # #                 tests_by_subject.append({
-# # #                     'subject_id': assignment.subject.id,
-# # #                     'subject_name': assignment.subject.name,
-# # #                     'class_id': assignment.class_assigned.id,
-# # #                     'class_name': assignment.class_assigned.name,
-# # #                     'tests': tests_data
-# # #                 })
-        
-# # #         return Response({
-# # #             'tests_by_subject': tests_by_subject
-# # #         })
-        
-# # #     except Exception as e:
-# # #         return Response(
-# # #             {'error': str(e)},
-# # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
-# # #         )
 
 
 # # @api_view(['GET'])
@@ -4292,7 +3551,7 @@ class TeacherAttendanceHistoryView(APIView):
 # #         try:
 # #             test = Test.objects.select_related(
 # #                 'chapter__subject',
-# #                 'chapter__class_for'
+# #                 'chapter__class_assigned'
 # #             ).get(id=test_id, created_by=teacher)
 # #         except Test.DoesNotExist:
 # #             return Response(
@@ -4336,7 +3595,7 @@ class TeacherAttendanceHistoryView(APIView):
 # #                 'marks': test.marks,
 # #                 'duration_minutes': test.duration_minutes,
 # #                 'subject_name': test.chapter.subject.name,
-# #                 'class_name': test.chapter.class_for.name,
+# #                 'class_name': test.chapter.class_assigned.name,
 # #                 'chapter_name': test.chapter.name
 # #             },
 # #             'results': results,
@@ -4349,12 +3608,238 @@ class TeacherAttendanceHistoryView(APIView):
 # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
 # #         )
 
+
+# # @api_view(['POST'])
+# # @permission_classes([IsAuthenticated])
+# # def create_question(request):
+# #     """Create a new question for a test"""
+# #     try:
+# #         # Get data from request.POST (FormData fields)
+# #         test_id = request.POST.get('test')
+# #         question_text = request.POST.get('question_text', '')
+# #         option1 = request.POST.get('option1', '')
+# #         option2 = request.POST.get('option2', '')
+# #         option3 = request.POST.get('option3', '')
+# #         option4 = request.POST.get('option4', '')
+# #         correct_option = request.POST.get('correct_option', None)
+# #         explanation = request.POST.get('explanation', '')
+# #         question_image = request.FILES.get('question_image', None)
+        
+# #         if not test_id:
+# #             return Response({
+# #                 'error': 'Test ID is required.'
+# #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# #         # Validate test exists
+# #         try:
+# #             test = Test.objects.get(id=test_id)
+# #         except Test.DoesNotExist:
+# #             return Response(
+# #                 {'error': f'Test with id {test_id} does not exist'},
+# #                 status=status.HTTP_404_NOT_FOUND
+# #             )
+        
+# #         # Check if user is the creator of the test
+# #         if test.created_by != request.user:
+# #             return Response(
+# #                 {'error': 'You are not authorized to add questions to this test'},
+# #                 status=status.HTTP_403_FORBIDDEN
+# #             )
+        
+# #         # Create question
+# #         question = Question.objects.create(
+# #             test=test,
+# #             question_text=question_text,
+# #             question_image=question_image,
+# #             option1=option1,
+# #             option2=option2,
+# #             option3=option3,
+# #             option4=option4,
+# #             correct_option=int(correct_option) if correct_option else None,
+# #             explanation=explanation
+# #         )
+        
+# #         return Response({
+# #             'message': 'Question created successfully',
+# #             'question_id': question.id,
+# #             'question': {
+# #                 'id': question.id,
+# #                 'question_text': question.question_text,
+# #                 'option1': question.option1,
+# #                 'option2': question.option2,
+# #                 'option3': question.option3,
+# #                 'option4': question.option4,
+# #                 'correct_option': question.correct_option,
+# #             }
+# #         }, status=status.HTTP_201_CREATED)
+        
+# #     except Exception as e:
+# #         print("Error creating question:", str(e))
+# #         import traceback
+# #         print("Traceback:", traceback.format_exc())
+# #         return Response({
+# #             'error': 'Failed to create question',
+# #             'details': str(e)
+# #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# # # @api_view(['POST'])
+# # # @permission_classes([IsAuthenticated])
+# # # def create_question(request):
+# # #     """Create a new question for a test"""
+# # #     try:
+# # #         # Get data from FormData
+# # #         test_id = request.data.get('test')
+# # #         question_text = request.data.get('question_text', '')
+# # #         question_image = request.FILES.get('question_image', None)
+# # #         option1 = request.data.get('option1', '')
+# # #         option2 = request.data.get('option2', '')
+# # #         option3 = request.data.get('option3', '')
+# # #         option4 = request.data.get('option4', '')
+# # #         correct_option = request.data.get('correct_option', None)
+# # #         explanation = request.data.get('explanation', '')
+        
+# # #         # Validate test exists
+# # #         try:
+# # #             test = Test.objects.get(id=test_id)
+# # #         except Test.DoesNotExist:
+# # #             return Response(
+# # #                 {'error': f'Test with id {test_id} does not exist'},
+# # #                 status=status.HTTP_404_NOT_FOUND
+# # #             )
+        
+# # #         # Check if user is the creator of the test
+# # #         if test.created_by != request.user:
+# # #             return Response(
+# # #                 {'error': 'You are not authorized to add questions to this test'},
+# # #                 status=status.HTTP_403_FORBIDDEN
+# # #             )
+        
+# # #         # Create question
+# # #         question = Question.objects.create(
+# # #             test=test,
+# # #             question_text=question_text,
+# # #             question_image=question_image,
+# # #             option1=option1,
+# # #             option2=option2,
+# # #             option3=option3,
+# # #             option4=option4,
+# # #             correct_option=int(correct_option) if correct_option else None,
+# # #             explanation=explanation
+# # #         )
+        
+# # #         return Response({
+# # #             'message': 'Question created successfully',
+# # #             'question_id': question.id,
+# # #             'question': {
+# # #                 'id': question.id,
+# # #                 'question_text': question.question_text,
+# # #                 'option1': question.option1,
+# # #                 'option2': question.option2,
+# # #                 'option3': question.option3,
+# # #                 'option4': question.option4,
+# # #                 'correct_option': question.correct_option,
+# # #             }
+# # #         }, status=status.HTTP_201_CREATED)
+        
+# # #     except Exception as e:
+# # #         print("Error creating question:", str(e))
+# # #         print("Traceback:", traceback.format_exc())
+# # #         return Response({
+# # #             'error': 'Failed to create question',
+# # #             'details': str(e)
+# # #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# # @api_view(['POST'])
+# # @permission_classes([IsAuthenticated])
+# # def create_test(request):
+# #     """Create a new test"""
+# #     try:
+# #         data = request.data
+# #         print("Received data for test creation:", data)
+        
+# #         # Validate required fields
+# #         required_fields = ['chapter', 'name', 'type', 'marks', 'duration_minutes']
+# #         for field in required_fields:
+# #             if field not in data:
+# #                 return Response(
+# #                     {'error': f'Missing required field: {field}'}, 
+# #                     status=status.HTTP_400_BAD_REQUEST
+# #                 )
+        
+# #         # Create the test
+# #         test = Test.objects.create(
+# #             chapter_id=data['chapter'],
+# #             name=data['name'],
+# #             description=data.get('description', ''),
+# #             type=data['type'],
+# #             marks=data['marks'],
+# #             duration_minutes=data['duration_minutes'],
+# #             created_by=request.user
+# #         )
+        
+# #         print(f"Test created successfully with ID: {test.id}")
+        
+# #         return Response({
+# #             'id': test.id,
+# #             'message': 'Test created successfully',
+# #             'test': {
+# #                 'id': test.id,
+# #                 'name': test.name,
+# #                 'description': test.description,
+# #                 'type': test.type,
+# #                 'marks': test.marks,
+# #                 'duration_minutes': test.duration_minutes,
+# #                 'chapter': test.chapter_id
+# #             }
+# #         }, status=status.HTTP_201_CREATED)
+        
+# #     except Exception as e:
+# #         print("Error creating test:", str(e))
+# #         print("Traceback:", traceback.format_exc())
+# #         return Response({
+# #             'error': 'Failed to create test',
+# #             'details': str(e)
+# #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# # @api_view(['GET'])
+# # @permission_classes([IsAuthenticated])
+# # def get_assigned_classes(request):
+# #     """Get all classes assigned to the teacher"""
+# #     try:
+# #         from admin_tasks.models import Class
+        
+# #         # For now, return all classes
+# #         classes = Class.objects.all()
+        
+# #         classes_data = []
+# #         for cls in classes:
+# #             classes_data.append({
+# #                 'id': cls.id,
+# #                 'name': cls.name,
+# #                 'subjects': [],
+# #                 'student_count': 0
+# #             })
+        
+# #         return Response({
+# #             'classes': classes_data,
+# #             'total_classes': len(classes_data)
+# #         }, status=status.HTTP_200_OK)
+        
+# #     except Exception as e:
+# #         print("Error fetching assigned classes:", str(e))
+# #         print("Traceback:", traceback.format_exc())
+# #         return Response({
+# #             'error': 'Failed to fetch assigned classes',
+# #             'details': str(e)
+# #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 # # # ═══════════════════════════════════════════════════════════
 # # #  TEACHER DASHBOARD & CORE LISTS
 # # # ═══════════════════════════════════════════════════════════
-
 # # class TeacherHomeView(APIView):
-# #     """Teacher dashboard/home"""
+# #     """Teacher dashboard/home - Returns dashboard statistics for frontend"""
 # #     permission_classes = [IsTeacherRole]
     
 # #     def get(self, request):
@@ -4387,14 +3872,55 @@ class TeacherAttendanceHistoryView(APIView):
 # #                 'completed_chapters': chapters.filter(is_completed=True).count()
 # #             })
         
-# #         # Get stats
+# #         # ✅ Calculate statistics for dashboard cards
+# #         # Count unique classes assigned to this teacher
+# #         assigned_classes_count = TeacherAssignment.objects.filter(
+# #             teacher=teacher
+# #         ).values('class_assigned').distinct().count()
+        
+# #         # Count unique subjects assigned to this teacher (from teacher's registered subjects)
+# #         total_subjects_count = teacher.subjects.count()
+        
+# #         # Count total tests created by this teacher
+# #         total_tests_count = Test.objects.filter(created_by=teacher).count()
+        
+# #         # Get recent tests (last 5)
+# #         recent_tests = Test.objects.filter(
+# #             created_by=teacher
+# #         ).select_related(
+# #             'chapter__subject',
+# #             'chapter__class_assigned'
+# #         ).order_by('-created_at')[:5]
+        
+# #         recent_tests_data = []
+# #         for test in recent_tests:
+# #             recent_tests_data.append({
+# #                 'id': test.id,
+# #                 'name': test.name,
+# #                 'type': test.type,
+# #                 'marks': test.marks,
+# #                 'subject_name': test.chapter.subject.name,
+# #                 'class_name': test.chapter.class_assigned.name,
+# #                 'chapter_name': test.chapter.name,
+# #                 'created_at': test.created_at.isoformat()
+# #             })
+        
+# #         # Get stats for backward compatibility
 # #         stats = {
-# #             'total_tests': Test.objects.filter(created_by=teacher).count(),
+# #             'total_tests': total_tests_count,
 # #             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
-# #             'classes_teaching': TeacherAssignment.objects.filter(teacher=teacher).values('class_assigned').distinct().count()
+# #             'classes_teaching': assigned_classes_count
 # #         }
         
+# #         # ✅ Return data in the format expected by frontend TeacherDashboard
 # #         return Response({
+# #             # Dashboard statistics (for the stats cards)
+# #             'assigned_classes': assigned_classes_count,
+# #             'total_subjects': total_subjects_count,
+# #             'total_tests': total_tests_count,
+# #             'recent_tests': recent_tests_data,
+            
+# #             # Additional data (for other parts of the dashboard)
 # #             'teacher': {
 # #                 'name': f'{teacher.first_name} {teacher.last_name}'.strip(),
 # #                 'unique_id': teacher.unique_id,
@@ -4404,8 +3930,63 @@ class TeacherAttendanceHistoryView(APIView):
 # #                 ]
 # #             },
 # #             'assignments': assignments_data,
-# #             'stats': stats
+# #             'stats': stats  # Keep for backward compatibility
 # #         })
+
+# # # class TeacherHomeView(APIView):
+# # #     """Teacher dashboard/home"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request):
+# # #         teacher = request.user
+        
+# # #         # Get teacher's assignments
+# # #         assignments = TeacherAssignment.objects.filter(
+# # #             teacher=teacher
+# # #         ).select_related('class_assigned', 'subject')
+        
+# # #         assignments_data = []
+# # #         for assignment in assignments:
+# # #             # Get chapters for this class-subject
+# # #             chapters = Chapter.objects.filter(
+# # #                 subject=assignment.subject,
+# # #                 class_assigned=assignment.class_assigned
+# # #             )
+            
+# # #             assignments_data.append({
+# # #                 'id': assignment.id,
+# # #                 'class': {
+# # #                     'id': assignment.class_assigned.id,
+# # #                     'name': assignment.class_assigned.name
+# # #                 },
+# # #                 'subject': {
+# # #                     'id': assignment.subject.id,
+# # #                     'name': assignment.subject.name
+# # #                 },
+# # #                 'total_chapters': chapters.count(),
+# # #                 'completed_chapters': chapters.filter(is_completed=True).count()
+# # #             })
+        
+# # #         # Get stats
+# # #         stats = {
+# # #             'total_tests': Test.objects.filter(created_by=teacher).count(),
+# # #             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
+# # #             'classes_teaching': TeacherAssignment.objects.filter(teacher=teacher).values('class_assigned').distinct().count()
+# # #         }
+        
+# # #         return Response({
+# # #             'teacher': {
+# # #                 'name': f'{teacher.first_name} {teacher.last_name}'.strip(),
+# # #                 'unique_id': teacher.unique_id,
+# # #                 'subjects': [
+# # #                     {'id': s.id, 'name': s.name}
+# # #                     for s in teacher.subjects.all()
+# # #                 ]
+# # #             },
+# # #             'assignments': assignments_data,
+# # #             'stats': stats
+# # #         })
+
 
 # # class TeacherClassesListView(APIView):
 # #     """Get all classes assigned to teacher with statistics"""
@@ -4454,6 +4035,7 @@ class TeacherAttendanceHistoryView(APIView):
         
 # #         return Response(classes_data)
 
+
 # # class TeacherSubjectsListView(APIView):
 # #     """Get subjects assigned to teacher, optionally filtered by class"""
 # #     permission_classes = [IsTeacherRole]
@@ -4467,6 +4049,7 @@ class TeacherAttendanceHistoryView(APIView):
         
 # #         subjects = assignments.values('subject__id', 'subject__name').distinct()
 # #         return Response([{'id': s['subject__id'], 'name': s['subject__name']} for s in subjects])
+
 
 # # class TeacherClassSubjectsView(APIView):
 # #     """Get all subjects for a specific class assigned to this teacher"""
@@ -4525,9 +4108,6 @@ class TeacherAttendanceHistoryView(APIView):
 # #             'subjects': subjects_data
 # #         })
 
-# # # ═══════════════════════════════════════════════════════════
-# # #  OTHER CORE VIEWS
-# # # ═══════════════════════════════════════════════════════════
 
 # # class TeacherSubjectClassesView(APIView):
 # #     """Returns classes filtered by subject for the teacher"""
@@ -4541,6 +4121,7 @@ class TeacherAttendanceHistoryView(APIView):
 # #         classes = assignments.values('class_assigned__id', 'class_assigned__name').distinct()
 # #         return Response([{'id': c['class_assigned__id'], 'name': c['class_assigned__name']} for c in classes])
 
+
 # # class TeacherSearchView(APIView):
 # #     """Search for students or resources"""
 # #     permission_classes = [IsTeacherRole]
@@ -4553,19 +4134,10 @@ class TeacherAttendanceHistoryView(APIView):
 # #         )[:10]
 # #         return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'uid': s.unique_id} for s in students])
 
-# # class ClassStudentsView(APIView):
-# #     """Get all students in a specific class assigned to the teacher"""
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request, class_id):
-# #         students = CustomUser.objects.filter(class_assigned_id=class_id, role='student', is_approved=True)
-# #         return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'unique_id': s.unique_id} for s in students])
-
 # # # ═══════════════════════════════════════════════════════════
 # # #  CHAPTER & TEST MANAGEMENT
 # # # ═══════════════════════════════════════════════════════════
 
-# # # 
 # # class TeacherChaptersView(APIView):
 # #     """Get chapters for class-subject"""
 # #     permission_classes = [IsTeacherRole]
@@ -4621,6 +4193,7 @@ class TeacherAttendanceHistoryView(APIView):
 # #         except Chapter.DoesNotExist:
 # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+
 # # class TestListView(APIView):
 # #     permission_classes = [IsTeacherRole]
     
@@ -4628,47 +4201,18 @@ class TeacherAttendanceHistoryView(APIView):
 # #         tests = Test.objects.filter(created_by=request.user).select_related('chapter')
 # #         return Response([{'id': t.id, 'chapter': t.chapter.name, 'type': t.type, 'marks': t.marks} for t in tests])
 
-# # # class TestCreateView(APIView):
-# # #     permission_classes = [IsTeacherRole]
-    
-# # #     def post(self, request):
-# # #         test_type = request.data.get('type')
-# # #         chapter_id = request.data.get('chapter_id')
-# # #         marks = request.data.get('marks')
-        
-# # #         if test_type not in ['mcq', 'descriptive'] or not marks or int(marks) not in [10, 20, 50]:
-# # #             return Response({'error': 'Invalid data.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-# # #         try:
-# # #             chapter = Chapter.objects.get(id=chapter_id)
-# # #             test = Test.objects.create(type=test_type, chapter=chapter, marks=int(marks), created_by=request.user)
-# # #             return Response({'message': 'Test created!', 'test': {'id': test.id, 'type': test.type}}, status=status.HTTP_201_CREATED)
-# # #         except Chapter.DoesNotExist:
-# # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
 
 # # class TestCreateView(APIView):
 # #     permission_classes = [IsTeacherRole]
     
 # #     def post(self, request):
-# #         """
-# #         Create a new test
-# #         Expected payload:
-# #         {
-# #             "name": "Test Name",
-# #             "description": "Test Description",
-# #             "type": "mcq" or "descriptive",
-# #             "marks": 10,
-# #             "duration_minutes": 30,
-# #             "chapter": chapter_id
-# #         }
-# #         """
-# #         # Get data from request
+# #         """Create a new test"""
 # #         name = request.data.get('name')
 # #         description = request.data.get('description', '')
 # #         test_type = request.data.get('type')
 # #         marks = request.data.get('marks')
 # #         duration_minutes = request.data.get('duration_minutes')
-# #         chapter_id = request.data.get('chapter') or request.data.get('chapter_id')  # Support both field names
+# #         chapter_id = request.data.get('chapter') or request.data.get('chapter_id')
         
 # #         # Validate required fields
 # #         if not name:
@@ -4741,24 +4285,12 @@ class TeacherAttendanceHistoryView(APIView):
 # #                 'error': 'Chapter not found.'
 # #             }, status=status.HTTP_404_NOT_FOUND)
 # #         except Exception as e:
-# #             # Log the error for debugging
-# #             import traceback
 # #             print(f"Error creating test: {str(e)}")
 # #             print(traceback.format_exc())
             
 # #             return Response({
 # #                 'error': f'Failed to create test: {str(e)}'
 # #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-
-
-
-
-
-
-
 
 
 # # class TestDetailView(APIView):
@@ -4771,48 +4303,28 @@ class TeacherAttendanceHistoryView(APIView):
 # #             return Response({
 # #                 'id': test.id,
 # #                 'type': test.type,
-# #                 'questions': [{'id': q.id, 'text': q.text} for q in questions]
+# #                 'questions': [{'id': q.id, 'text': q.question_text} for q in questions]
 # #             })
 # #         except Test.DoesNotExist:
 # #             return Response(status=status.HTTP_404_NOT_FOUND)
+
 
 # # class TestResultsView(APIView):
 # #     permission_classes = [IsTeacherRole]
     
 # #     def get(self, request, test_id):
 # #         attempts = TestAttempt.objects.filter(test_id=test_id).select_related('student')
-# #         return Response([{'student': a.student.first_name, 'score': a.score, 'completed': a.completed_at} for a in attempts])
+# #         return Response([{'student': a.student.first_name, 'score': a.score} for a in attempts])
 
 # # # ═══════════════════════════════════════════════════════════
 # # #  QUESTION MANAGEMENT
 # # # ═══════════════════════════════════════════════════════════
 
-# # # class QuestionCreateView(APIView):
-# # #     permission_classes = [IsTeacherRole]
-    
-# # #     def post(self, request, test_id):
-# # #         return Response({'message': 'Question endpoint placeholder'}, status=201)
-
 # # class QuestionCreateView(APIView):
 # #     permission_classes = [IsTeacherRole]
     
 # #     def post(self, request, test_id=None):
-# #         """
-# #         Create a new question for a test
-# #         Expected payload (FormData):
-# #         {
-# #             "test": test_id,
-# #             "question_text": "Question text here",
-# #             "question_image": <file> (optional),
-# #             "option1": "Option 1" (for MCQ),
-# #             "option2": "Option 2" (for MCQ),
-# #             "option3": "Option 3" (for MCQ),
-# #             "option4": "Option 4" (for MCQ),
-# #             "correct_option": 1-4 (for MCQ),
-# #             "explanation": "Explanation text" (optional)
-# #         }
-# #         """
-# #         # Get test_id from URL param or from request body
+# #         """Create a new question for a test"""
 # #         test_id = test_id or request.data.get('test')
         
 # #         if not test_id:
@@ -4848,7 +4360,7 @@ class TeacherAttendanceHistoryView(APIView):
 # #                 correct_option = request.data.get('correct_option')
                 
 # #                 if not all([option1, option2, option3, option4, correct_option]):
-# #                     question.delete()  # Delete the question if options are incomplete
+# #                     question.delete()
 # #                     return Response({
 # #                         'error': 'All options and correct option are required for MCQ.'
 # #                     }, status=status.HTTP_400_BAD_REQUEST)
@@ -4892,8 +4404,6 @@ class TeacherAttendanceHistoryView(APIView):
 # #                 'error': 'Test not found or you do not have permission to add questions to this test.'
 # #             }, status=status.HTTP_404_NOT_FOUND)
 # #         except Exception as e:
-# #             # Log the error for debugging
-# #             import traceback
 # #             print(f"Error creating question: {str(e)}")
 # #             print(traceback.format_exc())
             
@@ -4902,18 +4412,12 @@ class TeacherAttendanceHistoryView(APIView):
 # #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
-
-
-
-
-
-
 # # class QuestionUpdateView(APIView):
 # #     permission_classes = [IsTeacherRole]
     
 # #     def put(self, request, question_id):
 # #         return Response({'message': 'Update placeholder'})
+
 
 # # class QuestionDeleteView(APIView):
 # #     permission_classes = [IsTeacherRole]
@@ -4922,500 +4426,9 @@ class TeacherAttendanceHistoryView(APIView):
 # #         return Response(status=204)
 
 # # # ═══════════════════════════════════════════════════════════
-# # #  ATTENDANCE
+# # #  ATTENDANCE - FIXED INDENTATION
 # # # ═══════════════════════════════════════════════════════════
 
-# # class AttendanceMarkView(APIView):
-# #     permission_classes = [IsTeacherRole]
-
-# #     def post(self, request):
-# #     class_id = request.data.get('class_id')
-# #     subject_id = request.data.get('subject_id')
-# #     date_str = request.data.get('date')
-# #     student_ids = request.data.get('student_ids', [])
-# #     from_time_str = request.data.get('from_time')  # NEW
-# #     to_time_str = request.data.get('to_time')      # NEW
-    
-# #     if not all([class_id, subject_id, date_str]):
-# #         return Response({
-# #             'error': 'class_id, subject_id, and date are required.'
-# #         }, status=status.HTTP_400_BAD_REQUEST)
-    
-# #     try:
-# #         # Verify teacher assignment
-# #         TeacherAssignment.objects.get(
-# #             teacher=request.user,
-# #             class_assigned_id=class_id,
-# #             subject_id=subject_id
-# #         )
-        
-# #         # Parse date
-# #         attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
-        
-# #         # Validate date is not in the future
-# #         if attendance_date > timezone.now().date():
-# #             return Response({
-# #                 'error': 'Cannot mark attendance for future dates.'
-# #             }, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         # Parse time fields (NEW)
-# #         from_time = None
-# #         to_time = None
-# #         duration_minutes = None
-        
-# #         if from_time_str and to_time_str:
-# #             try:
-# #                 from_time = timezone.datetime.strptime(from_time_str, '%H:%M').time()
-# #                 to_time = timezone.datetime.strptime(to_time_str, '%H:%M').time()
-                
-# #                 # Calculate duration
-# #                 from_datetime = timezone.datetime.combine(attendance_date, from_time)
-# #                 to_datetime = timezone.datetime.combine(attendance_date, to_time)
-# #                 duration_minutes = int((to_datetime - from_datetime).total_seconds() / 60)
-                
-# #                 if duration_minutes < 0:
-# #                     return Response({
-# #                         'error': 'End time must be after start time.'
-# #                     }, status=status.HTTP_400_BAD_REQUEST)
-                    
-# #             except ValueError:
-# #                 return Response({
-# #                     'error': 'Invalid time format. Use HH:MM (24-hour format).'
-# #                 }, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         # Get all students in class
-# #         all_students = CustomUser.objects.filter(
-# #             role='student',
-# #             class_assigned_id=class_id,
-# #             is_approved=True
-# #         )
-        
-# #         if not all_students.exists():
-# #             return Response({
-# #                 'error': 'No students found in this class.'
-# #             }, status=status.HTTP_404_NOT_FOUND)
-        
-# #         # Mark attendance for each student
-# #         marked_count = 0
-# #         for student in all_students:
-# #             # Check if already marked for this date
-# #             attendance, created = Attendance.objects.update_or_create(
-# #                 teacher=request.user,
-# #                 student=student,
-# #                 class_assigned_id=class_id,
-# #                 date=attendance_date,
-# #                 defaults={
-# #                     'is_present': student.id in student_ids,
-# #                     'time': timezone.now().time(),
-# #                     'from_time': from_time,      # NEW
-# #                     'to_time': to_time,          # NEW
-# #                     'duration_minutes': duration_minutes  # NEW
-# #                 }
-# #             )
-# #             marked_count += 1
-        
-# #         present_count = len(student_ids)
-# #         absent_count = marked_count - present_count
-        
-# #         response_data = {
-# #             'message': f'Attendance marked successfully for {marked_count} students!',
-# #             'date': date_str,
-# #             'total_students': marked_count,
-# #             'present_count': present_count,
-# #             'absent_count': absent_count
-# #         }
-        
-# #         # Add time info if provided
-# #         if from_time and to_time:
-# #             response_data.update({
-# #                 'from_time': from_time_str,
-# #                 'to_time': to_time_str,
-# #                 'duration_minutes': duration_minutes
-# #             })
-        
-# #         return Response(response_data, status=status.HTTP_201_CREATED)
-    
-# #     except TeacherAssignment.DoesNotExist:
-# #         return Response({
-# #             'error': 'You are not assigned to this class-subject combination.'
-# #         }, status=status.HTTP_403_FORBIDDEN)
-# #     except ValueError:
-# #         return Response({
-# #             'error': 'Invalid date format. Use YYYY-MM-DD.'
-# #         }, status=status.HTTP_400_BAD_REQUEST)
-# #     except Exception as e:
-# #         return Response({
-# #             'error': f'An error occurred: {str(e)}'
-# #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-# #     # def post(self, request):
-# #     #     class_id = request.data.get('class_id')
-# #     #     date_str = request.data.get('date')
-# #     #     student_ids = request.data.get('student_ids', [])
-        
-# #     #     try:
-# #     #         attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
-# #     #         all_students = CustomUser.objects.filter(role='student', class_assigned_id=class_id, is_approved=True)
-            
-# #     #         for student in all_students:
-# #     #             Attendance.objects.update_or_create(
-# #     #                 teacher=request.user, student=student, class_assigned_id=class_id, date=attendance_date,
-# #     #                 defaults={'is_present': student.id in student_ids, 'time': timezone.now().time()}
-# #     #             )
-# #     #         return Response({'message': 'Attendance marked successfully!'})
-# #     #     except Exception as e:
-# #     #         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-# # class AttendanceListView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request):
-# #         return Response([])
-
-# # class StudentAttendanceHistoryView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request, student_id):
-# #         return Response([])
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  ASSIGNMENTS
-# # # ═══════════════════════════════════════════════════════════
-
-# # class AssignmentCreateView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def post(self, request):
-# #         chapter_id = request.data.get('chapter_id')
-# #         description = request.data.get('description', '').strip()
-# #         file = request.FILES.get('file')
-        
-# #         if not description:
-# #             return Response({'error': 'Description is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         try:
-# #             chapter = Chapter.objects.get(id=chapter_id)
-# #             assignment = Assignment.objects.create(teacher=request.user, chapter=chapter, description=description, file=file)
-# #             return Response({'message': 'Assignment created!', 'id': assignment.id}, status=status.HTTP_201_CREATED)
-# #         except Chapter.DoesNotExist:
-# #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-# # class AssignmentListView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request):
-# #         assignments = Assignment.objects.filter(teacher=request.user)
-# #         return Response([{'id': a.id, 'desc': a.description} for a in assignments])
-
-# # class AssignmentDetailView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request, assignment_id):
-# #         return Response({'id': assignment_id})
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  DOUBTS
-# # # ═══════════════════════════════════════════════════════════
-
-# # class DoubtListView(APIView):
-# #     """Get doubts filtered by class and/or subject"""
-# #     permission_classes = [IsAuthenticated]
-    
-# #     def get(self, request):
-# #         class_id = request.GET.get('class_id')
-# #         subject_id = request.GET.get('subject_id')
-        
-# #         if request.user.role == 'teacher':
-# #             teacher_subjects = request.user.subjects.all()
-# #             doubts = Doubt.objects.filter(subject__in=teacher_subjects)
-# #             if class_id:
-# #                 doubts = doubts.filter(student__class_assigned_id=class_id)
-# #             if subject_id:
-# #                 doubts = doubts.filter(subject_id=subject_id)
-        
-# #         elif request.user.role == 'student':
-# #             if not request.user.class_assigned:
-# #                 return Response([], status=status.HTTP_200_OK)
-# #             doubts = Doubt.objects.filter(student__class_assigned=request.user.class_assigned)
-# #             if subject_id:
-# #                 doubts = doubts.filter(subject_id=subject_id)
-# #         else:
-# #             return Response({'error': 'Invalid role.'}, status=status.HTTP_403_FORBIDDEN)
-        
-# #         doubts = doubts.select_related('student', 'subject').prefetch_related('doubtreply_set__user').order_by('-created_at')
-        
-# #         doubts_data = []
-# #         for doubt in doubts:
-# #             replies = doubt.doubtreply_set.all()
-# #             replies_data = [{
-# #                 'id': r.id,
-# #                 'user': {'id': r.user.id, 'name': f'{r.user.first_name} {r.user.last_name}'.strip() or r.user.username, 'role': r.user.role},
-# #                 'text': r.text,
-# #                 'image_url': request.build_absolute_uri(r.image.url) if r.image else None,
-# #                 'created_at': r.created_at
-# #             } for r in replies]
-            
-# #             doubts_data.append({
-# #                 'id': doubt.id,
-# #                 'student': {'id': doubt.student.id, 'name': f'{doubt.student.first_name} {doubt.student.last_name}'.strip(), 'unique_id': doubt.student.unique_id},
-# #                 'subject': {'id': doubt.subject.id, 'name': doubt.subject.name},
-# #                 'text': doubt.text,
-# #                 'image_url': request.build_absolute_uri(doubt.image.url) if doubt.image else None,
-# #                 'created_at': doubt.created_at,
-# #                 'reply_count': len(replies_data),
-# #                 'replies': replies_data
-# #             })
-# #         return Response(doubts_data)
-
-# # class DoubtDetailView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request, doubt_id):
-# #         return Response({'id': doubt_id})
-
-# # class DoubtReplyCreateView(APIView):
-# #     """Teachers can reply to doubts in their subjects"""
-# #     permission_classes = [IsAuthenticated]
-    
-# #     def post(self, request, doubt_id):
-# #         text = request.data.get('text', '').strip()
-# #         image = request.FILES.get('image')
-        
-# #         if not text and not image:
-# #             return Response({'error': 'Provide text or image.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         try:
-# #             doubt = Doubt.objects.get(id=doubt_id)
-# #             if request.user.role == 'teacher':
-# #                 if doubt.subject not in request.user.subjects.all():
-# #                     return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-# #             elif request.user.role == 'student':
-# #                 if request.user.class_assigned != doubt.student.class_assigned:
-# #                     return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-            
-# #             reply = DoubtReply.objects.create(doubt=doubt, user=request.user, text=text, image=image)
-# #             return Response({
-# #                 'message': 'Reply posted successfully!',
-# #                 'reply': {'id': reply.id, 'text': text, 'created_at': reply.created_at}
-# #             }, status=status.HTTP_201_CREATED)
-# #         except Doubt.DoesNotExist:
-# #             return Response({'error': 'Doubt not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-
-
-
-# # @api_view(['POST'])
-# # @permission_classes([IsAuthenticated])
-# # def create_question(request):
-# #     """Create a new question for a test"""
-# #     try:
-# #         # Get data from FormData
-# #         test_id = request.data.get('test')
-# #         question_text = request.data.get('question_text', '')
-# #         question_image = request.FILES.get('question_image', None)
-# #         option1 = request.data.get('option1', '')
-# #         option2 = request.data.get('option2', '')
-# #         option3 = request.data.get('option3', '')
-# #         option4 = request.data.get('option4', '')
-# #         correct_option = request.data.get('correct_option', None)
-# #         explanation = request.data.get('explanation', '')
-        
-# #         # Validate test exists
-# #         try:
-# #             test = Test.objects.get(id=test_id)
-# #         except Test.DoesNotExist:
-# #             return Response(
-# #                 {'error': f'Test with id {test_id} does not exist'},
-# #                 status=status.HTTP_404_NOT_FOUND
-# #             )
-        
-# #         # Check if user is the creator of the test
-# #         if test.created_by != request.user:
-# #             return Response(
-# #                 {'error': 'You are not authorized to add questions to this test'},
-# #                 status=status.HTTP_403_FORBIDDEN
-# #             )
-        
-# #         # Create question
-# #         question = Question.objects.create(
-# #             test=test,
-# #             question_text=question_text,
-# #             question_image=question_image,
-# #             option1=option1,
-# #             option2=option2,
-# #             option3=option3,
-# #             option4=option4,
-# #             correct_option=int(correct_option) if correct_option else None,
-# #             explanation=explanation
-# #         )
-        
-# #         return Response({
-# #             'message': 'Question created successfully',
-# #             'question_id': question.id,
-# #             'question': {
-# #                 'id': question.id,
-# #                 'question_text': question.question_text,
-# #                 'option1': question.option1,
-# #                 'option2': question.option2,
-# #                 'option3': question.option3,
-# #                 'option4': question.option4,
-# #                 'correct_option': question.correct_option,
-# #             }
-# #         }, status=status.HTTP_201_CREATED)
-        
-# #     except Exception as e:
-# #         print("Error creating question:", str(e))
-# #         import traceback
-# #         print("Traceback:", traceback.format_exc())
-# #         return Response({
-# #             'error': 'Failed to create question',
-# #             'details': str(e)
-# #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-# # @api_view(['POST'])
-# # @permission_classes([IsAuthenticated])
-# # def create_test(request):
-# #     """Create a new test"""
-# #     try:
-# #         data = request.data
-# #         print("Received data for test creation:", data)  # Debug
-        
-# #         # Validate required fields
-# #         required_fields = ['chapter', 'name', 'type', 'marks', 'duration_minutes']
-# #         for field in required_fields:
-# #             if field not in data:
-# #                 return Response(
-# #                     {'error': f'Missing required field: {field}'}, 
-# #                     status=status.HTTP_400_BAD_REQUEST
-# #                 )
-        
-# #         # Create the test
-# #         test = Test.objects.create(
-# #             chapter_id=data['chapter'],
-# #             name=data['name'],
-# #             description=data.get('description', ''),
-# #             type=data['type'],
-# #             marks=data['marks'],
-# #             duration_minutes=data['duration_minutes'],
-# #             created_by=request.user
-# #         )
-        
-# #         print(f"Test created successfully with ID: {test.id}")  # Debug
-        
-# #         # Return response with ID
-# #         return Response({
-# #             'id': test.id,  # THIS IS THE IMPORTANT PART!
-# #             'message': 'Test created successfully',
-# #             'test': {
-# #                 'id': test.id,
-# #                 'name': test.name,
-# #                 'description': test.description,
-# #                 'type': test.type,
-# #                 'marks': test.marks,
-# #                 'duration_minutes': test.duration_minutes,
-# #                 'chapter': test.chapter_id
-# #             }
-# #         }, status=status.HTTP_201_CREATED)
-        
-# #     except Exception as e:
-# #         print("Error creating test:", str(e))
-# #         import traceback
-# #         print("Traceback:", traceback.format_exc())
-# #         return Response({
-# #             'error': 'Failed to create test',
-# #             'details': str(e)
-# #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-# # # @api_view(['GET'])
-# # # @permission_classes([IsAuthenticated])
-# # # def get_assigned_classes(request):
-# # #     """Get all classes assigned to the teacher"""
-# # #     try:
-# # #         # Get teacher's assigned class-subjects
-# # #         from admin_tasks.models import ClassSubject
-        
-# # #         teacher = request.user
-        
-# # #         # Get all class-subjects assigned to this teacher
-# # #         assigned_class_subjects = ClassSubject.objects.filter(
-# # #             teacher=teacher
-# # #         ).select_related('class_name', 'subject')
-        
-# # #         # Group by class
-# # #         classes_dict = {}
-# # #         for cs in assigned_class_subjects:
-# # #             class_id = cs.class_name.id
-# # #             if class_id not in classes_dict:
-# # #                 classes_dict[class_id] = {
-# # #                     'id': cs.class_name.id,
-# # #                     'name': cs.class_name.name,
-# # #                     'subjects': [],
-# # #                     'student_count': cs.class_name.students.count() if hasattr(cs.class_name, 'students') else 0
-# # #                 }
-            
-# # #             classes_dict[class_id]['subjects'].append({
-# # #                 'id': cs.subject.id,
-# # #                 'name': cs.subject.name,
-# # #             })
-        
-# # #         classes = list(classes_dict.values())
-        
-# # #         return Response({
-# # #             'classes': classes,
-# # #             'total_classes': len(classes)
-# # #         }, status=status.HTTP_200_OK)
-        
-# # #     except Exception as e:
-# # #         print("Error fetching assigned classes:", str(e))
-# # #         import traceback
-# # #         print("Traceback:", traceback.format_exc())
-# # #         return Response({
-# # #             'error': 'Failed to fetch assigned classes',
-# # #             'details': str(e)
-# # #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)      
-
-
-
-# # @api_view(['GET'])
-# # @permission_classes([IsAuthenticated])
-# # def get_assigned_classes(request):
-# #     """Get all classes assigned to the teacher"""
-# #     try:
-# #         from admin_tasks.models import Class
-        
-# #         # For now, return all classes
-# #         # We'll make this filter by teacher once we know your database structure
-# #         classes = Class.objects.all()
-        
-# #         classes_data = []
-# #         for cls in classes:
-# #             classes_data.append({
-# #                 'id': cls.id,
-# #                 'name': cls.name,
-# #                 'subjects': [],  # We'll add subjects later
-# #                 'student_count': 0  # We'll add student count later
-# #             })
-        
-# #         return Response({
-# #             'classes': classes_data,
-# #             'total_classes': len(classes_data)
-# #         }, status=status.HTTP_200_OK)
-        
-# #     except Exception as e:
-# #         print("Error fetching assigned classes:", str(e))
-# #         import traceback
-# #         print("Traceback:", traceback.format_exc())
-# #         return Response({
-# #             'error': 'Failed to fetch assigned classes',
-# #             'details': str(e)
-# #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  ATTENDANCE MANAGEMENT VIEWS
-# # # ═══════════════════════════════════════════════════════════
-
-# # # 
 # # class ClassStudentsView(APIView):
 # #     """Get all students in a class"""
 # #     permission_classes = [IsTeacherRole]
@@ -5441,14 +4454,140 @@ class TeacherAttendanceHistoryView(APIView):
 # #             'id': student.id,
 # #             'first_name': student.first_name,
 # #             'last_name': student.last_name,
-# #             'full_name': student.get_full_name() or student.username,  # NEW
-# #             'roll_number': student.unique_id,  # NEW: Using unique_id as roll number
+# #             'full_name': student.get_full_name() or student.username,
+# #             'roll_number': student.unique_id,
 # #             'email': student.email,
 # #             'unique_id': student.unique_id
 # #         } for student in students]
         
 # #         return Response(students_data)
 
+
+# # # class AttendanceMarkView(APIView):
+# # #     """Mark attendance for students"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request):  # ✅ FIXED INDENTATION HERE
+# # #         class_id = request.data.get('class_id')
+# # #         subject_id = request.data.get('subject_id')
+# # #         date_str = request.data.get('date')
+# # #         student_ids = request.data.get('student_ids', [])
+# # #         from_time_str = request.data.get('from_time')
+# # #         to_time_str = request.data.get('to_time')
+        
+# # #         if not all([class_id, subject_id, date_str]):
+# # #             return Response({
+# # #                 'error': 'class_id, subject_id, and date are required.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         try:
+# # #             # Verify teacher assignment
+# # #             TeacherAssignment.objects.get(
+# # #                 teacher=request.user,
+# # #                 class_assigned_id=class_id,
+# # #                 subject_id=subject_id
+# # #             )
+            
+# # #             # Parse date
+# # #             attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+# # #             # Validate date is not in the future
+# # #             if attendance_date > timezone.now().date():
+# # #                 return Response({
+# # #                     'error': 'Cannot mark attendance for future dates.'
+# # #                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+# # #             # Parse time fields
+# # #             from_time = None
+# # #             to_time = None
+# # #             duration_minutes = None
+            
+# # #             if from_time_str and to_time_str:
+# # #                 try:
+# # #                     from_time = timezone.datetime.strptime(from_time_str, '%H:%M').time()
+# # #                     to_time = timezone.datetime.strptime(to_time_str, '%H:%M').time()
+                    
+# # #                     # Calculate duration
+# # #                     from_datetime = timezone.datetime.combine(attendance_date, from_time)
+# # #                     to_datetime = timezone.datetime.combine(attendance_date, to_time)
+# # #                     duration_minutes = int((to_datetime - from_datetime).total_seconds() / 60)
+                    
+# # #                     if duration_minutes < 0:
+# # #                         return Response({
+# # #                             'error': 'End time must be after start time.'
+# # #                         }, status=status.HTTP_400_BAD_REQUEST)
+                        
+# # #                 except ValueError:
+# # #                     return Response({
+# # #                         'error': 'Invalid time format. Use HH:MM (24-hour format).'
+# # #                     }, status=status.HTTP_400_BAD_REQUEST)
+            
+# # #             # Get all students in class
+# # #             all_students = CustomUser.objects.filter(
+# # #                 role='student',
+# # #                 class_assigned_id=class_id,
+# # #                 is_approved=True
+# # #             )
+            
+# # #             if not all_students.exists():
+# # #                 return Response({
+# # #                     'error': 'No students found in this class.'
+# # #                 }, status=status.HTTP_404_NOT_FOUND)
+            
+# # #             # Mark attendance for each student
+# # #             marked_count = 0
+# # #             for student in all_students:
+# # #                 # Check if already marked for this date
+# # #                 attendance, created = Attendance.objects.update_or_create(
+# # #                     teacher=request.user,
+# # #                     student=student,
+# # #                     class_assigned_id=class_id,
+# # #                     date=attendance_date,
+# # #                     defaults={
+# # #                         'is_present': student.id in student_ids,
+# # #                         'time': timezone.now().time(),
+# # #                         'from_time': from_time,
+# # #                         'to_time': to_time,
+# # #                         'duration_minutes': duration_minutes
+# # #                     }
+# # #                 )
+# # #                 marked_count += 1
+            
+# # #             present_count = len(student_ids)
+# # #             absent_count = marked_count - present_count
+            
+# # #             response_data = {
+# # #                 'message': f'Attendance marked successfully for {marked_count} students!',
+# # #                 'date': date_str,
+# # #                 'total_students': marked_count,
+# # #                 'present_count': present_count,
+# # #                 'absent_count': absent_count
+# # #             }
+            
+# # #             # Add time info if provided
+# # #             if from_time and to_time:
+# # #                 response_data.update({
+# # #                     'from_time': from_time_str,
+# # #                     'to_time': to_time_str,
+# # #                     'duration_minutes': duration_minutes
+# # #                 })
+            
+# # #             return Response(response_data, status=status.HTTP_201_CREATED)
+        
+# # #         except TeacherAssignment.DoesNotExist:
+# # #             return Response({
+# # #                 'error': 'You are not assigned to this class-subject combination.'
+# # #             }, status=status.HTTP_403_FORBIDDEN)
+# # #         except ValueError:
+# # #             return Response({
+# # #                 'error': 'Invalid date format. Use YYYY-MM-DD.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+# # #         except Exception as e:
+# # #             return Response({
+# # #                 'error': f'An error occurred: {str(e)}'
+# # #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# # # UPDATED AttendanceMarkView - Add this to teachers/views.py
 
 # # class AttendanceMarkView(APIView):
 # #     """Mark attendance for students"""
@@ -5459,6 +4598,8 @@ class TeacherAttendanceHistoryView(APIView):
 # #         subject_id = request.data.get('subject_id')
 # #         date_str = request.data.get('date')
 # #         student_ids = request.data.get('student_ids', [])
+# #         from_time_str = request.data.get('from_time')
+# #         to_time_str = request.data.get('to_time')
         
 # #         if not all([class_id, subject_id, date_str]):
 # #             return Response({
@@ -5467,7 +4608,7 @@ class TeacherAttendanceHistoryView(APIView):
         
 # #         try:
 # #             # Verify teacher assignment
-# #             TeacherAssignment.objects.get(
+# #             assignment = TeacherAssignment.objects.get(
 # #                 teacher=request.user,
 # #                 class_assigned_id=class_id,
 # #                 subject_id=subject_id
@@ -5481,6 +4622,31 @@ class TeacherAttendanceHistoryView(APIView):
 # #                 return Response({
 # #                     'error': 'Cannot mark attendance for future dates.'
 # #                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+# #             # Parse time fields
+# #             from_time = None
+# #             to_time = None
+# #             duration_minutes = None
+            
+# #             if from_time_str and to_time_str:
+# #                 try:
+# #                     from_time = timezone.datetime.strptime(from_time_str, '%H:%M').time()
+# #                     to_time = timezone.datetime.strptime(to_time_str, '%H:%M').time()
+                    
+# #                     # Calculate duration
+# #                     from_datetime = timezone.datetime.combine(attendance_date, from_time)
+# #                     to_datetime = timezone.datetime.combine(attendance_date, to_time)
+# #                     duration_minutes = int((to_datetime - from_datetime).total_seconds() / 60)
+                    
+# #                     if duration_minutes < 0:
+# #                         return Response({
+# #                             'error': 'End time must be after start time.'
+# #                         }, status=status.HTTP_400_BAD_REQUEST)
+                        
+# #                 except ValueError:
+# #                     return Response({
+# #                         'error': 'Invalid time format. Use HH:MM (24-hour format).'
+# #                     }, status=status.HTTP_400_BAD_REQUEST)
             
 # #             # Get all students in class
 # #             all_students = CustomUser.objects.filter(
@@ -5497,15 +4663,19 @@ class TeacherAttendanceHistoryView(APIView):
 # #             # Mark attendance for each student
 # #             marked_count = 0
 # #             for student in all_students:
-# #                 # Check if already marked for this date
+# #                 # ✅ UPDATED: Now includes subject_id in update_or_create
 # #                 attendance, created = Attendance.objects.update_or_create(
 # #                     teacher=request.user,
 # #                     student=student,
 # #                     class_assigned_id=class_id,
+# #                     subject_id=subject_id,  # ✅ NEW: Added subject to unique lookup
 # #                     date=attendance_date,
 # #                     defaults={
 # #                         'is_present': student.id in student_ids,
-# #                         'time': timezone.now().time()
+# #                         'time': timezone.now().time(),
+# #                         'from_time': from_time,
+# #                         'to_time': to_time,
+# #                         'duration_minutes': duration_minutes
 # #                     }
 # #                 )
 # #                 marked_count += 1
@@ -5513,13 +4683,24 @@ class TeacherAttendanceHistoryView(APIView):
 # #             present_count = len(student_ids)
 # #             absent_count = marked_count - present_count
             
-# #             return Response({
+# #             response_data = {
 # #                 'message': f'Attendance marked successfully for {marked_count} students!',
 # #                 'date': date_str,
+# #                 'subject': assignment.subject.name,  # ✅ NEW: Include subject name in response
 # #                 'total_students': marked_count,
 # #                 'present_count': present_count,
 # #                 'absent_count': absent_count
-# #             }, status=status.HTTP_201_CREATED)
+# #             }
+            
+# #             # Add time info if provided
+# #             if from_time and to_time:
+# #                 response_data.update({
+# #                     'from_time': from_time_str,
+# #                     'to_time': to_time_str,
+# #                     'duration_minutes': duration_minutes
+# #                 })
+            
+# #             return Response(response_data, status=status.HTTP_201_CREATED)
         
 # #         except TeacherAssignment.DoesNotExist:
 # #             return Response({
@@ -5530,907 +4711,20 @@ class TeacherAttendanceHistoryView(APIView):
 # #                 'error': 'Invalid date format. Use YYYY-MM-DD.'
 # #             }, status=status.HTTP_400_BAD_REQUEST)
 # #         except Exception as e:
+# #             import traceback
+# #             print("Error in attendance marking:")
+# #             print(traceback.format_exc())
 # #             return Response({
 # #                 'error': f'An error occurred: {str(e)}'
-# #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)            
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# # # teachers/views.py - COMPLETE WITH ALL ENDPOINTS
-# # """
-# # Complete Teacher Module Views - ALL ENDPOINTS INCLUDED
-# # EduVibe Platform - 2026
-# # ✅ Resolved IsTeacherRole NameError
-# # ✅ Removed Duplicate Code & Imports
-# # ✅ All functionality preserved
-# # ✅ Added new function-based views for tests
-# # """
-# # from rest_framework.decorators import api_view, permission_classes
-# # from rest_framework.permissions import IsAuthenticated
-# # from rest_framework.response import Response
-# # from rest_framework import status
-# # from .models import Test, Question, Option
-
-
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  IMPORTS
-# # # ═══════════════════════════════════════════════════════════
-
-# # from rest_framework.views import APIView
-# # from rest_framework.response import Response
-# # from rest_framework import status
-# # from rest_framework.permissions import IsAuthenticated
-# # from rest_framework.decorators import api_view, permission_classes  # ✅ ADDED FOR FUNCTION-BASED VIEWS
-# # from django.db.models import Count, Q, Avg, Max, Min  # ✅ ADDED Max, Min
-# # from django.utils import timezone
-# # from datetime import date
-# # from django.db import transaction
-# # import traceback
-
-# # from users.models import CustomUser
-# # from admin_tasks.models import Class, Subject, Chapter
-# # from .models import (
-# # TeacherAssignment, Test, Question, Attendance,Assignment, Doubt, DoubtReply,Test, Question, Option)
-# # from students.models import TestAttempt, StudentAnswer
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  CUSTOM PERMISSION
-# # # ═══════════════════════════════════════════════════════════
-
-# # class IsTeacherRole(IsAuthenticated):
-# #     """Only allow authenticated users with the 'teacher' role"""
-    
-# #     def has_permission(self, request, view):
-# #         return (
-# #             super().has_permission(request, view) and
-# #             request.user.role == 'teacher'
-# #         )
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  NEW FUNCTION-BASED VIEWS FOR TESTS
-# # # ═══════════════════════════════════════════════════════════
-
-# # # 
-
-
-
-# # @api_view(['GET'])
-# # @permission_classes([IsAuthenticated])
-# # def get_all_teacher_tests(request):
-# #     """Get all tests created by the logged-in teacher, grouped by subject"""
-# #     try:
-# #         teacher = request.user
-        
-# #         # Get all assignments for this teacher
-# #         assignments = TeacherAssignment.objects.filter(
-# #             teacher=teacher
-# #         ).select_related('class_assigned', 'subject')
-        
-# #         tests_by_subject = []
-        
-# #         for assignment in assignments:
-# #             # Get all tests for this subject-class combination
-# #             tests = Test.objects.filter(
-# #                 chapter__subject=assignment.subject,
-# #                 chapter__class_assigned=assignment.class_assigned,
-# #                 created_by=teacher
-# #             ).select_related('chapter').annotate(
-# #                 questions_count=Count('question'),  # ✅ FIXED: 'question' not 'questions'
-# #                 attempts_count=Count('attempts')     # ✅ FIXED: 'attempts' not 'testattempt'
-# #             ).order_by('-created_at')
-            
-# #             if tests.exists():
-# #                 tests_data = []
-# #                 for test in tests:
-# #                     tests_data.append({
-# #                         'id': test.id,
-# #                         'name': test.name,
-# #                         'description': test.description,
-# #                         'type': test.type,
-# #                         'marks': test.marks,
-# #                         'duration_minutes': test.duration_minutes,
-# #                         'chapter_name': test.chapter.name,
-# #                         'chapter_id': test.chapter.id,
-# #                         'questions_count': test.questions_count,
-# #                         'attempts_count': test.attempts_count,
-# #                         'created_at': test.created_at
-# #                     })
-                
-# #                 tests_by_subject.append({
-# #                     'subject_id': assignment.subject.id,
-# #                     'subject_name': assignment.subject.name,
-# #                     'class_id': assignment.class_assigned.id,
-# #                     'class_name': assignment.class_assigned.name,
-# #                     'tests': tests_data
-# #                 })
-        
-# #         return Response({
-# #             'tests_by_subject': tests_by_subject
-# #         })
-        
-# #     except Exception as e:
-# #         import traceback
-# #         print("ERROR in get_all_teacher_tests:")
-# #         print(traceback.format_exc())
-# #         return Response(
-# #             {'error': str(e)},
-# #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
-# #         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-# # # @api_view(['GET'])
-# # # @permission_classes([IsAuthenticated])
-# # # def get_all_teacher_tests(request):
-# # #     """Get all tests created by the logged-in teacher, grouped by subject"""
-# # #     try:
-# # #         teacher = request.user
-        
-# # #         # Get all assignments for this teacher
-# # #         assignments = TeacherAssignment.objects.filter(
-# # #             teacher=teacher
-# # #         ).select_related('class_assigned', 'subject')
-        
-# # #         tests_by_subject = []
-        
-# # #         for assignment in assignments:
-# # #             # Get all tests for this subject-class combination
-# # #             tests = Test.objects.filter(
-# # #                 chapter__subject=assignment.subject,
-# # #                 chapter__class_for=assignment.class_assigned,
-# # #                 created_by=teacher
-# # #             ).select_related('chapter').annotate(
-# # #                 questions_count=Count('questions'),
-# # #                 attempts_count=Count('testattempt')
-# # #             ).order_by('-created_at')
-            
-# # #             if tests.exists():
-# # #                 tests_data = []
-# # #                 for test in tests:
-# # #                     tests_data.append({
-# # #                         'id': test.id,
-# # #                         'name': test.name,
-# # #                         'description': test.description,
-# # #                         'type': test.type,
-# # #                         'marks': test.marks,
-# # #                         'duration_minutes': test.duration_minutes,
-# # #                         'chapter_name': test.chapter.name,
-# # #                         'chapter_id': test.chapter.id,
-# # #                         'questions_count': test.questions_count,
-# # #                         'attempts_count': test.attempts_count,
-# # #                         'created_at': test.created_at
-# # #                     })
-                
-# # #                 tests_by_subject.append({
-# # #                     'subject_id': assignment.subject.id,
-# # #                     'subject_name': assignment.subject.name,
-# # #                     'class_id': assignment.class_assigned.id,
-# # #                     'class_name': assignment.class_assigned.name,
-# # #                     'tests': tests_data
-# # #                 })
-        
-# # #         return Response({
-# # #             'tests_by_subject': tests_by_subject
-# # #         })
-        
-# # #     except Exception as e:
-# # #         return Response(
-# # #             {'error': str(e)},
-# # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
-# # #         )
-
-
-# # @api_view(['GET'])
-# # @permission_classes([IsAuthenticated])
-# # def get_test_results(request, test_id):
-# #     """Get all student attempts and scores for a specific test"""
-# #     try:
-# #         teacher = request.user
-        
-# #         # Get the test and verify it belongs to this teacher
-# #         try:
-# #             test = Test.objects.select_related(
-# #                 'chapter__subject',
-# #                 'chapter__class_for'
-# #             ).get(id=test_id, created_by=teacher)
-# #         except Test.DoesNotExist:
-# #             return Response(
-# #                 {'error': 'Test not found or you do not have permission to view it'},
-# #                 status=status.HTTP_404_NOT_FOUND
-# #             )
-        
-# #         # Get all test attempts with student info
-# #         attempts = TestAttempt.objects.filter(
-# #             test=test,
-# #             is_submitted=True
-# #         ).select_related('student').order_by('-score', 'submitted_at')
-        
-# #         # Calculate statistics
-# #         stats = attempts.aggregate(
-# #             total_attempts=Count('id'),
-# #             average_score=Avg('percentage'),
-# #             highest_score=Max('percentage'),
-# #             lowest_score=Min('percentage')
-# #         )
-        
-# #         # Format results
-# #         results = []
-# #         for attempt in attempts:
-# #             results.append({
-# #                 'id': attempt.id,
-# #                 'student_name': f'{attempt.student.first_name} {attempt.student.last_name}'.strip(),
-# #                 'student_unique_id': attempt.student.unique_id,
-# #                 'score': attempt.score,
-# #                 'percentage': attempt.percentage,
-# #                 'submitted_at': attempt.submitted_at,
-# #                 'time_taken_minutes': attempt.time_taken_minutes
-# #             })
-        
-# #         return Response({
-# #             'test_info': {
-# #                 'id': test.id,
-# #                 'name': test.name,
-# #                 'description': test.description,
-# #                 'type': test.type,
-# #                 'marks': test.marks,
-# #                 'duration_minutes': test.duration_minutes,
-# #                 'subject_name': test.chapter.subject.name,
-# #                 'class_name': test.chapter.class_for.name,
-# #                 'chapter_name': test.chapter.name
-# #             },
-# #             'results': results,
-# #             'stats': stats
-# #         })
-        
-# #     except Exception as e:
-# #         return Response(
-# #             {'error': str(e)},
-# #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
-# #         )
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  TEACHER DASHBOARD & CORE LISTS
-# # # ═══════════════════════════════════════════════════════════
-
-# # class TeacherHomeView(APIView):
-# #     """Teacher dashboard/home"""
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request):
-# #         teacher = request.user
-        
-# #         # Get teacher's assignments
-# #         assignments = TeacherAssignment.objects.filter(
-# #             teacher=teacher
-# #         ).select_related('class_assigned', 'subject')
-        
-# #         assignments_data = []
-# #         for assignment in assignments:
-# #             # Get chapters for this class-subject
-# #             chapters = Chapter.objects.filter(
-# #                 subject=assignment.subject,
-# #                 class_assigned=assignment.class_assigned
-# #             )
-            
-# #             assignments_data.append({
-# #                 'id': assignment.id,
-# #                 'class': {
-# #                     'id': assignment.class_assigned.id,
-# #                     'name': assignment.class_assigned.name
-# #                 },
-# #                 'subject': {
-# #                     'id': assignment.subject.id,
-# #                     'name': assignment.subject.name
-# #                 },
-# #                 'total_chapters': chapters.count(),
-# #                 'completed_chapters': chapters.filter(is_completed=True).count()
-# #             })
-        
-# #         # Get stats
-# #         stats = {
-# #             'total_tests': Test.objects.filter(created_by=teacher).count(),
-# #             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
-# #             'classes_teaching': TeacherAssignment.objects.filter(teacher=teacher).values('class_assigned').distinct().count()
-# #         }
-        
-# #         return Response({
-# #             'teacher': {
-# #                 'name': f'{teacher.first_name} {teacher.last_name}'.strip(),
-# #                 'unique_id': teacher.unique_id,
-# #                 'subjects': [
-# #                     {'id': s.id, 'name': s.name}
-# #                     for s in teacher.subjects.all()
-# #                 ]
-# #             },
-# #             'assignments': assignments_data,
-# #             'stats': stats
-# #         })
-
-# # class TeacherClassesListView(APIView):
-# #     """Get all classes assigned to teacher with statistics"""
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request):
-# #         # Get unique classes assigned to this teacher
-# #         assignments = TeacherAssignment.objects.filter(
-# #             teacher=request.user
-# #         ).select_related('class_assigned').values(
-# #             'class_assigned__id', 
-# #             'class_assigned__name'
-# #         ).distinct()
-        
-# #         classes_data = []
-# #         for assignment in assignments:
-# #             class_id = assignment['class_assigned__id']
-# #             class_name = assignment['class_assigned__name']
-            
-# #             # Count subjects assigned to this teacher for this class
-# #             subjects_count = TeacherAssignment.objects.filter(
-# #                 teacher=request.user,
-# #                 class_assigned_id=class_id
-# #             ).values('subject').distinct().count()
-            
-# #             # Count students in this class
-# #             students_count = CustomUser.objects.filter(
-# #                 role='student',
-# #                 class_assigned_id=class_id,
-# #                 is_approved=True
-# #             ).count()
-            
-# #             # Count tests created by this teacher for this class
-# #             tests_count = Test.objects.filter(
-# #                 created_by=request.user,
-# #                 chapter__class_assigned_id=class_id
-# #             ).count()
-            
-# #             classes_data.append({
-# #                 'id': class_id,
-# #                 'name': class_name,
-# #                 'subjects_count': subjects_count,
-# #                 'students_count': students_count,
-# #                 'tests_count': tests_count
-# #             })
-        
-# #         return Response(classes_data)
-
-# # class TeacherSubjectsListView(APIView):
-# #     """Get subjects assigned to teacher, optionally filtered by class"""
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request):
-# #         class_id = request.GET.get('class_id')
-# #         assignments = TeacherAssignment.objects.filter(teacher=request.user)
-        
-# #         if class_id:
-# #             assignments = assignments.filter(class_assigned_id=class_id)
-        
-# #         subjects = assignments.values('subject__id', 'subject__name').distinct()
-# #         return Response([{'id': s['subject__id'], 'name': s['subject__name']} for s in subjects])
-
-# # class TeacherClassSubjectsView(APIView):
-# #     """Get all subjects for a specific class assigned to this teacher"""
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request, class_id):
-# #         # Verify teacher is assigned to this class
-# #         if not TeacherAssignment.objects.filter(
-# #             teacher=request.user,
-# #             class_assigned_id=class_id
-# #         ).exists():
-# #             return Response({
-# #                 'error': 'You are not assigned to this class.'
-# #             }, status=status.HTTP_403_FORBIDDEN)
-        
-# #         # Get all subjects this teacher teaches in this class
-# #         assignments = TeacherAssignment.objects.filter(
-# #             teacher=request.user,
-# #             class_assigned_id=class_id
-# #         ).select_related('subject', 'class_assigned')
-        
-# #         subjects_data = []
-# #         for assignment in assignments:
-# #             # Count chapters for this subject in this class
-# #             chapters_count = Chapter.objects.filter(
-# #                 subject=assignment.subject,
-# #                 class_assigned_id=class_id
-# #             ).count()
-            
-# #             completed_chapters = Chapter.objects.filter(
-# #                 subject=assignment.subject,
-# #                 class_assigned_id=class_id,
-# #                 is_completed=True
-# #             ).count()
-            
-# #             # Count tests for this subject in this class
-# #             tests_count = Test.objects.filter(
-# #                 created_by=request.user,
-# #                 chapter__subject=assignment.subject,
-# #                 chapter__class_assigned_id=class_id
-# #             ).count()
-            
-# #             subjects_data.append({
-# #                 'id': assignment.subject.id,
-# #                 'name': assignment.subject.name,
-# #                 'class_id': class_id,
-# #                 'class_name': assignment.class_assigned.name,
-# #                 'chapters_count': chapters_count,
-# #                 'completed_chapters': completed_chapters,
-# #                 'tests_count': tests_count
-# #             })
-        
-# #         return Response({
-# #             'class_id': class_id,
-# #             'class_name': assignments.first().class_assigned.name if assignments.exists() else None,
-# #             'subjects': subjects_data
-# #         })
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  OTHER CORE VIEWS
-# # # ═══════════════════════════════════════════════════════════
-
-# # class TeacherSubjectClassesView(APIView):
-# #     """Returns classes filtered by subject for the teacher"""
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request):
-# #         subject_id = request.GET.get('subject_id')
-# #         assignments = TeacherAssignment.objects.filter(teacher=request.user)
-# #         if subject_id:
-# #             assignments = assignments.filter(subject_id=subject_id)
-# #         classes = assignments.values('class_assigned__id', 'class_assigned__name').distinct()
-# #         return Response([{'id': c['class_assigned__id'], 'name': c['class_assigned__name']} for c in classes])
-
-# # class TeacherSearchView(APIView):
-# #     """Search for students or resources"""
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request):
-# #         query = request.GET.get('q', '')
-# #         students = CustomUser.objects.filter(
-# #             Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(unique_id__icontains=query),
-# #             role='student'
-# #         )[:10]
-# #         return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'uid': s.unique_id} for s in students])
-
-# # class ClassStudentsView(APIView):
-# #     """Get all students in a specific class assigned to the teacher"""
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request, class_id):
-# #         students = CustomUser.objects.filter(class_assigned_id=class_id, role='student', is_approved=True)
-# #         return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'unique_id': s.unique_id} for s in students])
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  CHAPTER & TEST MANAGEMENT
-# # # ═══════════════════════════════════════════════════════════
-
-# # # 
-# # class TeacherChaptersView(APIView):
-# #     """Get chapters for class-subject"""
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request, class_id=None, subject_id=None):
-# #         # Accept both URL params and query params
-# #         class_id = class_id or request.GET.get('class_id')
-# #         subject_id = subject_id or request.GET.get('subject_id')
-        
-# #         if not class_id or not subject_id:
-# #             return Response(
-# #                 {'error': 'class_id and subject_id required.'},
-# #                 status=status.HTTP_400_BAD_REQUEST
-# #             )
-        
-# #         if not TeacherAssignment.objects.filter(
-# #             teacher=request.user,
-# #             class_assigned_id=class_id,
-# #             subject_id=subject_id
-# #         ).exists():
-# #             return Response(
-# #                 {'error': 'Not assigned to this class-subject.'},
-# #                 status=status.HTTP_403_FORBIDDEN
-# #             )
-        
-# #         chapters = Chapter.objects.filter(
-# #             class_assigned_id=class_id,
-# #             subject_id=subject_id
-# #         )
-        
-# #         chapters_data = [{
-# #             'id': c.id,
-# #             'name': c.name,
-# #             'is_completed': c.is_completed,
-# #             'tests_count': Test.objects.filter(chapter=c).count()
-# #         } for c in chapters]
-        
-# #         return Response(chapters_data)
-
-
-# # class MarkChapterCompleteView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def post(self, request, chapter_id):
-# #         try:
-# #             chapter = Chapter.objects.get(id=chapter_id)
-# #             if not TeacherAssignment.objects.filter(teacher=request.user, class_assigned=chapter.class_assigned, subject=chapter.subject).exists():
-# #                 return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-            
-# #             chapter.is_completed = True
-# #             chapter.save()
-# #             return Response({'message': 'Chapter marked as completed!'})
-# #         except Chapter.DoesNotExist:
-# #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-# # class TestListView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request):
-# #         tests = Test.objects.filter(created_by=request.user).select_related('chapter')
-# #         return Response([{'id': t.id, 'chapter': t.chapter.name, 'type': t.type, 'marks': t.marks} for t in tests])
-
-# # # class TestCreateView(APIView):
-# # #     permission_classes = [IsTeacherRole]
-    
-# # #     def post(self, request):
-# # #         test_type = request.data.get('type')
-# # #         chapter_id = request.data.get('chapter_id')
-# # #         marks = request.data.get('marks')
-        
-# # #         if test_type not in ['mcq', 'descriptive'] or not marks or int(marks) not in [10, 20, 50]:
-# # #             return Response({'error': 'Invalid data.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-# # #         try:
-# # #             chapter = Chapter.objects.get(id=chapter_id)
-# # #             test = Test.objects.create(type=test_type, chapter=chapter, marks=int(marks), created_by=request.user)
-# # #             return Response({'message': 'Test created!', 'test': {'id': test.id, 'type': test.type}}, status=status.HTTP_201_CREATED)
-# # #         except Chapter.DoesNotExist:
-# # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-# # class TestCreateView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def post(self, request):
-# #         """
-# #         Create a new test
-# #         Expected payload:
-# #         {
-# #             "name": "Test Name",
-# #             "description": "Test Description",
-# #             "type": "mcq" or "descriptive",
-# #             "marks": 10,
-# #             "duration_minutes": 30,
-# #             "chapter": chapter_id
-# #         }
-# #         """
-# #         # Get data from request
-# #         name = request.data.get('name')
-# #         description = request.data.get('description', '')
-# #         test_type = request.data.get('type')
-# #         marks = request.data.get('marks')
-# #         duration_minutes = request.data.get('duration_minutes')
-# #         chapter_id = request.data.get('chapter') or request.data.get('chapter_id')  # Support both field names
-        
-# #         # Validate required fields
-# #         if not name:
-# #             return Response({
-# #                 'error': 'Test name is required.'
-# #             }, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         if test_type not in ['mcq', 'descriptive']:
-# #             return Response({
-# #                 'error': 'Invalid test type. Must be "mcq" or "descriptive".'
-# #             }, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         if not marks or int(marks) <= 0:
-# #             return Response({
-# #                 'error': 'Valid marks required (must be greater than 0).'
-# #             }, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         if not duration_minutes or int(duration_minutes) <= 0:
-# #             return Response({
-# #                 'error': 'Valid duration required (must be greater than 0).'
-# #             }, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         if not chapter_id:
-# #             return Response({
-# #                 'error': 'Chapter is required.'
-# #             }, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         try:
-# #             # Verify chapter exists
-# #             chapter = Chapter.objects.get(id=chapter_id)
-            
-# #             # Verify teacher is assigned to this subject and class
-# #             assignment_exists = TeacherAssignment.objects.filter(
-# #                 teacher=request.user,
-# #                 subject=chapter.subject,
-# #                 class_assigned=chapter.class_assigned
-# #             ).exists()
-            
-# #             if not assignment_exists:
-# #                 return Response({
-# #                     'error': 'You are not assigned to teach this subject in this class.'
-# #                 }, status=status.HTTP_403_FORBIDDEN)
-            
-# #             # Create test
-# #             test = Test.objects.create(
-# #                 name=name,
-# #                 description=description,
-# #                 type=test_type,
-# #                 chapter=chapter,
-# #                 marks=int(marks),
-# #                 duration_minutes=int(duration_minutes),
-# #                 created_by=request.user
-# #             )
-            
-# #             return Response({
-# #                 'message': 'Test created successfully!',
-# #                 'test': {
-# #                     'id': test.id,
-# #                     'name': test.name,
-# #                     'type': test.type,
-# #                     'marks': test.marks,
-# #                     'duration_minutes': test.duration_minutes,
-# #                     'chapter_id': test.chapter.id,
-# #                     'chapter_name': test.chapter.name
-# #                 }
-# #             }, status=status.HTTP_201_CREATED)
-            
-# #         except Chapter.DoesNotExist:
-# #             return Response({
-# #                 'error': 'Chapter not found.'
-# #             }, status=status.HTTP_404_NOT_FOUND)
-# #         except Exception as e:
-# #             # Log the error for debugging
-# #             import traceback
-# #             print(f"Error creating test: {str(e)}")
-# #             print(traceback.format_exc())
-            
-# #             return Response({
-# #                 'error': f'Failed to create test: {str(e)}'
-# #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-
-
-
-
-
-
-
-
-
-# # class TestDetailView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request, test_id):
-# #         try:
-# #             test = Test.objects.get(id=test_id, created_by=request.user)
-# #             questions = Question.objects.filter(test=test)
-# #             return Response({
-# #                 'id': test.id,
-# #                 'type': test.type,
-# #                 'questions': [{'id': q.id, 'text': q.text} for q in questions]
-# #             })
-# #         except Test.DoesNotExist:
-# #             return Response(status=status.HTTP_404_NOT_FOUND)
-
-# # class TestResultsView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def get(self, request, test_id):
-# #         attempts = TestAttempt.objects.filter(test_id=test_id).select_related('student')
-# #         return Response([{'student': a.student.first_name, 'score': a.score, 'completed': a.completed_at} for a in attempts])
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  QUESTION MANAGEMENT
-# # # ═══════════════════════════════════════════════════════════
-
-# # # class QuestionCreateView(APIView):
-# # #     permission_classes = [IsTeacherRole]
-    
-# # #     def post(self, request, test_id):
-# # #         return Response({'message': 'Question endpoint placeholder'}, status=201)
-
-# # class QuestionCreateView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def post(self, request, test_id=None):
-# #         """
-# #         Create a new question for a test
-# #         Expected payload (FormData):
-# #         {
-# #             "test": test_id,
-# #             "question_text": "Question text here",
-# #             "question_image": <file> (optional),
-# #             "option1": "Option 1" (for MCQ),
-# #             "option2": "Option 2" (for MCQ),
-# #             "option3": "Option 3" (for MCQ),
-# #             "option4": "Option 4" (for MCQ),
-# #             "correct_option": 1-4 (for MCQ),
-# #             "explanation": "Explanation text" (optional)
-# #         }
-# #         """
-# #         # Get test_id from URL param or from request body
-# #         test_id = test_id or request.data.get('test')
-        
-# #         if not test_id:
-# #             return Response({
-# #                 'error': 'Test ID is required.'
-# #             }, status=status.HTTP_400_BAD_REQUEST)
-        
-# #         try:
-# #             # Verify test exists and belongs to this teacher
-# #             test = Test.objects.get(id=test_id, created_by=request.user)
-            
-# #             # Get question data
-# #             question_text = request.data.get('question_text', '')
-            
-# #             if not question_text:
-# #                 return Response({
-# #                     'error': 'Question text is required.'
-# #                 }, status=status.HTTP_400_BAD_REQUEST)
-            
-# #             # Create question
-# #             question = Question.objects.create(
-# #                 test=test,
-# #                 question_text=question_text,
-# #                 explanation=request.data.get('explanation', '')
-# #             )
-            
-# #             # For MCQ tests, add options
-# #             if test.type == 'mcq':
-# #                 option1 = request.data.get('option1', '')
-# #                 option2 = request.data.get('option2', '')
-# #                 option3 = request.data.get('option3', '')
-# #                 option4 = request.data.get('option4', '')
-# #                 correct_option = request.data.get('correct_option')
-                
-# #                 if not all([option1, option2, option3, option4, correct_option]):
-# #                     question.delete()  # Delete the question if options are incomplete
-# #                     return Response({
-# #                         'error': 'All options and correct option are required for MCQ.'
-# #                     }, status=status.HTTP_400_BAD_REQUEST)
-                
-# #                 try:
-# #                     correct_option = int(correct_option)
-# #                     if correct_option not in [1, 2, 3, 4]:
-# #                         question.delete()
-# #                         return Response({
-# #                             'error': 'Correct option must be between 1 and 4.'
-# #                         }, status=status.HTTP_400_BAD_REQUEST)
-# #                 except (ValueError, TypeError):
-# #                     question.delete()
-# #                     return Response({
-# #                         'error': 'Invalid correct option value.'
-# #                     }, status=status.HTTP_400_BAD_REQUEST)
-                
-# #                 question.option1 = option1
-# #                 question.option2 = option2
-# #                 question.option3 = option3
-# #                 question.option4 = option4
-# #                 question.correct_option = correct_option
-# #                 question.save()
-            
-# #             # Handle image upload if present
-# #             if request.FILES.get('question_image'):
-# #                 question.question_image = request.FILES['question_image']
-# #                 question.save()
-            
-# #             return Response({
-# #                 'message': 'Question created successfully!',
-# #                 'question': {
-# #                     'id': question.id,
-# #                     'question_text': question.question_text,
-# #                     'has_image': bool(question.question_image)
-# #                 }
-# #             }, status=status.HTTP_201_CREATED)
-            
-# #         except Test.DoesNotExist:
-# #             return Response({
-# #                 'error': 'Test not found or you do not have permission to add questions to this test.'
-# #             }, status=status.HTTP_404_NOT_FOUND)
-# #         except Exception as e:
-# #             # Log the error for debugging
-# #             import traceback
-# #             print(f"Error creating question: {str(e)}")
-# #             print(traceback.format_exc())
-            
-# #             return Response({
-# #                 'error': f'Failed to create question: {str(e)}'
-# #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-
-
-
-
-
-
-# # class QuestionUpdateView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def put(self, request, question_id):
-# #         return Response({'message': 'Update placeholder'})
-
-# # class QuestionDeleteView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def delete(self, request, question_id):
-# #         return Response(status=204)
-
-# # # ═══════════════════════════════════════════════════════════
-# # #  ATTENDANCE
-# # # ═══════════════════════════════════════════════════════════
-
-# # class AttendanceMarkView(APIView):
-# #     permission_classes = [IsTeacherRole]
-    
-# #     def post(self, request):
-# #         class_id = request.data.get('class_id')
-# #         date_str = request.data.get('date')
-# #         student_ids = request.data.get('student_ids', [])
-        
-# #         try:
-# #             attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
-# #             all_students = CustomUser.objects.filter(role='student', class_assigned_id=class_id, is_approved=True)
-            
-# #             for student in all_students:
-# #                 Attendance.objects.update_or_create(
-# #                     teacher=request.user, student=student, class_assigned_id=class_id, date=attendance_date,
-# #                     defaults={'is_present': student.id in student_ids, 'time': timezone.now().time()}
-# #                 )
-# #             return Response({'message': 'Attendance marked successfully!'})
-# #         except Exception as e:
-# #             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # # class AttendanceListView(APIView):
 # #     permission_classes = [IsTeacherRole]
     
 # #     def get(self, request):
 # #         return Response([])
+
 
 # # class StudentAttendanceHistoryView(APIView):
 # #     permission_classes = [IsTeacherRole]
@@ -6460,12 +4754,14 @@ class TeacherAttendanceHistoryView(APIView):
 # #         except Chapter.DoesNotExist:
 # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+
 # # class AssignmentListView(APIView):
 # #     permission_classes = [IsTeacherRole]
     
 # #     def get(self, request):
 # #         assignments = Assignment.objects.filter(teacher=request.user)
 # #         return Response([{'id': a.id, 'desc': a.description} for a in assignments])
+
 
 # # class AssignmentDetailView(APIView):
 # #     permission_classes = [IsTeacherRole]
@@ -6527,11 +4823,13 @@ class TeacherAttendanceHistoryView(APIView):
 # #             })
 # #         return Response(doubts_data)
 
+
 # # class DoubtDetailView(APIView):
 # #     permission_classes = [IsTeacherRole]
     
 # #     def get(self, request, doubt_id):
 # #         return Response({'id': doubt_id})
+
 
 # # class DoubtReplyCreateView(APIView):
 # #     """Teachers can reply to doubts in their subjects"""
@@ -6564,127 +4862,565 @@ class TeacherAttendanceHistoryView(APIView):
 
 
 
-# # @api_view(['POST'])
-# # @permission_classes([IsAuthenticated])
-# # def create_question(request):
-# #     """Create a new question for a test"""
-# #     try:
-# #         # Get data from FormData
-# #         test_id = request.data.get('test')
-# #         question_text = request.data.get('question_text', '')
-# #         question_image = request.FILES.get('question_image', None)
-# #         option1 = request.data.get('option1', '')
-# #         option2 = request.data.get('option2', '')
-# #         option3 = request.data.get('option3', '')
-# #         option4 = request.data.get('option4', '')
-# #         correct_option = request.data.get('correct_option', None)
-# #         explanation = request.data.get('explanation', '')
+# # # class TeacherAttendanceHistoryView(APIView):
+# # #     """Get teacher's attendance history with time tracking"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request):
+# # #         teacher = request.user
         
-# #         # Validate test exists
-# #         try:
-# #             test = Test.objects.get(id=test_id)
-# #         except Test.DoesNotExist:
-# #             return Response(
-# #                 {'error': f'Test with id {test_id} does not exist'},
-# #                 status=status.HTTP_404_NOT_FOUND
-# #             )
+# # #         # Get query parameters
+# # #         class_id = request.GET.get('class_id')
+# # #         subject_id = request.GET.get('subject_id')
+# # #         start_date = request.GET.get('start_date')
+# # #         end_date = request.GET.get('end_date')
         
-# #         # Check if user is the creator of the test
-# #         if test.created_by != request.user:
-# #             return Response(
-# #                 {'error': 'You are not authorized to add questions to this test'},
-# #                 status=status.HTTP_403_FORBIDDEN
-# #             )
+# # #         # Base query - all attendance marked by this teacher
+# # #         attendance_records = Attendance.objects.filter(
+# # #             teacher=teacher
+# # #         ).select_related(
+# # #             'class_assigned',
+# # #             'student'
+# # #         ).order_by('-date', '-time')
         
-# #         # Create question
-# #         question = Question.objects.create(
-# #             test=test,
-# #             question_text=question_text,
-# #             question_image=question_image,
-# #             option1=option1,
-# #             option2=option2,
-# #             option3=option3,
-# #             option4=option4,
-# #             correct_option=int(correct_option) if correct_option else None,
-# #             explanation=explanation
-# #         )
+# # #         # Apply filters
+# # #         if class_id:
+# # #             attendance_records = attendance_records.filter(class_assigned_id=class_id)
         
-# #         return Response({
-# #             'message': 'Question created successfully',
-# #             'question_id': question.id,
-# #             'question': {
-# #                 'id': question.id,
-# #                 'question_text': question.question_text,
-# #                 'option1': question.option1,
-# #                 'option2': question.option2,
-# #                 'option3': question.option3,
-# #                 'option4': question.option4,
-# #                 'correct_option': question.correct_option,
-# #             }
-# #         }, status=status.HTTP_201_CREATED)
+# # #         if start_date:
+# # #             attendance_records = attendance_records.filter(date__gte=start_date)
         
-# #     except Exception as e:
-# #         print("Error creating question:", str(e))
-# #         import traceback
-# #         print("Traceback:", traceback.format_exc())
-# #         return Response({
-# #             'error': 'Failed to create question',
-# #             'details': str(e)
-# #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# # #         if end_date:
+# # #             attendance_records = attendance_records.filter(date__lte=end_date)
+        
+# # #         # Group by date, class, and subject
+# # #         from collections import defaultdict
+# # #         from datetime import datetime
+        
+# # #         sessions_by_date = defaultdict(list)
+        
+# # #         # Get unique sessions (date + class combination)
+# # #         unique_sessions = attendance_records.values(
+# # #             'date', 'class_assigned_id', 'from_time', 'to_time', 'duration_minutes'
+# # #         ).distinct()
+        
+# # #         for session in unique_sessions:
+# # #             date = session['date']
+# # #             class_id_val = session['class_assigned_id']
+            
+# # #             # Get class and subject info
+# # #             from admin_tasks.models import Class
+# # #             class_obj = Class.objects.get(id=class_id_val)
+            
+# # #             # Get subject from teacher assignment
+# # #             if subject_id:
+# # #                 assignment = TeacherAssignment.objects.filter(
+# # #                     teacher=teacher,
+# # #                     class_assigned_id=class_id_val,
+# # #                     subject_id=subject_id
+# # #                 ).select_related('subject').first()
+# # #             else:
+# # #                 assignment = TeacherAssignment.objects.filter(
+# # #                     teacher=teacher,
+# # #                     class_assigned_id=class_id_val
+# # #                 ).select_related('subject').first()
+            
+# # #             if assignment:
+# # #                 # Get attendance count for this session
+# # #                 session_attendance = attendance_records.filter(
+# # #                     date=date,
+# # #                     class_assigned_id=class_id_val
+# # #                 )
+                
+# # #                 total_students = session_attendance.count()
+# # #                 present_count = session_attendance.filter(is_present=True).count()
+# # #                 absent_count = total_students - present_count
+                
+# # #                 sessions_by_date[str(date)].append({
+# # #                     'date': date,
+# # #                     'class_id': class_id_val,
+# # #                     'class_name': class_obj.name,
+# # #                     'subject_id': assignment.subject.id,
+# # #                     'subject_name': assignment.subject.name,
+# # #                     'from_time': session['from_time'],
+# # #                     'to_time': session['to_time'],
+# # #                     'duration_minutes': session['duration_minutes'],
+# # #                     'total_students': total_students,
+# # #                     'present': present_count,
+# # #                     'absent': absent_count
+# # #                 })
+        
+# # #         # Convert to list and sort
+# # #         sessions_list = []
+# # #         for date_str, sessions in sessions_by_date.items():
+# # #             sessions_list.extend(sessions)
+        
+# # #         sessions_list.sort(key=lambda x: x['date'], reverse=True)
+        
+# # #         # Calculate statistics by class and subject
+# # #         stats_by_class = defaultdict(lambda: {
+# # #             'total_sessions': 0,
+# # #             'total_duration': 0,
+# # #             'subjects': defaultdict(lambda: {
+# # #                 'sessions': 0,
+# # #                 'duration': 0
+# # #             })
+# # #         })
+        
+# # #         for session in sessions_list:
+# # #             class_id_val = session['class_id']
+# # #             subject_id_val = session['subject_id']
+# # #             duration = session['duration_minutes'] or 0
+            
+# # #             stats_by_class[class_id_val]['class_name'] = session['class_name']
+# # #             stats_by_class[class_id_val]['total_sessions'] += 1
+# # #             stats_by_class[class_id_val]['total_duration'] += duration
+            
+# # #             stats_by_class[class_id_val]['subjects'][subject_id_val]['subject_name'] = session['subject_name']
+# # #             stats_by_class[class_id_val]['subjects'][subject_id_val]['sessions'] += 1
+# # #             stats_by_class[class_id_val]['subjects'][subject_id_val]['duration'] += duration
+        
+# # #         # Format statistics
+# # #         stats_formatted = []
+# # #         for class_id_val, class_data in stats_by_class.items():
+# # #             subjects_list = []
+# # #             for subject_id_val, subject_data in class_data['subjects'].items():
+# # #                 subjects_list.append({
+# # #                     'subject_id': subject_id_val,
+# # #                     'subject_name': subject_data['subject_name'],
+# # #                     'sessions': subject_data['sessions'],
+# # #                     'duration_minutes': subject_data['duration'],
+# # #                     'duration_hours': round(subject_data['duration'] / 60, 2)
+# # #                 })
+            
+# # #             stats_formatted.append({
+# # #                 'class_id': class_id_val,
+# # #                 'class_name': class_data['class_name'],
+# # #                 'total_sessions': class_data['total_sessions'],
+# # #                 'total_duration_minutes': class_data['total_duration'],
+# # #                 'total_duration_hours': round(class_data['total_duration'] / 60, 2),
+# # #                 'subjects': subjects_list
+# # #             })
+        
+# # #         # Overall statistics
+# # #         total_sessions = len(sessions_list)
+# # #         total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
+        
+# # #         return Response({
+# # #             'overall_stats': {
+# # #                 'total_sessions': total_sessions,
+# # #                 'total_duration_minutes': total_duration,
+# # #                 'total_duration_hours': round(total_duration / 60, 2)
+# # #             },
+# # #             'stats_by_class': stats_formatted,
+# # #             'sessions': sessions_list
+# # #         })
 
-# # @api_view(['POST'])
-# # @permission_classes([IsAuthenticated])
-# # def create_test(request):
-# #     """Create a new test"""
-# #     try:
-# #         data = request.data
-# #         print("Received data for test creation:", data)  # Debug
-        
-# #         # Validate required fields
-# #         required_fields = ['chapter', 'name', 'type', 'marks', 'duration_minutes']
-# #         for field in required_fields:
-# #             if field not in data:
-# #                 return Response(
-# #                     {'error': f'Missing required field: {field}'}, 
-# #                     status=status.HTTP_400_BAD_REQUEST
+
+# # # UPDATED TeacherAttendanceHistoryView - Add this to teachers/views.py
+
+# # # class TeacherAttendanceHistoryView(APIView):
+# # #     """Get teacher's attendance history with time tracking"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request):
+# # #         try:
+# # #             teacher = request.user
+            
+# # #             # Get query parameters
+# # #             class_id = request.GET.get('class_id')
+# # #             subject_id = request.GET.get('subject_id')
+# # #             start_date = request.GET.get('start_date')
+# # #             end_date = request.GET.get('end_date')
+            
+# # #             # Base query
+# # #             attendance_records = Attendance.objects.filter(
+# # #                 teacher=teacher
+# # #             ).select_related(
+# # #                 'class_assigned',
+# # #                 'subject',
+# # #                 'student'
+# # #             ).order_by('-date', '-from_time')
+            
+# # #             # Apply filters
+# # #             if class_id:
+# # #                 attendance_records = attendance_records.filter(class_assigned_id=int(class_id))
+# # #             if subject_id:
+# # #                 attendance_records = attendance_records.filter(subject_id=int(subject_id))
+# # #             if start_date:
+# # #                 attendance_records = attendance_records.filter(date__gte=start_date)
+# # #             if end_date:
+# # #                 attendance_records = attendance_records.filter(date__lte=end_date)
+            
+# # #             # Group by session
+# # #             from collections import defaultdict
+# # #             sessions_dict = defaultdict(lambda: {
+# # #                 'students': [],
+# # #                 'present_count': 0,
+# # #                 'absent_count': 0
+# # #             })
+            
+# # #             for record in attendance_records:
+# # #                 session_key = (
+# # #                     str(record.date),
+# # #                     record.class_assigned_id,
+# # #                     record.subject_id
+# # #                 )
+                
+# # #                 session = sessions_dict[session_key]
+# # #                 session['date'] = str(record.date)
+# # #                 session['class_id'] = record.class_assigned_id
+# # #                 session['class_name'] = record.class_assigned.name
+# # #                 # session['subject_id'] = record.subject_id
+# # #                 session['subject_id'] = record.subject_id if record.subject_id else 0
+# # #                 # session['subject_name'] = record.subject.name
+# # #                 session['subject_name'] = record.subject.name if record.subject else 'Unknown'
+# # #                 session['from_time'] = record.from_time
+# # #                 session['to_time'] = record.to_time
+# # #                 session['duration_minutes'] = record.duration_minutes
+                
+# # #                 session['students'].append(record.student_id)
+# # #                 if record.is_present:
+# # #                     session['present_count'] += 1
+# # #                 else:
+# # #                     session['absent_count'] += 1
+            
+# # #             # Convert to list
+# # #             sessions_list = []
+# # #             for session_key, session_data in sessions_dict.items():
+# # #                 sessions_list.append({
+# # #                     'date': session_data['date'],
+# # #                     'class_id': session_data['class_id'],
+# # #                     'class_name': session_data['class_name'],
+# # #                     'subject_id': session_data['subject_id'],
+# # #                     'subject_name': session_data['subject_name'],
+# # #                     'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
+# # #                     'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
+# # #                     'duration_minutes': session_data['duration_minutes'] or 0,
+# # #                     'total_students': len(session_data['students']),
+# # #                     'present': session_data['present_count'],
+# # #                     'absent': session_data['absent_count']
+# # #                 })
+            
+# # #             sessions_list.sort(key=lambda x: x['date'], reverse=True)
+            
+# # #             return Response({
+# # #                 'sessions': sessions_list
+# # #             })
+            
+# # #         except Exception as e:
+# # #             import traceback
+# # #             print(f"Error: {str(e)}")
+# # #             print(traceback.format_exc())
+# # #             return Response({
+# # #                 'error': str(e)
+# # #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# # class TeacherAttendanceHistoryView(APIView):
+# #     """Get teacher's attendance history with time tracking"""
+# #     permission_classes = [IsTeacherRole]
+    
+# #     def get(self, request):
+# #         try:
+# #             teacher = request.user
+            
+# #             # Get query parameters
+# #             class_id = request.GET.get('class_id')
+# #             subject_id = request.GET.get('subject_id')
+# #             start_date = request.GET.get('start_date')
+# #             end_date = request.GET.get('end_date')
+            
+# #             # Base query
+# #             attendance_records = Attendance.objects.filter(
+# #                 teacher=teacher
+# #             ).select_related(
+# #                 'class_assigned',
+# #                 'subject',
+# #                 'student'
+# #             ).order_by('-date', '-from_time')
+            
+# #             # Apply filters
+# #             if class_id:
+# #                 attendance_records = attendance_records.filter(class_assigned_id=int(class_id))
+# #             if subject_id:
+# #                 attendance_records = attendance_records.filter(subject_id=int(subject_id))
+# #             if start_date:
+# #                 attendance_records = attendance_records.filter(date__gte=start_date)
+# #             if end_date:
+# #                 attendance_records = attendance_records.filter(date__lte=end_date)
+            
+# #             # Group by session
+# #             from collections import defaultdict
+# #             sessions_dict = defaultdict(lambda: {
+# #                 'students': [],
+# #                 'present_count': 0,
+# #                 'absent_count': 0
+# #             })
+            
+# #             for record in attendance_records:
+# #                 session_key = (
+# #                     str(record.date),
+# #                     record.class_assigned_id,
+# #                     record.subject_id
 # #                 )
+                
+# #                 session = sessions_dict[session_key]
+# #                 session['date'] = str(record.date)
+# #                 session['class_id'] = record.class_assigned_id
+# #                 session['class_name'] = record.class_assigned.name
+# #                 session['subject_id'] = record.subject_id if record.subject_id else 0
+# #                 session['subject_name'] = record.subject.name if record.subject else 'Unknown'
+# #                 session['from_time'] = record.from_time
+# #                 session['to_time'] = record.to_time
+# #                 session['duration_minutes'] = record.duration_minutes
+                
+# #                 session['students'].append(record.student_id)
+# #                 if record.is_present:
+# #                     session['present_count'] += 1
+# #                 else:
+# #                     session['absent_count'] += 1
+            
+# #             # Convert to list
+# #             sessions_list = []
+# #             for session_key, session_data in sessions_dict.items():
+# #                 sessions_list.append({
+# #                     'date': session_data['date'],
+# #                     'class_id': session_data['class_id'],
+# #                     'class_name': session_data['class_name'],
+# #                     'subject_id': session_data['subject_id'],
+# #                     'subject_name': session_data['subject_name'],
+# #                     'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
+# #                     'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
+# #                     'duration_minutes': session_data['duration_minutes'] or 0,
+# #                     'total_students': len(session_data['students']),
+# #                     'present': session_data['present_count'],
+# #                     'absent': session_data['absent_count']
+# #                 })
+            
+# #             sessions_list.sort(key=lambda x: x['date'], reverse=True)
+            
+# #             # ✅ FIXED: Calculate overall statistics
+# #             total_sessions = len(sessions_list)
+# #             total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
+            
+# #             # ✅ FIXED: Return with overall_stats
+# #             return Response({
+# #                 'overall_stats': {
+# #                     'total_sessions': total_sessions,
+# #                     'total_duration_minutes': total_duration,
+# #                     'total_duration_hours': round(total_duration / 60, 2) if total_duration > 0 else 0
+# #                 },
+# #                 'sessions': sessions_list
+# #             })
+            
+# #         except Exception as e:
+# #             import traceback
+# #             print(f"Error: {str(e)}")
+# #             print(traceback.format_exc())
+# #             return Response({
+# #                 'error': str(e)
+# #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+# # # class TeacherAttendanceHistoryView(APIView):
+# # #     """Get teacher's attendance history with time tracking - UPDATED TO INCLUDE SUBJECT"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request):
+# # #         teacher = request.user
         
-# #         # Create the test
-# #         test = Test.objects.create(
-# #             chapter_id=data['chapter'],
-# #             name=data['name'],
-# #             description=data.get('description', ''),
-# #             type=data['type'],
-# #             marks=data['marks'],
-# #             duration_minutes=data['duration_minutes'],
-# #             created_by=request.user
-# #         )
+# # #         # Get query parameters
+# # #         class_id = request.GET.get('class_id')
+# # #         subject_id = request.GET.get('subject_id')
+# # #         start_date = request.GET.get('start_date')
+# # #         end_date = request.GET.get('end_date')
         
-# #         print(f"Test created successfully with ID: {test.id}")  # Debug
+# # #         # Base query - all attendance marked by this teacher
+# # #         attendance_records = Attendance.objects.filter(
+# # #             teacher=teacher
+# # #         ).select_related(
+# # #             'class_assigned',
+# # #             'subject',  # ✅ NEW: Added subject to select_related
+# # #             'student'
+# # #         ).order_by('-date', '-time')
         
-# #         # Return response with ID
-# #         return Response({
-# #             'id': test.id,  # THIS IS THE IMPORTANT PART!
-# #             'message': 'Test created successfully',
-# #             'test': {
-# #                 'id': test.id,
-# #                 'name': test.name,
-# #                 'description': test.description,
-# #                 'type': test.type,
-# #                 'marks': test.marks,
-# #                 'duration_minutes': test.duration_minutes,
-# #                 'chapter': test.chapter_id
-# #             }
-# #         }, status=status.HTTP_201_CREATED)
+# # #         # Apply filters
+# # #         if class_id:
+# # #             attendance_records = attendance_records.filter(class_assigned_id=class_id)
         
-# #     except Exception as e:
-# #         print("Error creating test:", str(e))
-# #         import traceback
-# #         print("Traceback:", traceback.format_exc())
-# #         return Response({
-# #             'error': 'Failed to create test',
-# #             'details': str(e)
-# #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
+# # #         if subject_id:  # ✅ NEW: Can now filter by subject properly!
+# # #             attendance_records = attendance_records.filter(subject_id=subject_id)
+        
+# # #         if start_date:
+# # #             attendance_records = attendance_records.filter(date__gte=start_date)
+        
+# # #         if end_date:
+# # #             attendance_records = attendance_records.filter(date__lte=end_date)
+        
+# # #         # Group by date, class, and subject
+# # #         from collections import defaultdict
+        
+# # #         sessions_by_key = defaultdict(lambda: {
+# # #             'students': set(),
+# # #             'present_students': set(),
+# # #             'from_time': None,
+# # #             'to_time': None,
+# # #             'duration_minutes': None
+# # #         })
+        
+# # #         # ✅ UPDATED: Group by date + class + subject (not just date + class)
+# # #         for record in attendance_records:
+# # #             # Create unique key for each session (date + class + subject)
+# # #             session_key = f"{record.date}_{record.class_assigned_id}_{record.subject_id}"
+            
+# # #             session = sessions_by_key[session_key]
+# # #             session['date'] = record.date
+# # #             session['class_id'] = record.class_assigned.id
+# # #             session['class_name'] = record.class_assigned.name
+# # #             session['subject_id'] = record.subject.id  # ✅ NEW
+# # #             session['subject_name'] = record.subject.name  # ✅ NEW
+            
+# # #             # Store time info (same for all students in this session)
+# # #             if record.from_time and not session['from_time']:
+# # #                 session['from_time'] = record.from_time
+# # #             if record.to_time and not session['to_time']:
+# # #                 session['to_time'] = record.to_time
+# # #             if record.duration_minutes and not session['duration_minutes']:
+# # #                 session['duration_minutes'] = record.duration_minutes
+            
+# # #             # Track students
+# # #             session['students'].add(record.student.id)
+# # #             if record.is_present:
+# # #                 session['present_students'].add(record.student.id)
+        
+# # #         # Convert to list format
+# # #         sessions_list = []
+# # #         for session_key, session_data in sessions_by_key.items():
+# # #             total_students = len(session_data['students'])
+# # #             present_count = len(session_data['present_students'])
+            
+# # #             sessions_list.append({
+# # #                 'date': session_data['date'],
+# # #                 'class_id': session_data['class_id'],
+# # #                 'class_name': session_data['class_name'],
+# # #                 'subject_id': session_data['subject_id'],  # ✅ NEW
+# # #                 'subject_name': session_data['subject_name'],  # ✅ NEW
+# # #                 'from_time': str(session_data['from_time']) if session_data['from_time'] else None,
+# # #                 'to_time': str(session_data['to_time']) if session_data['to_time'] else None,
+# # #                 'duration_minutes': session_data['duration_minutes'] or 0,
+# # #                 'total_students': total_students,
+# # #                 'present': present_count,
+# # #                 'absent': total_students - present_count
+# # #             })
+        
+# # #         # Sort by date (newest first)
+# # #         sessions_list.sort(key=lambda x: x['date'], reverse=True)
+        
+# # #         # Calculate statistics by class and subject
+# # #         stats_by_class = defaultdict(lambda: {
+# # #             'total_sessions': 0,
+# # #             'total_duration': 0,
+# # #             'subjects': defaultdict(lambda: {
+# # #                 'sessions': 0,
+# # #                 'duration': 0
+# # #             })
+# # #         })
+        
+# # #         for session in sessions_list:
+# # #             class_id_val = session['class_id']
+# # #             subject_id_val = session['subject_id']  # ✅ NEW
+# # #             duration = session['duration_minutes'] or 0
+            
+# # #             stats_by_class[class_id_val]['class_name'] = session['class_name']
+# # #             stats_by_class[class_id_val]['total_sessions'] += 1
+# # #             stats_by_class[class_id_val]['total_duration'] += duration
+            
+# # #             # ✅ UPDATED: Now properly tracks by subject
+# # #             stats_by_class[class_id_val]['subjects'][subject_id_val]['subject_name'] = session['subject_name']
+# # #             stats_by_class[class_id_val]['subjects'][subject_id_val]['sessions'] += 1
+# # #             stats_by_class[class_id_val]['subjects'][subject_id_val]['duration'] += duration
+        
+# # #         # Format statistics
+# # #         stats_formatted = []
+# # #         for class_id_val, class_data in stats_by_class.items():
+# # #             subjects_list = []
+# # #             for subject_id_val, subject_data in class_data['subjects'].items():
+# # #                 subjects_list.append({
+# # #                     'subject_id': subject_id_val,
+# # #                     'subject_name': subject_data['subject_name'],
+# # #                     'sessions': subject_data['sessions'],
+# # #                     'duration_minutes': subject_data['duration'],
+# # #                     'duration_hours': round(subject_data['duration'] / 60, 2)
+# # #                 })
+            
+# # #             stats_formatted.append({
+# # #                 'class_id': class_id_val,
+# # #                 'class_name': class_data['class_name'],
+# # #                 'total_sessions': class_data['total_sessions'],
+# # #                 'total_duration_minutes': class_data['total_duration'],
+# # #                 'total_duration_hours': round(class_data['total_duration'] / 60, 2),
+# # #                 'subjects': subjects_list
+# # #             })
+        
+# # #         # Overall statistics
+# # #         total_sessions = len(sessions_list)
+# # #         total_duration = sum(s['duration_minutes'] or 0 for s in sessions_list)
+        
+# # #         return Response({
+# # #             'overall_stats': {
+# # #                 'total_sessions': total_sessions,
+# # #                 'total_duration_minutes': total_duration,
+# # #                 'total_duration_hours': round(total_duration / 60, 2)
+# # #             },
+# # #             'stats_by_class': stats_formatted,
+# # #             'sessions': sessions_list
+# # #         })
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6731,52 +5467,58 @@ class TeacherAttendanceHistoryView(APIView):
 # # # ✅ Resolved IsTeacherRole NameError
 # # # ✅ Removed Duplicate Code & Imports
 # # # ✅ All functionality preserved
+# # # ✅ Added new function-based views for tests
 # # # """
+# # # from rest_framework.decorators import api_view, permission_classes
+# # # from rest_framework.permissions import IsAuthenticated
+# # # from rest_framework.response import Response
+# # # from rest_framework import status
+# # # from .models import Test, Question, Option
+
+
+
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  IMPORTS
+# # # # ═══════════════════════════════════════════════════════════
 
 # # # from rest_framework.views import APIView
 # # # from rest_framework.response import Response
 # # # from rest_framework import status
 # # # from rest_framework.permissions import IsAuthenticated
-# # # from django.db.models import Count, Q, Avg
+# # # from rest_framework.decorators import api_view, permission_classes  # ✅ ADDED FOR FUNCTION-BASED VIEWS
+# # # from django.db.models import Count, Q, Avg, Max, Min  # ✅ ADDED Max, Min
 # # # from django.utils import timezone
 # # # from datetime import date
+# # # from django.db import transaction
+# # # import traceback
 
 # # # from users.models import CustomUser
 # # # from admin_tasks.models import Class, Subject, Chapter
 # # # from .models import (
-# # #     TeacherAssignment, Test, Question, Attendance,
-# # #     Assignment, Doubt, DoubtReply
-# # # )
-# # # from students.models import TestAttempt, StudentAnswer
-
-
-
-# # # # teachers/views.py
-# # # """
-# # # Updated Teacher Module Views
-# # # EduVibe Platform - 2026
-# # # ✅ Fixed ImportError for TeacherSubjectClassesView, TeacherSearchView, etc.
-# # # """
-
-# # # from rest_framework.views import APIView
-# # # from rest_framework.response import Response
-# # # from rest_framework import status
-# # # from rest_framework.permissions import IsAuthenticated
-# # # from django.db.models import Count, Q, Avg
-# # # from django.utils import timezone
-# # # from datetime import date
-
-# # # from users.models import CustomUser
-# # # from admin_tasks.models import Class, Subject, Chapter
-# # # from .models import (
-# # #     TeacherAssignment, Test, Question, Attendance,
-# # #     Assignment, Doubt, DoubtReply
-# # # )
+# # # TeacherAssignment, Test, Question, Attendance,Assignment, Doubt, DoubtReply,Test, Question, Option)
 # # # from students.models import TestAttempt, StudentAnswer
 
 # # # # ═══════════════════════════════════════════════════════════
 # # # #  CUSTOM PERMISSION
 # # # # ═══════════════════════════════════════════════════════════
+
+# # # class IsTeacherRole(IsAuthenticated):
+# # #     """Only allow authenticated users with the 'teacher' role"""
+    
+# # #     def has_permission(self, request, view):
+# # #         return (
+# # #             super().has_permission(request, view) and
+# # #             request.user.role == 'teacher'
+# # #         )
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  NEW FUNCTION-BASED VIEWS FOR TESTS
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # # 
+
+
 
 # # # @api_view(['GET'])
 # # # @permission_classes([IsAuthenticated])
@@ -6784,57 +5526,72 @@ class TeacherAttendanceHistoryView(APIView):
 # # #     """Get all tests created by the logged-in teacher, grouped by subject"""
 # # #     try:
 # # #         teacher = request.user
+# # #         print(f"\n=== Fetching tests for teacher: {teacher.email} ===")
         
-# # #         # Get all assignments for this teacher
-# # #         assignments = TeacherAssignment.objects.filter(
-# # #             teacher=teacher
-# # #         ).select_related('class_assigned', 'subject')
+# # #         # Get all tests created by this teacher
+# # #         all_tests = Test.objects.filter(
+# # #             created_by=teacher
+# # #         ).select_related('chapter__subject', 'chapter__class_assigned')
         
-# # #         tests_by_subject = []
+# # #         print(f"Total tests found: {all_tests.count()}")
         
-# # #         for assignment in assignments:
-# # #             # Get all tests for this subject-class combination
-# # #             tests = Test.objects.filter(
-# # #                 chapter__subject=assignment.subject,
-# # #                 chapter__class_for=assignment.class_assigned,
-# # #                 created_by=teacher
-# # #             ).select_related('chapter').annotate(
-# # #                 questions_count=Count('questions'),
-# # #                 attempts_count=Count('testattempt')
-# # #             ).order_by('-created_at')
+# # #         # Group tests by subject
+# # #         tests_by_subject = {}
+        
+# # #         for test in all_tests:
+# # #             subject_id = test.chapter.subject.id
             
-# # #             if tests.exists():
-# # #                 tests_data = []
-# # #                 for test in tests:
-# # #                     tests_data.append({
-# # #                         'id': test.id,
-# # #                         'name': test.name,
-# # #                         'description': test.description,
-# # #                         'type': test.type,
-# # #                         'marks': test.marks,
-# # #                         'duration_minutes': test.duration_minutes,
-# # #                         'chapter_name': test.chapter.name,
-# # #                         'chapter_id': test.chapter.id,
-# # #                         'questions_count': test.questions_count,
-# # #                         'attempts_count': test.attempts_count,
-# # #                         'created_at': test.created_at
-# # #                     })
-                
-# # #                 tests_by_subject.append({
-# # #                     'subject_id': assignment.subject.id,
-# # #                     'subject_name': assignment.subject.name,
-# # #                     'class_id': assignment.class_assigned.id,
-# # #                     'class_name': assignment.class_assigned.name,
-# # #                     'tests': tests_data
-# # #                 })
+# # #             # Initialize subject group if not exists
+# # #             if subject_id not in tests_by_subject:
+# # #                 tests_by_subject[subject_id] = {
+# # #                     'subject_id': subject_id,
+# # #                     'subject_name': test.chapter.subject.name,
+# # #                     'class_id': test.chapter.class_assigned.id if hasattr(test.chapter, 'class_assigned') else None,
+# # #                     'class_name': test.chapter.class_assigned.name if hasattr(test.chapter, 'class_assigned') else 'Unknown',
+# # #                     'tests': []
+# # #                 }
+            
+# # #             # Count questions manually
+# # #             questions_count = Question.objects.filter(test=test).count()
+            
+# # #             # Count attempts manually
+# # #             from students.models import TestAttempt
+# # #             attempts_count = TestAttempt.objects.filter(test=test).count()
+            
+# # #             # Add test to subject group
+# # #             tests_by_subject[subject_id]['tests'].append({
+# # #                 'id': test.id,
+# # #                 'name': test.name,
+# # #                 'description': test.description,
+# # #                 'type': test.type,
+# # #                 'marks': test.marks,
+# # #                 'duration_minutes': test.duration_minutes,
+# # #                 'chapter_name': test.chapter.name,
+# # #                 'chapter_id': test.chapter.id,
+# # #                 'questions_count': questions_count,
+# # #                 'attempts_count': attempts_count,
+# # #                 'created_at': test.created_at
+# # #             })
+        
+# # #         # Convert dict to list
+# # #         tests_by_subject_list = list(tests_by_subject.values())
+        
+# # #         print(f"Returning {len(tests_by_subject_list)} subject groups")
+# # #         print(f"Tests by subject: {tests_by_subject_list}")
         
 # # #         return Response({
-# # #             'tests_by_subject': tests_by_subject
+# # #             'tests_by_subject': tests_by_subject_list
 # # #         })
         
 # # #     except Exception as e:
+# # #         import traceback
+# # #         error_trace = traceback.format_exc()
+# # #         print("=" * 80)
+# # #         print("ERROR in get_all_teacher_tests:")
+# # #         print(error_trace)
+# # #         print("=" * 80)
 # # #         return Response(
-# # #             {'error': str(e)},
+# # #             {'error': str(e), 'details': error_trace},
 # # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
 # # #         )
 
@@ -6850,41 +5607,192 @@ class TeacherAttendanceHistoryView(APIView):
 
 
 
+# # # # @api_view(['GET'])
+# # # # @permission_classes([IsAuthenticated])
+# # # # def get_all_teacher_tests(request):
+# # # #     """Get all tests created by the logged-in teacher, grouped by subject"""
+# # # #     try:
+# # # #         teacher = request.user
+        
+# # # #         # Get all assignments for this teacher
+# # # #         assignments = TeacherAssignment.objects.filter(
+# # # #             teacher=teacher
+# # # #         ).select_related('class_assigned', 'subject')
+        
+# # # #         tests_by_subject = []
+        
+# # # #         for assignment in assignments:
+# # # #             # Get all tests for this subject-class combination
+# # # #             tests = Test.objects.filter(
+# # # #                 chapter__subject=assignment.subject,
+# # # #                 chapter__class_for=assignment.class_assigned,
+# # # #                 created_by=teacher
+# # # #             ).select_related('chapter').annotate(
+# # # #                 questions_count=Count('questions'),
+# # # #                 attempts_count=Count('testattempt')
+# # # #             ).order_by('-created_at')
+            
+# # # #             if tests.exists():
+# # # #                 tests_data = []
+# # # #                 for test in tests:
+# # # #                     tests_data.append({
+# # # #                         'id': test.id,
+# # # #                         'name': test.name,
+# # # #                         'description': test.description,
+# # # #                         'type': test.type,
+# # # #                         'marks': test.marks,
+# # # #                         'duration_minutes': test.duration_minutes,
+# # # #                         'chapter_name': test.chapter.name,
+# # # #                         'chapter_id': test.chapter.id,
+# # # #                         'questions_count': test.questions_count,
+# # # #                         'attempts_count': test.attempts_count,
+# # # #                         'created_at': test.created_at
+# # # #                     })
+                
+# # # #                 tests_by_subject.append({
+# # # #                     'subject_id': assignment.subject.id,
+# # # #                     'subject_name': assignment.subject.name,
+# # # #                     'class_id': assignment.class_assigned.id,
+# # # #                     'class_name': assignment.class_assigned.name,
+# # # #                     'tests': tests_data
+# # # #                 })
+        
+# # # #         return Response({
+# # # #             'tests_by_subject': tests_by_subject
+# # # #         })
+        
+# # # #     except Exception as e:
+# # # #         return Response(
+# # # #             {'error': str(e)},
+# # # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+# # # #         )
 
 
-
-
-
-# # # class IsTeacherRole(IsAuthenticated):
-# # #     def has_permission(self, request, view):
-# # #         return (
-# # #             super().has_permission(request, view) and
-# # #             request.user.role == 'teacher'
+# # # @api_view(['GET'])
+# # # @permission_classes([IsAuthenticated])
+# # # def get_test_results(request, test_id):
+# # #     """Get all student attempts and scores for a specific test"""
+# # #     try:
+# # #         teacher = request.user
+        
+# # #         # Get the test and verify it belongs to this teacher
+# # #         try:
+# # #             test = Test.objects.select_related(
+# # #                 'chapter__subject',
+# # #                 'chapter__class_for'
+# # #             ).get(id=test_id, created_by=teacher)
+# # #         except Test.DoesNotExist:
+# # #             return Response(
+# # #                 {'error': 'Test not found or you do not have permission to view it'},
+# # #                 status=status.HTTP_404_NOT_FOUND
+# # #             )
+        
+# # #         # Get all test attempts with student info
+# # #         attempts = TestAttempt.objects.filter(
+# # #             test=test,
+# # #             is_submitted=True
+# # #         ).select_related('student').order_by('-score', 'submitted_at')
+        
+# # #         # Calculate statistics
+# # #         stats = attempts.aggregate(
+# # #             total_attempts=Count('id'),
+# # #             average_score=Avg('percentage'),
+# # #             highest_score=Max('percentage'),
+# # #             lowest_score=Min('percentage')
+# # #         )
+        
+# # #         # Format results
+# # #         results = []
+# # #         for attempt in attempts:
+# # #             results.append({
+# # #                 'id': attempt.id,
+# # #                 'student_name': f'{attempt.student.first_name} {attempt.student.last_name}'.strip(),
+# # #                 'student_unique_id': attempt.student.unique_id,
+# # #                 'score': attempt.score,
+# # #                 'percentage': attempt.percentage,
+# # #                 'submitted_at': attempt.submitted_at,
+# # #                 'time_taken_minutes': attempt.time_taken_minutes
+# # #             })
+        
+# # #         return Response({
+# # #             'test_info': {
+# # #                 'id': test.id,
+# # #                 'name': test.name,
+# # #                 'description': test.description,
+# # #                 'type': test.type,
+# # #                 'marks': test.marks,
+# # #                 'duration_minutes': test.duration_minutes,
+# # #                 'subject_name': test.chapter.subject.name,
+# # #                 'class_name': test.chapter.class_for.name,
+# # #                 'chapter_name': test.chapter.name
+# # #             },
+# # #             'results': results,
+# # #             'stats': stats
+# # #         })
+        
+# # #     except Exception as e:
+# # #         return Response(
+# # #             {'error': str(e)},
+# # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
 # # #         )
 
-# # # # ... (Keep TeacherHomeView, TeacherClassesListView, TeacherSubjectsListView as provided before) ...
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  TEACHER DASHBOARD & CORE LISTS
+# # # # ═══════════════════════════════════════════════════════════
 
 # # # class TeacherHomeView(APIView):
+# # #     """Teacher dashboard/home"""
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request):
 # # #         teacher = request.user
-# # #         assignments = TeacherAssignment.objects.filter(teacher=teacher).select_related('class_assigned', 'subject')
+        
+# # #         # Get teacher's assignments
+# # #         assignments = TeacherAssignment.objects.filter(
+# # #             teacher=teacher
+# # #         ).select_related('class_assigned', 'subject')
+        
 # # #         assignments_data = []
 # # #         for assignment in assignments:
-# # #             chapters = Chapter.objects.filter(subject=assignment.subject, class_assigned=assignment.class_assigned)
+# # #             # Get chapters for this class-subject
+# # #             chapters = Chapter.objects.filter(
+# # #                 subject=assignment.subject,
+# # #                 class_assigned=assignment.class_assigned
+# # #             )
+            
 # # #             assignments_data.append({
 # # #                 'id': assignment.id,
-# # #                 'class': {'id': assignment.class_assigned.id, 'name': assignment.class_assigned.name},
-# # #                 'subject': {'id': assignment.subject.id, 'name': assignment.subject.name},
+# # #                 'class': {
+# # #                     'id': assignment.class_assigned.id,
+# # #                     'name': assignment.class_assigned.name
+# # #                 },
+# # #                 'subject': {
+# # #                     'id': assignment.subject.id,
+# # #                     'name': assignment.subject.name
+# # #                 },
 # # #                 'total_chapters': chapters.count(),
 # # #                 'completed_chapters': chapters.filter(is_completed=True).count()
 # # #             })
+        
+# # #         # Get stats
 # # #         stats = {
 # # #             'total_tests': Test.objects.filter(created_by=teacher).count(),
 # # #             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
 # # #             'classes_teaching': TeacherAssignment.objects.filter(teacher=teacher).values('class_assigned').distinct().count()
 # # #         }
-# # #         return Response({'teacher': {'name': f'{teacher.first_name} {teacher.last_name}'.strip(), 'unique_id': teacher.unique_id}, 'assignments': assignments_data, 'stats': stats})
+        
+# # #         return Response({
+# # #             'teacher': {
+# # #                 'name': f'{teacher.first_name} {teacher.last_name}'.strip(),
+# # #                 'unique_id': teacher.unique_id,
+# # #                 'subjects': [
+# # #                     {'id': s.id, 'name': s.name}
+# # #                     for s in teacher.subjects.all()
+# # #                 ]
+# # #             },
+# # #             'assignments': assignments_data,
+# # #             'stats': stats
+# # #         })
 
 # # # class TeacherClassesListView(APIView):
 # # #     """Get all classes assigned to teacher with statistics"""
@@ -6947,7 +5855,6 @@ class TeacherAttendanceHistoryView(APIView):
 # # #         subjects = assignments.values('subject__id', 'subject__name').distinct()
 # # #         return Response([{'id': s['subject__id'], 'name': s['subject__name']} for s in subjects])
 
-
 # # # class TeacherClassSubjectsView(APIView):
 # # #     """Get all subjects for a specific class assigned to this teacher"""
 # # #     permission_classes = [IsTeacherRole]
@@ -7006,12 +5913,13 @@ class TeacherAttendanceHistoryView(APIView):
 # # #         })
 
 # # # # ═══════════════════════════════════════════════════════════
-# # # #  MISSING VIEWS ADDED BELOW
+# # # #  OTHER CORE VIEWS
 # # # # ═══════════════════════════════════════════════════════════
 
 # # # class TeacherSubjectClassesView(APIView):
 # # #     """Returns classes filtered by subject for the teacher"""
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request):
 # # #         subject_id = request.GET.get('subject_id')
 # # #         assignments = TeacherAssignment.objects.filter(teacher=request.user)
@@ -7023,6 +5931,7 @@ class TeacherAttendanceHistoryView(APIView):
 # # # class TeacherSearchView(APIView):
 # # #     """Search for students or resources"""
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request):
 # # #         query = request.GET.get('q', '')
 # # #         students = CustomUser.objects.filter(
@@ -7034,18 +5943,214 @@ class TeacherAttendanceHistoryView(APIView):
 # # # class ClassStudentsView(APIView):
 # # #     """Get all students in a specific class assigned to the teacher"""
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request, class_id):
 # # #         students = CustomUser.objects.filter(class_assigned_id=class_id, role='student', is_approved=True)
 # # #         return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'unique_id': s.unique_id} for s in students])
 
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  CHAPTER & TEST MANAGEMENT
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # # 
+# # # class TeacherChaptersView(APIView):
+# # #     """Get chapters for class-subject"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, class_id=None, subject_id=None):
+# # #         # Accept both URL params and query params
+# # #         class_id = class_id or request.GET.get('class_id')
+# # #         subject_id = subject_id or request.GET.get('subject_id')
+        
+# # #         if not class_id or not subject_id:
+# # #             return Response(
+# # #                 {'error': 'class_id and subject_id required.'},
+# # #                 status=status.HTTP_400_BAD_REQUEST
+# # #             )
+        
+# # #         if not TeacherAssignment.objects.filter(
+# # #             teacher=request.user,
+# # #             class_assigned_id=class_id,
+# # #             subject_id=subject_id
+# # #         ).exists():
+# # #             return Response(
+# # #                 {'error': 'Not assigned to this class-subject.'},
+# # #                 status=status.HTTP_403_FORBIDDEN
+# # #             )
+        
+# # #         chapters = Chapter.objects.filter(
+# # #             class_assigned_id=class_id,
+# # #             subject_id=subject_id
+# # #         )
+        
+# # #         chapters_data = [{
+# # #             'id': c.id,
+# # #             'name': c.name,
+# # #             'is_completed': c.is_completed,
+# # #             'tests_count': Test.objects.filter(chapter=c).count()
+# # #         } for c in chapters]
+        
+# # #         return Response(chapters_data)
+
+
+# # # class MarkChapterCompleteView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request, chapter_id):
+# # #         try:
+# # #             chapter = Chapter.objects.get(id=chapter_id)
+# # #             if not TeacherAssignment.objects.filter(teacher=request.user, class_assigned=chapter.class_assigned, subject=chapter.subject).exists():
+# # #                 return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+            
+# # #             chapter.is_completed = True
+# # #             chapter.save()
+# # #             return Response({'message': 'Chapter marked as completed!'})
+# # #         except Chapter.DoesNotExist:
+# # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
 # # # class TestListView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request):
 # # #         tests = Test.objects.filter(created_by=request.user).select_related('chapter')
 # # #         return Response([{'id': t.id, 'chapter': t.chapter.name, 'type': t.type, 'marks': t.marks} for t in tests])
 
+# # # # class TestCreateView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def post(self, request):
+# # # #         test_type = request.data.get('type')
+# # # #         chapter_id = request.data.get('chapter_id')
+# # # #         marks = request.data.get('marks')
+        
+# # # #         if test_type not in ['mcq', 'descriptive'] or not marks or int(marks) not in [10, 20, 50]:
+# # # #             return Response({'error': 'Invalid data.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # # #         try:
+# # # #             chapter = Chapter.objects.get(id=chapter_id)
+# # # #             test = Test.objects.create(type=test_type, chapter=chapter, marks=int(marks), created_by=request.user)
+# # # #             return Response({'message': 'Test created!', 'test': {'id': test.id, 'type': test.type}}, status=status.HTTP_201_CREATED)
+# # # #         except Chapter.DoesNotExist:
+# # # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+# # # class TestCreateView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request):
+# # #         """
+# # #         Create a new test
+# # #         Expected payload:
+# # #         {
+# # #             "name": "Test Name",
+# # #             "description": "Test Description",
+# # #             "type": "mcq" or "descriptive",
+# # #             "marks": 10,
+# # #             "duration_minutes": 30,
+# # #             "chapter": chapter_id
+# # #         }
+# # #         """
+# # #         # Get data from request
+# # #         name = request.data.get('name')
+# # #         description = request.data.get('description', '')
+# # #         test_type = request.data.get('type')
+# # #         marks = request.data.get('marks')
+# # #         duration_minutes = request.data.get('duration_minutes')
+# # #         chapter_id = request.data.get('chapter') or request.data.get('chapter_id')  # Support both field names
+        
+# # #         # Validate required fields
+# # #         if not name:
+# # #             return Response({
+# # #                 'error': 'Test name is required.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         if test_type not in ['mcq', 'descriptive']:
+# # #             return Response({
+# # #                 'error': 'Invalid test type. Must be "mcq" or "descriptive".'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         if not marks or int(marks) <= 0:
+# # #             return Response({
+# # #                 'error': 'Valid marks required (must be greater than 0).'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         if not duration_minutes or int(duration_minutes) <= 0:
+# # #             return Response({
+# # #                 'error': 'Valid duration required (must be greater than 0).'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         if not chapter_id:
+# # #             return Response({
+# # #                 'error': 'Chapter is required.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         try:
+# # #             # Verify chapter exists
+# # #             chapter = Chapter.objects.get(id=chapter_id)
+            
+# # #             # Verify teacher is assigned to this subject and class
+# # #             assignment_exists = TeacherAssignment.objects.filter(
+# # #                 teacher=request.user,
+# # #                 subject=chapter.subject,
+# # #                 class_assigned=chapter.class_assigned
+# # #             ).exists()
+            
+# # #             if not assignment_exists:
+# # #                 return Response({
+# # #                     'error': 'You are not assigned to teach this subject in this class.'
+# # #                 }, status=status.HTTP_403_FORBIDDEN)
+            
+# # #             # Create test
+# # #             test = Test.objects.create(
+# # #                 name=name,
+# # #                 description=description,
+# # #                 type=test_type,
+# # #                 chapter=chapter,
+# # #                 marks=int(marks),
+# # #                 duration_minutes=int(duration_minutes),
+# # #                 created_by=request.user
+# # #             )
+            
+# # #             return Response({
+# # #                 'message': 'Test created successfully!',
+# # #                 'test': {
+# # #                     'id': test.id,
+# # #                     'name': test.name,
+# # #                     'type': test.type,
+# # #                     'marks': test.marks,
+# # #                     'duration_minutes': test.duration_minutes,
+# # #                     'chapter_id': test.chapter.id,
+# # #                     'chapter_name': test.chapter.name
+# # #                 }
+# # #             }, status=status.HTTP_201_CREATED)
+            
+# # #         except Chapter.DoesNotExist:
+# # #             return Response({
+# # #                 'error': 'Chapter not found.'
+# # #             }, status=status.HTTP_404_NOT_FOUND)
+# # #         except Exception as e:
+# # #             # Log the error for debugging
+# # #             import traceback
+# # #             print(f"Error creating test: {str(e)}")
+# # #             print(traceback.format_exc())
+            
+# # #             return Response({
+# # #                 'error': f'Failed to create test: {str(e)}'
+# # #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+
+
+
+
+
+
+
 # # # class TestDetailView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request, test_id):
 # # #         try:
 # # #             test = Test.objects.get(id=test_id, created_by=request.user)
@@ -7060,52 +6165,761 @@ class TeacherAttendanceHistoryView(APIView):
 
 # # # class TestResultsView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request, test_id):
 # # #         attempts = TestAttempt.objects.filter(test_id=test_id).select_related('student')
 # # #         return Response([{'student': a.student.first_name, 'score': a.score, 'completed': a.completed_at} for a in attempts])
 
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  QUESTION MANAGEMENT
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # # class QuestionCreateView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def post(self, request, test_id):
+# # # #         return Response({'message': 'Question endpoint placeholder'}, status=201)
+
 # # # class QuestionCreateView(APIView):
 # # #     permission_classes = [IsTeacherRole]
-# # #     def post(self, request, test_id):
-# # #         return Response({'message': 'Question endpoint placeholder'}, status=201)
+    
+# # #     def post(self, request, test_id=None):
+# # #         """
+# # #         Create a new question for a test
+# # #         Expected payload (FormData):
+# # #         {
+# # #             "test": test_id,
+# # #             "question_text": "Question text here",
+# # #             "question_image": <file> (optional),
+# # #             "option1": "Option 1" (for MCQ),
+# # #             "option2": "Option 2" (for MCQ),
+# # #             "option3": "Option 3" (for MCQ),
+# # #             "option4": "Option 4" (for MCQ),
+# # #             "correct_option": 1-4 (for MCQ),
+# # #             "explanation": "Explanation text" (optional)
+# # #         }
+# # #         """
+# # #         # Get test_id from URL param or from request body
+# # #         test_id = test_id or request.data.get('test')
+        
+# # #         if not test_id:
+# # #             return Response({
+# # #                 'error': 'Test ID is required.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         try:
+# # #             # Verify test exists and belongs to this teacher
+# # #             test = Test.objects.get(id=test_id, created_by=request.user)
+            
+# # #             # Get question data
+# # #             question_text = request.data.get('question_text', '')
+            
+# # #             if not question_text:
+# # #                 return Response({
+# # #                     'error': 'Question text is required.'
+# # #                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+# # #             # Create question
+# # #             question = Question.objects.create(
+# # #                 test=test,
+# # #                 question_text=question_text,
+# # #                 explanation=request.data.get('explanation', '')
+# # #             )
+            
+# # #             # For MCQ tests, add options
+# # #             if test.type == 'mcq':
+# # #                 option1 = request.data.get('option1', '')
+# # #                 option2 = request.data.get('option2', '')
+# # #                 option3 = request.data.get('option3', '')
+# # #                 option4 = request.data.get('option4', '')
+# # #                 correct_option = request.data.get('correct_option')
+                
+# # #                 if not all([option1, option2, option3, option4, correct_option]):
+# # #                     question.delete()  # Delete the question if options are incomplete
+# # #                     return Response({
+# # #                         'error': 'All options and correct option are required for MCQ.'
+# # #                     }, status=status.HTTP_400_BAD_REQUEST)
+                
+# # #                 try:
+# # #                     correct_option = int(correct_option)
+# # #                     if correct_option not in [1, 2, 3, 4]:
+# # #                         question.delete()
+# # #                         return Response({
+# # #                             'error': 'Correct option must be between 1 and 4.'
+# # #                         }, status=status.HTTP_400_BAD_REQUEST)
+# # #                 except (ValueError, TypeError):
+# # #                     question.delete()
+# # #                     return Response({
+# # #                         'error': 'Invalid correct option value.'
+# # #                     }, status=status.HTTP_400_BAD_REQUEST)
+                
+# # #                 question.option1 = option1
+# # #                 question.option2 = option2
+# # #                 question.option3 = option3
+# # #                 question.option4 = option4
+# # #                 question.correct_option = correct_option
+# # #                 question.save()
+            
+# # #             # Handle image upload if present
+# # #             if request.FILES.get('question_image'):
+# # #                 question.question_image = request.FILES['question_image']
+# # #                 question.save()
+            
+# # #             return Response({
+# # #                 'message': 'Question created successfully!',
+# # #                 'question': {
+# # #                     'id': question.id,
+# # #                     'question_text': question.question_text,
+# # #                     'has_image': bool(question.question_image)
+# # #                 }
+# # #             }, status=status.HTTP_201_CREATED)
+            
+# # #         except Test.DoesNotExist:
+# # #             return Response({
+# # #                 'error': 'Test not found or you do not have permission to add questions to this test.'
+# # #             }, status=status.HTTP_404_NOT_FOUND)
+# # #         except Exception as e:
+# # #             # Log the error for debugging
+# # #             import traceback
+# # #             print(f"Error creating question: {str(e)}")
+# # #             print(traceback.format_exc())
+            
+# # #             return Response({
+# # #                 'error': f'Failed to create question: {str(e)}'
+# # #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+
+
+
 
 # # # class QuestionUpdateView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def put(self, request, question_id):
 # # #         return Response({'message': 'Update placeholder'})
 
 # # # class QuestionDeleteView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def delete(self, request, question_id):
 # # #         return Response(status=204)
 
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  ATTENDANCE
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # class AttendanceMarkView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+
+# # #     def post(self, request):
+# # #     class_id = request.data.get('class_id')
+# # #     subject_id = request.data.get('subject_id')
+# # #     date_str = request.data.get('date')
+# # #     student_ids = request.data.get('student_ids', [])
+# # #     from_time_str = request.data.get('from_time')  # NEW
+# # #     to_time_str = request.data.get('to_time')      # NEW
+    
+# # #     if not all([class_id, subject_id, date_str]):
+# # #         return Response({
+# # #             'error': 'class_id, subject_id, and date are required.'
+# # #         }, status=status.HTTP_400_BAD_REQUEST)
+    
+# # #     try:
+# # #         # Verify teacher assignment
+# # #         TeacherAssignment.objects.get(
+# # #             teacher=request.user,
+# # #             class_assigned_id=class_id,
+# # #             subject_id=subject_id
+# # #         )
+        
+# # #         # Parse date
+# # #         attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
+        
+# # #         # Validate date is not in the future
+# # #         if attendance_date > timezone.now().date():
+# # #             return Response({
+# # #                 'error': 'Cannot mark attendance for future dates.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         # Parse time fields (NEW)
+# # #         from_time = None
+# # #         to_time = None
+# # #         duration_minutes = None
+        
+# # #         if from_time_str and to_time_str:
+# # #             try:
+# # #                 from_time = timezone.datetime.strptime(from_time_str, '%H:%M').time()
+# # #                 to_time = timezone.datetime.strptime(to_time_str, '%H:%M').time()
+                
+# # #                 # Calculate duration
+# # #                 from_datetime = timezone.datetime.combine(attendance_date, from_time)
+# # #                 to_datetime = timezone.datetime.combine(attendance_date, to_time)
+# # #                 duration_minutes = int((to_datetime - from_datetime).total_seconds() / 60)
+                
+# # #                 if duration_minutes < 0:
+# # #                     return Response({
+# # #                         'error': 'End time must be after start time.'
+# # #                     }, status=status.HTTP_400_BAD_REQUEST)
+                    
+# # #             except ValueError:
+# # #                 return Response({
+# # #                     'error': 'Invalid time format. Use HH:MM (24-hour format).'
+# # #                 }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         # Get all students in class
+# # #         all_students = CustomUser.objects.filter(
+# # #             role='student',
+# # #             class_assigned_id=class_id,
+# # #             is_approved=True
+# # #         )
+        
+# # #         if not all_students.exists():
+# # #             return Response({
+# # #                 'error': 'No students found in this class.'
+# # #             }, status=status.HTTP_404_NOT_FOUND)
+        
+# # #         # Mark attendance for each student
+# # #         marked_count = 0
+# # #         for student in all_students:
+# # #             # Check if already marked for this date
+# # #             attendance, created = Attendance.objects.update_or_create(
+# # #                 teacher=request.user,
+# # #                 student=student,
+# # #                 class_assigned_id=class_id,
+# # #                 date=attendance_date,
+# # #                 defaults={
+# # #                     'is_present': student.id in student_ids,
+# # #                     'time': timezone.now().time(),
+# # #                     'from_time': from_time,      # NEW
+# # #                     'to_time': to_time,          # NEW
+# # #                     'duration_minutes': duration_minutes  # NEW
+# # #                 }
+# # #             )
+# # #             marked_count += 1
+        
+# # #         present_count = len(student_ids)
+# # #         absent_count = marked_count - present_count
+        
+# # #         response_data = {
+# # #             'message': f'Attendance marked successfully for {marked_count} students!',
+# # #             'date': date_str,
+# # #             'total_students': marked_count,
+# # #             'present_count': present_count,
+# # #             'absent_count': absent_count
+# # #         }
+        
+# # #         # Add time info if provided
+# # #         if from_time and to_time:
+# # #             response_data.update({
+# # #                 'from_time': from_time_str,
+# # #                 'to_time': to_time_str,
+# # #                 'duration_minutes': duration_minutes
+# # #             })
+        
+# # #         return Response(response_data, status=status.HTTP_201_CREATED)
+    
+# # #     except TeacherAssignment.DoesNotExist:
+# # #         return Response({
+# # #             'error': 'You are not assigned to this class-subject combination.'
+# # #         }, status=status.HTTP_403_FORBIDDEN)
+# # #     except ValueError:
+# # #         return Response({
+# # #             'error': 'Invalid date format. Use YYYY-MM-DD.'
+# # #         }, status=status.HTTP_400_BAD_REQUEST)
+# # #     except Exception as e:
+# # #         return Response({
+# # #             'error': f'An error occurred: {str(e)}'
+# # #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+# # #     # def post(self, request):
+# # #     #     class_id = request.data.get('class_id')
+# # #     #     date_str = request.data.get('date')
+# # #     #     student_ids = request.data.get('student_ids', [])
+        
+# # #     #     try:
+# # #     #         attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
+# # #     #         all_students = CustomUser.objects.filter(role='student', class_assigned_id=class_id, is_approved=True)
+            
+# # #     #         for student in all_students:
+# # #     #             Attendance.objects.update_or_create(
+# # #     #                 teacher=request.user, student=student, class_assigned_id=class_id, date=attendance_date,
+# # #     #                 defaults={'is_present': student.id in student_ids, 'time': timezone.now().time()}
+# # #     #             )
+# # #     #         return Response({'message': 'Attendance marked successfully!'})
+# # #     #     except Exception as e:
+# # #     #         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 # # # class AttendanceListView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request):
 # # #         return Response([])
 
 # # # class StudentAttendanceHistoryView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request, student_id):
 # # #         return Response([])
 
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  ASSIGNMENTS
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # class AssignmentCreateView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request):
+# # #         chapter_id = request.data.get('chapter_id')
+# # #         description = request.data.get('description', '').strip()
+# # #         file = request.FILES.get('file')
+        
+# # #         if not description:
+# # #             return Response({'error': 'Description is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         try:
+# # #             chapter = Chapter.objects.get(id=chapter_id)
+# # #             assignment = Assignment.objects.create(teacher=request.user, chapter=chapter, description=description, file=file)
+# # #             return Response({'message': 'Assignment created!', 'id': assignment.id}, status=status.HTTP_201_CREATED)
+# # #         except Chapter.DoesNotExist:
+# # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
 # # # class AssignmentListView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request):
 # # #         assignments = Assignment.objects.filter(teacher=request.user)
 # # #         return Response([{'id': a.id, 'desc': a.description} for a in assignments])
 
 # # # class AssignmentDetailView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request, assignment_id):
 # # #         return Response({'id': assignment_id})
 
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  DOUBTS
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # class DoubtListView(APIView):
+# # #     """Get doubts filtered by class and/or subject"""
+# # #     permission_classes = [IsAuthenticated]
+    
+# # #     def get(self, request):
+# # #         class_id = request.GET.get('class_id')
+# # #         subject_id = request.GET.get('subject_id')
+        
+# # #         if request.user.role == 'teacher':
+# # #             teacher_subjects = request.user.subjects.all()
+# # #             doubts = Doubt.objects.filter(subject__in=teacher_subjects)
+# # #             if class_id:
+# # #                 doubts = doubts.filter(student__class_assigned_id=class_id)
+# # #             if subject_id:
+# # #                 doubts = doubts.filter(subject_id=subject_id)
+        
+# # #         elif request.user.role == 'student':
+# # #             if not request.user.class_assigned:
+# # #                 return Response([], status=status.HTTP_200_OK)
+# # #             doubts = Doubt.objects.filter(student__class_assigned=request.user.class_assigned)
+# # #             if subject_id:
+# # #                 doubts = doubts.filter(subject_id=subject_id)
+# # #         else:
+# # #             return Response({'error': 'Invalid role.'}, status=status.HTTP_403_FORBIDDEN)
+        
+# # #         doubts = doubts.select_related('student', 'subject').prefetch_related('doubtreply_set__user').order_by('-created_at')
+        
+# # #         doubts_data = []
+# # #         for doubt in doubts:
+# # #             replies = doubt.doubtreply_set.all()
+# # #             replies_data = [{
+# # #                 'id': r.id,
+# # #                 'user': {'id': r.user.id, 'name': f'{r.user.first_name} {r.user.last_name}'.strip() or r.user.username, 'role': r.user.role},
+# # #                 'text': r.text,
+# # #                 'image_url': request.build_absolute_uri(r.image.url) if r.image else None,
+# # #                 'created_at': r.created_at
+# # #             } for r in replies]
+            
+# # #             doubts_data.append({
+# # #                 'id': doubt.id,
+# # #                 'student': {'id': doubt.student.id, 'name': f'{doubt.student.first_name} {doubt.student.last_name}'.strip(), 'unique_id': doubt.student.unique_id},
+# # #                 'subject': {'id': doubt.subject.id, 'name': doubt.subject.name},
+# # #                 'text': doubt.text,
+# # #                 'image_url': request.build_absolute_uri(doubt.image.url) if doubt.image else None,
+# # #                 'created_at': doubt.created_at,
+# # #                 'reply_count': len(replies_data),
+# # #                 'replies': replies_data
+# # #             })
+# # #         return Response(doubts_data)
+
 # # # class DoubtDetailView(APIView):
 # # #     permission_classes = [IsTeacherRole]
+    
 # # #     def get(self, request, doubt_id):
 # # #         return Response({'id': doubt_id})
 
-# # # # ... (Keep existing DoubtListView, DoubtReplyCreateView, TeacherChaptersView, MarkChapterCompleteView, TestCreateView, AttendanceMarkView, AssignmentCreateView) ...
+# # # class DoubtReplyCreateView(APIView):
+# # #     """Teachers can reply to doubts in their subjects"""
+# # #     permission_classes = [IsAuthenticated]
+    
+# # #     def post(self, request, doubt_id):
+# # #         text = request.data.get('text', '').strip()
+# # #         image = request.FILES.get('image')
+        
+# # #         if not text and not image:
+# # #             return Response({'error': 'Provide text or image.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         try:
+# # #             doubt = Doubt.objects.get(id=doubt_id)
+# # #             if request.user.role == 'teacher':
+# # #                 if doubt.subject not in request.user.subjects.all():
+# # #                     return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+# # #             elif request.user.role == 'student':
+# # #                 if request.user.class_assigned != doubt.student.class_assigned:
+# # #                     return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+            
+# # #             reply = DoubtReply.objects.create(doubt=doubt, user=request.user, text=text, image=image)
+# # #             return Response({
+# # #                 'message': 'Reply posted successfully!',
+# # #                 'reply': {'id': reply.id, 'text': text, 'created_at': reply.created_at}
+# # #             }, status=status.HTTP_201_CREATED)
+# # #         except Doubt.DoesNotExist:
+# # #             return Response({'error': 'Doubt not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+
+
+
+# # # @api_view(['POST'])
+# # # @permission_classes([IsAuthenticated])
+# # # def create_question(request):
+# # #     """Create a new question for a test"""
+# # #     try:
+# # #         # Get data from FormData
+# # #         test_id = request.data.get('test')
+# # #         question_text = request.data.get('question_text', '')
+# # #         question_image = request.FILES.get('question_image', None)
+# # #         option1 = request.data.get('option1', '')
+# # #         option2 = request.data.get('option2', '')
+# # #         option3 = request.data.get('option3', '')
+# # #         option4 = request.data.get('option4', '')
+# # #         correct_option = request.data.get('correct_option', None)
+# # #         explanation = request.data.get('explanation', '')
+        
+# # #         # Validate test exists
+# # #         try:
+# # #             test = Test.objects.get(id=test_id)
+# # #         except Test.DoesNotExist:
+# # #             return Response(
+# # #                 {'error': f'Test with id {test_id} does not exist'},
+# # #                 status=status.HTTP_404_NOT_FOUND
+# # #             )
+        
+# # #         # Check if user is the creator of the test
+# # #         if test.created_by != request.user:
+# # #             return Response(
+# # #                 {'error': 'You are not authorized to add questions to this test'},
+# # #                 status=status.HTTP_403_FORBIDDEN
+# # #             )
+        
+# # #         # Create question
+# # #         question = Question.objects.create(
+# # #             test=test,
+# # #             question_text=question_text,
+# # #             question_image=question_image,
+# # #             option1=option1,
+# # #             option2=option2,
+# # #             option3=option3,
+# # #             option4=option4,
+# # #             correct_option=int(correct_option) if correct_option else None,
+# # #             explanation=explanation
+# # #         )
+        
+# # #         return Response({
+# # #             'message': 'Question created successfully',
+# # #             'question_id': question.id,
+# # #             'question': {
+# # #                 'id': question.id,
+# # #                 'question_text': question.question_text,
+# # #                 'option1': question.option1,
+# # #                 'option2': question.option2,
+# # #                 'option3': question.option3,
+# # #                 'option4': question.option4,
+# # #                 'correct_option': question.correct_option,
+# # #             }
+# # #         }, status=status.HTTP_201_CREATED)
+        
+# # #     except Exception as e:
+# # #         print("Error creating question:", str(e))
+# # #         import traceback
+# # #         print("Traceback:", traceback.format_exc())
+# # #         return Response({
+# # #             'error': 'Failed to create question',
+# # #             'details': str(e)
+# # #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# # # @api_view(['POST'])
+# # # @permission_classes([IsAuthenticated])
+# # # def create_test(request):
+# # #     """Create a new test"""
+# # #     try:
+# # #         data = request.data
+# # #         print("Received data for test creation:", data)  # Debug
+        
+# # #         # Validate required fields
+# # #         required_fields = ['chapter', 'name', 'type', 'marks', 'duration_minutes']
+# # #         for field in required_fields:
+# # #             if field not in data:
+# # #                 return Response(
+# # #                     {'error': f'Missing required field: {field}'}, 
+# # #                     status=status.HTTP_400_BAD_REQUEST
+# # #                 )
+        
+# # #         # Create the test
+# # #         test = Test.objects.create(
+# # #             chapter_id=data['chapter'],
+# # #             name=data['name'],
+# # #             description=data.get('description', ''),
+# # #             type=data['type'],
+# # #             marks=data['marks'],
+# # #             duration_minutes=data['duration_minutes'],
+# # #             created_by=request.user
+# # #         )
+        
+# # #         print(f"Test created successfully with ID: {test.id}")  # Debug
+        
+# # #         # Return response with ID
+# # #         return Response({
+# # #             'id': test.id,  # THIS IS THE IMPORTANT PART!
+# # #             'message': 'Test created successfully',
+# # #             'test': {
+# # #                 'id': test.id,
+# # #                 'name': test.name,
+# # #                 'description': test.description,
+# # #                 'type': test.type,
+# # #                 'marks': test.marks,
+# # #                 'duration_minutes': test.duration_minutes,
+# # #                 'chapter': test.chapter_id
+# # #             }
+# # #         }, status=status.HTTP_201_CREATED)
+        
+# # #     except Exception as e:
+# # #         print("Error creating test:", str(e))
+# # #         import traceback
+# # #         print("Traceback:", traceback.format_exc())
+# # #         return Response({
+# # #             'error': 'Failed to create test',
+# # #             'details': str(e)
+# # #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# # # # @api_view(['GET'])
+# # # # @permission_classes([IsAuthenticated])
+# # # # def get_assigned_classes(request):
+# # # #     """Get all classes assigned to the teacher"""
+# # # #     try:
+# # # #         # Get teacher's assigned class-subjects
+# # # #         from admin_tasks.models import ClassSubject
+        
+# # # #         teacher = request.user
+        
+# # # #         # Get all class-subjects assigned to this teacher
+# # # #         assigned_class_subjects = ClassSubject.objects.filter(
+# # # #             teacher=teacher
+# # # #         ).select_related('class_name', 'subject')
+        
+# # # #         # Group by class
+# # # #         classes_dict = {}
+# # # #         for cs in assigned_class_subjects:
+# # # #             class_id = cs.class_name.id
+# # # #             if class_id not in classes_dict:
+# # # #                 classes_dict[class_id] = {
+# # # #                     'id': cs.class_name.id,
+# # # #                     'name': cs.class_name.name,
+# # # #                     'subjects': [],
+# # # #                     'student_count': cs.class_name.students.count() if hasattr(cs.class_name, 'students') else 0
+# # # #                 }
+            
+# # # #             classes_dict[class_id]['subjects'].append({
+# # # #                 'id': cs.subject.id,
+# # # #                 'name': cs.subject.name,
+# # # #             })
+        
+# # # #         classes = list(classes_dict.values())
+        
+# # # #         return Response({
+# # # #             'classes': classes,
+# # # #             'total_classes': len(classes)
+# # # #         }, status=status.HTTP_200_OK)
+        
+# # # #     except Exception as e:
+# # # #         print("Error fetching assigned classes:", str(e))
+# # # #         import traceback
+# # # #         print("Traceback:", traceback.format_exc())
+# # # #         return Response({
+# # # #             'error': 'Failed to fetch assigned classes',
+# # # #             'details': str(e)
+# # # #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)      
+
+
+
+# # # @api_view(['GET'])
+# # # @permission_classes([IsAuthenticated])
+# # # def get_assigned_classes(request):
+# # #     """Get all classes assigned to the teacher"""
+# # #     try:
+# # #         from admin_tasks.models import Class
+        
+# # #         # For now, return all classes
+# # #         # We'll make this filter by teacher once we know your database structure
+# # #         classes = Class.objects.all()
+        
+# # #         classes_data = []
+# # #         for cls in classes:
+# # #             classes_data.append({
+# # #                 'id': cls.id,
+# # #                 'name': cls.name,
+# # #                 'subjects': [],  # We'll add subjects later
+# # #                 'student_count': 0  # We'll add student count later
+# # #             })
+        
+# # #         return Response({
+# # #             'classes': classes_data,
+# # #             'total_classes': len(classes_data)
+# # #         }, status=status.HTTP_200_OK)
+        
+# # #     except Exception as e:
+# # #         print("Error fetching assigned classes:", str(e))
+# # #         import traceback
+# # #         print("Traceback:", traceback.format_exc())
+# # #         return Response({
+# # #             'error': 'Failed to fetch assigned classes',
+# # #             'details': str(e)
+# # #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  ATTENDANCE MANAGEMENT VIEWS
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # # 
+# # # class ClassStudentsView(APIView):
+# # #     """Get all students in a class"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, class_id):
+# # #         # Verify teacher is assigned to this class
+# # #         if not TeacherAssignment.objects.filter(
+# # #             teacher=request.user,
+# # #             class_assigned_id=class_id
+# # #         ).exists():
+# # #             return Response({
+# # #                 'error': 'You are not assigned to this class.'
+# # #             }, status=status.HTTP_403_FORBIDDEN)
+        
+# # #         # Get all students in the class
+# # #         students = CustomUser.objects.filter(
+# # #             role='student',
+# # #             class_assigned_id=class_id,
+# # #             is_approved=True
+# # #         ).order_by('first_name', 'last_name')
+        
+# # #         students_data = [{
+# # #             'id': student.id,
+# # #             'first_name': student.first_name,
+# # #             'last_name': student.last_name,
+# # #             'full_name': student.get_full_name() or student.username,  # NEW
+# # #             'roll_number': student.unique_id,  # NEW: Using unique_id as roll number
+# # #             'email': student.email,
+# # #             'unique_id': student.unique_id
+# # #         } for student in students]
+        
+# # #         return Response(students_data)
+
+
+# # # class AttendanceMarkView(APIView):
+# # #     """Mark attendance for students"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request):
+# # #         class_id = request.data.get('class_id')
+# # #         subject_id = request.data.get('subject_id')
+# # #         date_str = request.data.get('date')
+# # #         student_ids = request.data.get('student_ids', [])
+        
+# # #         if not all([class_id, subject_id, date_str]):
+# # #             return Response({
+# # #                 'error': 'class_id, subject_id, and date are required.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         try:
+# # #             # Verify teacher assignment
+# # #             TeacherAssignment.objects.get(
+# # #                 teacher=request.user,
+# # #                 class_assigned_id=class_id,
+# # #                 subject_id=subject_id
+# # #             )
+            
+# # #             # Parse date
+# # #             attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+# # #             # Validate date is not in the future
+# # #             if attendance_date > timezone.now().date():
+# # #                 return Response({
+# # #                     'error': 'Cannot mark attendance for future dates.'
+# # #                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+# # #             # Get all students in class
+# # #             all_students = CustomUser.objects.filter(
+# # #                 role='student',
+# # #                 class_assigned_id=class_id,
+# # #                 is_approved=True
+# # #             )
+            
+# # #             if not all_students.exists():
+# # #                 return Response({
+# # #                     'error': 'No students found in this class.'
+# # #                 }, status=status.HTTP_404_NOT_FOUND)
+            
+# # #             # Mark attendance for each student
+# # #             marked_count = 0
+# # #             for student in all_students:
+# # #                 # Check if already marked for this date
+# # #                 attendance, created = Attendance.objects.update_or_create(
+# # #                     teacher=request.user,
+# # #                     student=student,
+# # #                     class_assigned_id=class_id,
+# # #                     date=attendance_date,
+# # #                     defaults={
+# # #                         'is_present': student.id in student_ids,
+# # #                         'time': timezone.now().time()
+# # #                     }
+# # #                 )
+# # #                 marked_count += 1
+            
+# # #             present_count = len(student_ids)
+# # #             absent_count = marked_count - present_count
+            
+# # #             return Response({
+# # #                 'message': f'Attendance marked successfully for {marked_count} students!',
+# # #                 'date': date_str,
+# # #                 'total_students': marked_count,
+# # #                 'present_count': present_count,
+# # #                 'absent_count': absent_count
+# # #             }, status=status.HTTP_201_CREATED)
+        
+# # #         except TeacherAssignment.DoesNotExist:
+# # #             return Response({
+# # #                 'error': 'You are not assigned to this class-subject combination.'
+# # #             }, status=status.HTTP_403_FORBIDDEN)
+# # #         except ValueError:
+# # #             return Response({
+# # #                 'error': 'Invalid date format. Use YYYY-MM-DD.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+# # #         except Exception as e:
+# # #             return Response({
+# # #                 'error': f'An error occurred: {str(e)}'
+# # #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
@@ -7123,6 +6937,59 @@ class TeacherAttendanceHistoryView(APIView):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # # # teachers/views.py - COMPLETE WITH ALL ENDPOINTS
+# # # """
+# # # Complete Teacher Module Views - ALL ENDPOINTS INCLUDED
+# # # EduVibe Platform - 2026
+# # # ✅ Resolved IsTeacherRole NameError
+# # # ✅ Removed Duplicate Code & Imports
+# # # ✅ All functionality preserved
+# # # ✅ Added new function-based views for tests
+# # # """
+# # # from rest_framework.decorators import api_view, permission_classes
+# # # from rest_framework.permissions import IsAuthenticated
+# # # from rest_framework.response import Response
+# # # from rest_framework import status
+# # # from .models import Test, Question, Option
+
+
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  IMPORTS
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # from rest_framework.views import APIView
+# # # from rest_framework.response import Response
+# # # from rest_framework import status
+# # # from rest_framework.permissions import IsAuthenticated
+# # # from rest_framework.decorators import api_view, permission_classes  # ✅ ADDED FOR FUNCTION-BASED VIEWS
+# # # from django.db.models import Count, Q, Avg, Max, Min  # ✅ ADDED Max, Min
+# # # from django.utils import timezone
+# # # from datetime import date
+# # # from django.db import transaction
+# # # import traceback
+
+# # # from users.models import CustomUser
+# # # from admin_tasks.models import Class, Subject, Chapter
+# # # from .models import (
+# # # TeacherAssignment, Test, Question, Attendance,Assignment, Doubt, DoubtReply,Test, Question, Option)
+# # # from students.models import TestAttempt, StudentAnswer
 
 # # # # ═══════════════════════════════════════════════════════════
 # # # #  CUSTOM PERMISSION
@@ -7135,6 +7002,218 @@ class TeacherAttendanceHistoryView(APIView):
 # # #         return (
 # # #             super().has_permission(request, view) and
 # # #             request.user.role == 'teacher'
+# # #         )
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  NEW FUNCTION-BASED VIEWS FOR TESTS
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # # 
+
+
+
+# # # @api_view(['GET'])
+# # # @permission_classes([IsAuthenticated])
+# # # def get_all_teacher_tests(request):
+# # #     """Get all tests created by the logged-in teacher, grouped by subject"""
+# # #     try:
+# # #         teacher = request.user
+        
+# # #         # Get all assignments for this teacher
+# # #         assignments = TeacherAssignment.objects.filter(
+# # #             teacher=teacher
+# # #         ).select_related('class_assigned', 'subject')
+        
+# # #         tests_by_subject = []
+        
+# # #         for assignment in assignments:
+# # #             # Get all tests for this subject-class combination
+# # #             tests = Test.objects.filter(
+# # #                 chapter__subject=assignment.subject,
+# # #                 chapter__class_assigned=assignment.class_assigned,
+# # #                 created_by=teacher
+# # #             ).select_related('chapter').annotate(
+# # #                 questions_count=Count('question'),  # ✅ FIXED: 'question' not 'questions'
+# # #                 attempts_count=Count('attempts')     # ✅ FIXED: 'attempts' not 'testattempt'
+# # #             ).order_by('-created_at')
+            
+# # #             if tests.exists():
+# # #                 tests_data = []
+# # #                 for test in tests:
+# # #                     tests_data.append({
+# # #                         'id': test.id,
+# # #                         'name': test.name,
+# # #                         'description': test.description,
+# # #                         'type': test.type,
+# # #                         'marks': test.marks,
+# # #                         'duration_minutes': test.duration_minutes,
+# # #                         'chapter_name': test.chapter.name,
+# # #                         'chapter_id': test.chapter.id,
+# # #                         'questions_count': test.questions_count,
+# # #                         'attempts_count': test.attempts_count,
+# # #                         'created_at': test.created_at
+# # #                     })
+                
+# # #                 tests_by_subject.append({
+# # #                     'subject_id': assignment.subject.id,
+# # #                     'subject_name': assignment.subject.name,
+# # #                     'class_id': assignment.class_assigned.id,
+# # #                     'class_name': assignment.class_assigned.name,
+# # #                     'tests': tests_data
+# # #                 })
+        
+# # #         return Response({
+# # #             'tests_by_subject': tests_by_subject
+# # #         })
+        
+# # #     except Exception as e:
+# # #         import traceback
+# # #         print("ERROR in get_all_teacher_tests:")
+# # #         print(traceback.format_exc())
+# # #         return Response(
+# # #             {'error': str(e)},
+# # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+# # #         )
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # # # @api_view(['GET'])
+# # # # @permission_classes([IsAuthenticated])
+# # # # def get_all_teacher_tests(request):
+# # # #     """Get all tests created by the logged-in teacher, grouped by subject"""
+# # # #     try:
+# # # #         teacher = request.user
+        
+# # # #         # Get all assignments for this teacher
+# # # #         assignments = TeacherAssignment.objects.filter(
+# # # #             teacher=teacher
+# # # #         ).select_related('class_assigned', 'subject')
+        
+# # # #         tests_by_subject = []
+        
+# # # #         for assignment in assignments:
+# # # #             # Get all tests for this subject-class combination
+# # # #             tests = Test.objects.filter(
+# # # #                 chapter__subject=assignment.subject,
+# # # #                 chapter__class_for=assignment.class_assigned,
+# # # #                 created_by=teacher
+# # # #             ).select_related('chapter').annotate(
+# # # #                 questions_count=Count('questions'),
+# # # #                 attempts_count=Count('testattempt')
+# # # #             ).order_by('-created_at')
+            
+# # # #             if tests.exists():
+# # # #                 tests_data = []
+# # # #                 for test in tests:
+# # # #                     tests_data.append({
+# # # #                         'id': test.id,
+# # # #                         'name': test.name,
+# # # #                         'description': test.description,
+# # # #                         'type': test.type,
+# # # #                         'marks': test.marks,
+# # # #                         'duration_minutes': test.duration_minutes,
+# # # #                         'chapter_name': test.chapter.name,
+# # # #                         'chapter_id': test.chapter.id,
+# # # #                         'questions_count': test.questions_count,
+# # # #                         'attempts_count': test.attempts_count,
+# # # #                         'created_at': test.created_at
+# # # #                     })
+                
+# # # #                 tests_by_subject.append({
+# # # #                     'subject_id': assignment.subject.id,
+# # # #                     'subject_name': assignment.subject.name,
+# # # #                     'class_id': assignment.class_assigned.id,
+# # # #                     'class_name': assignment.class_assigned.name,
+# # # #                     'tests': tests_data
+# # # #                 })
+        
+# # # #         return Response({
+# # # #             'tests_by_subject': tests_by_subject
+# # # #         })
+        
+# # # #     except Exception as e:
+# # # #         return Response(
+# # # #             {'error': str(e)},
+# # # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+# # # #         )
+
+
+# # # @api_view(['GET'])
+# # # @permission_classes([IsAuthenticated])
+# # # def get_test_results(request, test_id):
+# # #     """Get all student attempts and scores for a specific test"""
+# # #     try:
+# # #         teacher = request.user
+        
+# # #         # Get the test and verify it belongs to this teacher
+# # #         try:
+# # #             test = Test.objects.select_related(
+# # #                 'chapter__subject',
+# # #                 'chapter__class_for'
+# # #             ).get(id=test_id, created_by=teacher)
+# # #         except Test.DoesNotExist:
+# # #             return Response(
+# # #                 {'error': 'Test not found or you do not have permission to view it'},
+# # #                 status=status.HTTP_404_NOT_FOUND
+# # #             )
+        
+# # #         # Get all test attempts with student info
+# # #         attempts = TestAttempt.objects.filter(
+# # #             test=test,
+# # #             is_submitted=True
+# # #         ).select_related('student').order_by('-score', 'submitted_at')
+        
+# # #         # Calculate statistics
+# # #         stats = attempts.aggregate(
+# # #             total_attempts=Count('id'),
+# # #             average_score=Avg('percentage'),
+# # #             highest_score=Max('percentage'),
+# # #             lowest_score=Min('percentage')
+# # #         )
+        
+# # #         # Format results
+# # #         results = []
+# # #         for attempt in attempts:
+# # #             results.append({
+# # #                 'id': attempt.id,
+# # #                 'student_name': f'{attempt.student.first_name} {attempt.student.last_name}'.strip(),
+# # #                 'student_unique_id': attempt.student.unique_id,
+# # #                 'score': attempt.score,
+# # #                 'percentage': attempt.percentage,
+# # #                 'submitted_at': attempt.submitted_at,
+# # #                 'time_taken_minutes': attempt.time_taken_minutes
+# # #             })
+        
+# # #         return Response({
+# # #             'test_info': {
+# # #                 'id': test.id,
+# # #                 'name': test.name,
+# # #                 'description': test.description,
+# # #                 'type': test.type,
+# # #                 'marks': test.marks,
+# # #                 'duration_minutes': test.duration_minutes,
+# # #                 'subject_name': test.chapter.subject.name,
+# # #                 'class_name': test.chapter.class_for.name,
+# # #                 'chapter_name': test.chapter.name
+# # #             },
+# # #             'results': results,
+# # #             'stats': stats
+# # #         })
+        
+# # #     except Exception as e:
+# # #         return Response(
+# # #             {'error': str(e)},
+# # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
 # # #         )
 
 # # # # ═══════════════════════════════════════════════════════════
@@ -7196,51 +7275,593 @@ class TeacherAttendanceHistoryView(APIView):
 # # #         })
 
 # # # class TeacherClassesListView(APIView):
-# # #     """
-# # #     Get all classes where teacher is assigned.
-# # #     Used for: Dropdowns in TeacherDoubts, TeacherAttendance, etc.
-# # #     """
+# # #     """Get all classes assigned to teacher with statistics"""
 # # #     permission_classes = [IsTeacherRole]
     
 # # #     def get(self, request):
-# # #         teacher = request.user
+# # #         # Get unique classes assigned to this teacher
 # # #         assignments = TeacherAssignment.objects.filter(
-# # #             teacher=teacher
+# # #             teacher=request.user
 # # #         ).select_related('class_assigned').values(
-# # #             'class_assigned__id', 'class_assigned__name'
+# # #             'class_assigned__id', 
+# # #             'class_assigned__name'
 # # #         ).distinct()
         
-# # #         classes = [
-# # #             {'id': a['class_assigned__id'], 'name': a['class_assigned__name']}
-# # #             for a in assignments
-# # #         ]
-# # #         return Response(classes)
+# # #         classes_data = []
+# # #         for assignment in assignments:
+# # #             class_id = assignment['class_assigned__id']
+# # #             class_name = assignment['class_assigned__name']
+            
+# # #             # Count subjects assigned to this teacher for this class
+# # #             subjects_count = TeacherAssignment.objects.filter(
+# # #                 teacher=request.user,
+# # #                 class_assigned_id=class_id
+# # #             ).values('subject').distinct().count()
+            
+# # #             # Count students in this class
+# # #             students_count = CustomUser.objects.filter(
+# # #                 role='student',
+# # #                 class_assigned_id=class_id,
+# # #                 is_approved=True
+# # #             ).count()
+            
+# # #             # Count tests created by this teacher for this class
+# # #             tests_count = Test.objects.filter(
+# # #                 created_by=request.user,
+# # #                 chapter__class_assigned_id=class_id
+# # #             ).count()
+            
+# # #             classes_data.append({
+# # #                 'id': class_id,
+# # #                 'name': class_name,
+# # #                 'subjects_count': subjects_count,
+# # #                 'students_count': students_count,
+# # #                 'tests_count': tests_count
+# # #             })
+        
+# # #         return Response(classes_data)
 
 # # # class TeacherSubjectsListView(APIView):
-# # #     """
-# # #     Get all subjects teacher teaches (optionally filtered by class)
-# # #     """
+# # #     """Get subjects assigned to teacher, optionally filtered by class"""
 # # #     permission_classes = [IsTeacherRole]
     
 # # #     def get(self, request):
-# # #         teacher = request.user
 # # #         class_id = request.GET.get('class_id')
+# # #         assignments = TeacherAssignment.objects.filter(teacher=request.user)
         
-# # #         assignments = TeacherAssignment.objects.filter(teacher=teacher)
 # # #         if class_id:
 # # #             assignments = assignments.filter(class_assigned_id=class_id)
         
-# # #         subjects = assignments.select_related('subject').values(
-# # #             'subject__id', 'subject__name'
-# # #         ).distinct()
+# # #         subjects = assignments.values('subject__id', 'subject__name').distinct()
+# # #         return Response([{'id': s['subject__id'], 'name': s['subject__name']} for s in subjects])
+
+# # # class TeacherClassSubjectsView(APIView):
+# # #     """Get all subjects for a specific class assigned to this teacher"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, class_id):
+# # #         # Verify teacher is assigned to this class
+# # #         if not TeacherAssignment.objects.filter(
+# # #             teacher=request.user,
+# # #             class_assigned_id=class_id
+# # #         ).exists():
+# # #             return Response({
+# # #                 'error': 'You are not assigned to this class.'
+# # #             }, status=status.HTTP_403_FORBIDDEN)
         
-# # #         return Response([
-# # #             {'id': s['subject__id'], 'name': s['subject__name']}
-# # #             for s in subjects
-# # #         ])
+# # #         # Get all subjects this teacher teaches in this class
+# # #         assignments = TeacherAssignment.objects.filter(
+# # #             teacher=request.user,
+# # #             class_assigned_id=class_id
+# # #         ).select_related('subject', 'class_assigned')
+        
+# # #         subjects_data = []
+# # #         for assignment in assignments:
+# # #             # Count chapters for this subject in this class
+# # #             chapters_count = Chapter.objects.filter(
+# # #                 subject=assignment.subject,
+# # #                 class_assigned_id=class_id
+# # #             ).count()
+            
+# # #             completed_chapters = Chapter.objects.filter(
+# # #                 subject=assignment.subject,
+# # #                 class_assigned_id=class_id,
+# # #                 is_completed=True
+# # #             ).count()
+            
+# # #             # Count tests for this subject in this class
+# # #             tests_count = Test.objects.filter(
+# # #                 created_by=request.user,
+# # #                 chapter__subject=assignment.subject,
+# # #                 chapter__class_assigned_id=class_id
+# # #             ).count()
+            
+# # #             subjects_data.append({
+# # #                 'id': assignment.subject.id,
+# # #                 'name': assignment.subject.name,
+# # #                 'class_id': class_id,
+# # #                 'class_name': assignment.class_assigned.name,
+# # #                 'chapters_count': chapters_count,
+# # #                 'completed_chapters': completed_chapters,
+# # #                 'tests_count': tests_count
+# # #             })
+        
+# # #         return Response({
+# # #             'class_id': class_id,
+# # #             'class_name': assignments.first().class_assigned.name if assignments.exists() else None,
+# # #             'subjects': subjects_data
+# # #         })
 
 # # # # ═══════════════════════════════════════════════════════════
-# # # #  DOUBT MANAGEMENT
+# # # #  OTHER CORE VIEWS
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # class TeacherSubjectClassesView(APIView):
+# # #     """Returns classes filtered by subject for the teacher"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request):
+# # #         subject_id = request.GET.get('subject_id')
+# # #         assignments = TeacherAssignment.objects.filter(teacher=request.user)
+# # #         if subject_id:
+# # #             assignments = assignments.filter(subject_id=subject_id)
+# # #         classes = assignments.values('class_assigned__id', 'class_assigned__name').distinct()
+# # #         return Response([{'id': c['class_assigned__id'], 'name': c['class_assigned__name']} for c in classes])
+
+# # # class TeacherSearchView(APIView):
+# # #     """Search for students or resources"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request):
+# # #         query = request.GET.get('q', '')
+# # #         students = CustomUser.objects.filter(
+# # #             Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(unique_id__icontains=query),
+# # #             role='student'
+# # #         )[:10]
+# # #         return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'uid': s.unique_id} for s in students])
+
+# # # class ClassStudentsView(APIView):
+# # #     """Get all students in a specific class assigned to the teacher"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, class_id):
+# # #         students = CustomUser.objects.filter(class_assigned_id=class_id, role='student', is_approved=True)
+# # #         return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'unique_id': s.unique_id} for s in students])
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  CHAPTER & TEST MANAGEMENT
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # # 
+# # # class TeacherChaptersView(APIView):
+# # #     """Get chapters for class-subject"""
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, class_id=None, subject_id=None):
+# # #         # Accept both URL params and query params
+# # #         class_id = class_id or request.GET.get('class_id')
+# # #         subject_id = subject_id or request.GET.get('subject_id')
+        
+# # #         if not class_id or not subject_id:
+# # #             return Response(
+# # #                 {'error': 'class_id and subject_id required.'},
+# # #                 status=status.HTTP_400_BAD_REQUEST
+# # #             )
+        
+# # #         if not TeacherAssignment.objects.filter(
+# # #             teacher=request.user,
+# # #             class_assigned_id=class_id,
+# # #             subject_id=subject_id
+# # #         ).exists():
+# # #             return Response(
+# # #                 {'error': 'Not assigned to this class-subject.'},
+# # #                 status=status.HTTP_403_FORBIDDEN
+# # #             )
+        
+# # #         chapters = Chapter.objects.filter(
+# # #             class_assigned_id=class_id,
+# # #             subject_id=subject_id
+# # #         )
+        
+# # #         chapters_data = [{
+# # #             'id': c.id,
+# # #             'name': c.name,
+# # #             'is_completed': c.is_completed,
+# # #             'tests_count': Test.objects.filter(chapter=c).count()
+# # #         } for c in chapters]
+        
+# # #         return Response(chapters_data)
+
+
+# # # class MarkChapterCompleteView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request, chapter_id):
+# # #         try:
+# # #             chapter = Chapter.objects.get(id=chapter_id)
+# # #             if not TeacherAssignment.objects.filter(teacher=request.user, class_assigned=chapter.class_assigned, subject=chapter.subject).exists():
+# # #                 return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+            
+# # #             chapter.is_completed = True
+# # #             chapter.save()
+# # #             return Response({'message': 'Chapter marked as completed!'})
+# # #         except Chapter.DoesNotExist:
+# # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+# # # class TestListView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request):
+# # #         tests = Test.objects.filter(created_by=request.user).select_related('chapter')
+# # #         return Response([{'id': t.id, 'chapter': t.chapter.name, 'type': t.type, 'marks': t.marks} for t in tests])
+
+# # # # class TestCreateView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def post(self, request):
+# # # #         test_type = request.data.get('type')
+# # # #         chapter_id = request.data.get('chapter_id')
+# # # #         marks = request.data.get('marks')
+        
+# # # #         if test_type not in ['mcq', 'descriptive'] or not marks or int(marks) not in [10, 20, 50]:
+# # # #             return Response({'error': 'Invalid data.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # # #         try:
+# # # #             chapter = Chapter.objects.get(id=chapter_id)
+# # # #             test = Test.objects.create(type=test_type, chapter=chapter, marks=int(marks), created_by=request.user)
+# # # #             return Response({'message': 'Test created!', 'test': {'id': test.id, 'type': test.type}}, status=status.HTTP_201_CREATED)
+# # # #         except Chapter.DoesNotExist:
+# # # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+# # # class TestCreateView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request):
+# # #         """
+# # #         Create a new test
+# # #         Expected payload:
+# # #         {
+# # #             "name": "Test Name",
+# # #             "description": "Test Description",
+# # #             "type": "mcq" or "descriptive",
+# # #             "marks": 10,
+# # #             "duration_minutes": 30,
+# # #             "chapter": chapter_id
+# # #         }
+# # #         """
+# # #         # Get data from request
+# # #         name = request.data.get('name')
+# # #         description = request.data.get('description', '')
+# # #         test_type = request.data.get('type')
+# # #         marks = request.data.get('marks')
+# # #         duration_minutes = request.data.get('duration_minutes')
+# # #         chapter_id = request.data.get('chapter') or request.data.get('chapter_id')  # Support both field names
+        
+# # #         # Validate required fields
+# # #         if not name:
+# # #             return Response({
+# # #                 'error': 'Test name is required.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         if test_type not in ['mcq', 'descriptive']:
+# # #             return Response({
+# # #                 'error': 'Invalid test type. Must be "mcq" or "descriptive".'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         if not marks or int(marks) <= 0:
+# # #             return Response({
+# # #                 'error': 'Valid marks required (must be greater than 0).'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         if not duration_minutes or int(duration_minutes) <= 0:
+# # #             return Response({
+# # #                 'error': 'Valid duration required (must be greater than 0).'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         if not chapter_id:
+# # #             return Response({
+# # #                 'error': 'Chapter is required.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         try:
+# # #             # Verify chapter exists
+# # #             chapter = Chapter.objects.get(id=chapter_id)
+            
+# # #             # Verify teacher is assigned to this subject and class
+# # #             assignment_exists = TeacherAssignment.objects.filter(
+# # #                 teacher=request.user,
+# # #                 subject=chapter.subject,
+# # #                 class_assigned=chapter.class_assigned
+# # #             ).exists()
+            
+# # #             if not assignment_exists:
+# # #                 return Response({
+# # #                     'error': 'You are not assigned to teach this subject in this class.'
+# # #                 }, status=status.HTTP_403_FORBIDDEN)
+            
+# # #             # Create test
+# # #             test = Test.objects.create(
+# # #                 name=name,
+# # #                 description=description,
+# # #                 type=test_type,
+# # #                 chapter=chapter,
+# # #                 marks=int(marks),
+# # #                 duration_minutes=int(duration_minutes),
+# # #                 created_by=request.user
+# # #             )
+            
+# # #             return Response({
+# # #                 'message': 'Test created successfully!',
+# # #                 'test': {
+# # #                     'id': test.id,
+# # #                     'name': test.name,
+# # #                     'type': test.type,
+# # #                     'marks': test.marks,
+# # #                     'duration_minutes': test.duration_minutes,
+# # #                     'chapter_id': test.chapter.id,
+# # #                     'chapter_name': test.chapter.name
+# # #                 }
+# # #             }, status=status.HTTP_201_CREATED)
+            
+# # #         except Chapter.DoesNotExist:
+# # #             return Response({
+# # #                 'error': 'Chapter not found.'
+# # #             }, status=status.HTTP_404_NOT_FOUND)
+# # #         except Exception as e:
+# # #             # Log the error for debugging
+# # #             import traceback
+# # #             print(f"Error creating test: {str(e)}")
+# # #             print(traceback.format_exc())
+            
+# # #             return Response({
+# # #                 'error': f'Failed to create test: {str(e)}'
+# # #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+
+
+
+
+
+
+
+# # # class TestDetailView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, test_id):
+# # #         try:
+# # #             test = Test.objects.get(id=test_id, created_by=request.user)
+# # #             questions = Question.objects.filter(test=test)
+# # #             return Response({
+# # #                 'id': test.id,
+# # #                 'type': test.type,
+# # #                 'questions': [{'id': q.id, 'text': q.text} for q in questions]
+# # #             })
+# # #         except Test.DoesNotExist:
+# # #             return Response(status=status.HTTP_404_NOT_FOUND)
+
+# # # class TestResultsView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, test_id):
+# # #         attempts = TestAttempt.objects.filter(test_id=test_id).select_related('student')
+# # #         return Response([{'student': a.student.first_name, 'score': a.score, 'completed': a.completed_at} for a in attempts])
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  QUESTION MANAGEMENT
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # # class QuestionCreateView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def post(self, request, test_id):
+# # # #         return Response({'message': 'Question endpoint placeholder'}, status=201)
+
+# # # class QuestionCreateView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request, test_id=None):
+# # #         """
+# # #         Create a new question for a test
+# # #         Expected payload (FormData):
+# # #         {
+# # #             "test": test_id,
+# # #             "question_text": "Question text here",
+# # #             "question_image": <file> (optional),
+# # #             "option1": "Option 1" (for MCQ),
+# # #             "option2": "Option 2" (for MCQ),
+# # #             "option3": "Option 3" (for MCQ),
+# # #             "option4": "Option 4" (for MCQ),
+# # #             "correct_option": 1-4 (for MCQ),
+# # #             "explanation": "Explanation text" (optional)
+# # #         }
+# # #         """
+# # #         # Get test_id from URL param or from request body
+# # #         test_id = test_id or request.data.get('test')
+        
+# # #         if not test_id:
+# # #             return Response({
+# # #                 'error': 'Test ID is required.'
+# # #             }, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         try:
+# # #             # Verify test exists and belongs to this teacher
+# # #             test = Test.objects.get(id=test_id, created_by=request.user)
+            
+# # #             # Get question data
+# # #             question_text = request.data.get('question_text', '')
+            
+# # #             if not question_text:
+# # #                 return Response({
+# # #                     'error': 'Question text is required.'
+# # #                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+# # #             # Create question
+# # #             question = Question.objects.create(
+# # #                 test=test,
+# # #                 question_text=question_text,
+# # #                 explanation=request.data.get('explanation', '')
+# # #             )
+            
+# # #             # For MCQ tests, add options
+# # #             if test.type == 'mcq':
+# # #                 option1 = request.data.get('option1', '')
+# # #                 option2 = request.data.get('option2', '')
+# # #                 option3 = request.data.get('option3', '')
+# # #                 option4 = request.data.get('option4', '')
+# # #                 correct_option = request.data.get('correct_option')
+                
+# # #                 if not all([option1, option2, option3, option4, correct_option]):
+# # #                     question.delete()  # Delete the question if options are incomplete
+# # #                     return Response({
+# # #                         'error': 'All options and correct option are required for MCQ.'
+# # #                     }, status=status.HTTP_400_BAD_REQUEST)
+                
+# # #                 try:
+# # #                     correct_option = int(correct_option)
+# # #                     if correct_option not in [1, 2, 3, 4]:
+# # #                         question.delete()
+# # #                         return Response({
+# # #                             'error': 'Correct option must be between 1 and 4.'
+# # #                         }, status=status.HTTP_400_BAD_REQUEST)
+# # #                 except (ValueError, TypeError):
+# # #                     question.delete()
+# # #                     return Response({
+# # #                         'error': 'Invalid correct option value.'
+# # #                     }, status=status.HTTP_400_BAD_REQUEST)
+                
+# # #                 question.option1 = option1
+# # #                 question.option2 = option2
+# # #                 question.option3 = option3
+# # #                 question.option4 = option4
+# # #                 question.correct_option = correct_option
+# # #                 question.save()
+            
+# # #             # Handle image upload if present
+# # #             if request.FILES.get('question_image'):
+# # #                 question.question_image = request.FILES['question_image']
+# # #                 question.save()
+            
+# # #             return Response({
+# # #                 'message': 'Question created successfully!',
+# # #                 'question': {
+# # #                     'id': question.id,
+# # #                     'question_text': question.question_text,
+# # #                     'has_image': bool(question.question_image)
+# # #                 }
+# # #             }, status=status.HTTP_201_CREATED)
+            
+# # #         except Test.DoesNotExist:
+# # #             return Response({
+# # #                 'error': 'Test not found or you do not have permission to add questions to this test.'
+# # #             }, status=status.HTTP_404_NOT_FOUND)
+# # #         except Exception as e:
+# # #             # Log the error for debugging
+# # #             import traceback
+# # #             print(f"Error creating question: {str(e)}")
+# # #             print(traceback.format_exc())
+            
+# # #             return Response({
+# # #                 'error': f'Failed to create question: {str(e)}'
+# # #             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+
+
+
+
+# # # class QuestionUpdateView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def put(self, request, question_id):
+# # #         return Response({'message': 'Update placeholder'})
+
+# # # class QuestionDeleteView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def delete(self, request, question_id):
+# # #         return Response(status=204)
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  ATTENDANCE
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # class AttendanceMarkView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request):
+# # #         class_id = request.data.get('class_id')
+# # #         date_str = request.data.get('date')
+# # #         student_ids = request.data.get('student_ids', [])
+        
+# # #         try:
+# # #             attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
+# # #             all_students = CustomUser.objects.filter(role='student', class_assigned_id=class_id, is_approved=True)
+            
+# # #             for student in all_students:
+# # #                 Attendance.objects.update_or_create(
+# # #                     teacher=request.user, student=student, class_assigned_id=class_id, date=attendance_date,
+# # #                     defaults={'is_present': student.id in student_ids, 'time': timezone.now().time()}
+# # #                 )
+# # #             return Response({'message': 'Attendance marked successfully!'})
+# # #         except Exception as e:
+# # #             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# # # class AttendanceListView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request):
+# # #         return Response([])
+
+# # # class StudentAttendanceHistoryView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, student_id):
+# # #         return Response([])
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  ASSIGNMENTS
+# # # # ═══════════════════════════════════════════════════════════
+
+# # # class AssignmentCreateView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def post(self, request):
+# # #         chapter_id = request.data.get('chapter_id')
+# # #         description = request.data.get('description', '').strip()
+# # #         file = request.FILES.get('file')
+        
+# # #         if not description:
+# # #             return Response({'error': 'Description is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         try:
+# # #             chapter = Chapter.objects.get(id=chapter_id)
+# # #             assignment = Assignment.objects.create(teacher=request.user, chapter=chapter, description=description, file=file)
+# # #             return Response({'message': 'Assignment created!', 'id': assignment.id}, status=status.HTTP_201_CREATED)
+# # #         except Chapter.DoesNotExist:
+# # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+# # # class AssignmentListView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request):
+# # #         assignments = Assignment.objects.filter(teacher=request.user)
+# # #         return Response([{'id': a.id, 'desc': a.description} for a in assignments])
+
+# # # class AssignmentDetailView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, assignment_id):
+# # #         return Response({'id': assignment_id})
+
+# # # # ═══════════════════════════════════════════════════════════
+# # # #  DOUBTS
 # # # # ═══════════════════════════════════════════════════════════
 
 # # # class DoubtListView(APIView):
@@ -7293,6 +7914,12 @@ class TeacherAttendanceHistoryView(APIView):
 # # #             })
 # # #         return Response(doubts_data)
 
+# # # class DoubtDetailView(APIView):
+# # #     permission_classes = [IsTeacherRole]
+    
+# # #     def get(self, request, doubt_id):
+# # #         return Response({'id': doubt_id})
+
 # # # class DoubtReplyCreateView(APIView):
 # # #     """Teachers can reply to doubts in their subjects"""
 # # #     permission_classes = [IsAuthenticated]
@@ -7321,108 +7948,868 @@ class TeacherAttendanceHistoryView(APIView):
 # # #         except Doubt.DoesNotExist:
 # # #             return Response({'error': 'Doubt not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-# # # # ═══════════════════════════════════════════════════════════
-# # # #  CHAPTER & TEST MANAGEMENT
-# # # # ═══════════════════════════════════════════════════════════
 
-# # # class TeacherChaptersView(APIView):
-# # #     """Get chapters for class-subject"""
-# # #     permission_classes = [IsTeacherRole]
-    
-# # #     def get(self, request):
-# # #         class_id = request.GET.get('class_id')
-# # #         subject_id = request.GET.get('subject_id')
-        
-# # #         if not class_id or not subject_id:
-# # #             return Response({'error': 'class_id and subject_id required.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-# # #         if not TeacherAssignment.objects.filter(teacher=request.user, class_assigned_id=class_id, subject_id=subject_id).exists():
-# # #             return Response({'error': 'Not assigned to this class-subject.'}, status=status.HTTP_403_FORBIDDEN)
-        
-# # #         chapters = Chapter.objects.filter(class_assigned_id=class_id, subject_id=subject_id)
-# # #         chapters_data = [{
-# # #             'id': c.id,
-# # #             'name': c.name,
-# # #             'is_completed': c.is_completed,
-# # #             'tests_count': Test.objects.filter(chapter=c).count()
-# # #         } for c in chapters]
-# # #         return Response(chapters_data)
 
-# # # class MarkChapterCompleteView(APIView):
-# # #     permission_classes = [IsTeacherRole]
-    
-# # #     def post(self, request, chapter_id):
+
+# # # @api_view(['POST'])
+# # # @permission_classes([IsAuthenticated])
+# # # def create_question(request):
+# # #     """Create a new question for a test"""
+# # #     try:
+# # #         # Get data from FormData
+# # #         test_id = request.data.get('test')
+# # #         question_text = request.data.get('question_text', '')
+# # #         question_image = request.FILES.get('question_image', None)
+# # #         option1 = request.data.get('option1', '')
+# # #         option2 = request.data.get('option2', '')
+# # #         option3 = request.data.get('option3', '')
+# # #         option4 = request.data.get('option4', '')
+# # #         correct_option = request.data.get('correct_option', None)
+# # #         explanation = request.data.get('explanation', '')
+        
+# # #         # Validate test exists
 # # #         try:
-# # #             chapter = Chapter.objects.get(id=chapter_id)
-# # #             if not TeacherAssignment.objects.filter(teacher=request.user, class_assigned=chapter.class_assigned, subject=chapter.subject).exists():
-# # #                 return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-            
-# # #             chapter.is_completed = True
-# # #             chapter.save()
-# # #             return Response({'message': 'Chapter marked as completed!'})
-# # #         except Chapter.DoesNotExist:
-# # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-# # # class TestCreateView(APIView):
-# # #     permission_classes = [IsTeacherRole]
-    
-# # #     def post(self, request):
-# # #         test_type = request.data.get('type')
-# # #         chapter_id = request.data.get('chapter_id')
-# # #         marks = request.data.get('marks')
+# # #             test = Test.objects.get(id=test_id)
+# # #         except Test.DoesNotExist:
+# # #             return Response(
+# # #                 {'error': f'Test with id {test_id} does not exist'},
+# # #                 status=status.HTTP_404_NOT_FOUND
+# # #             )
         
-# # #         if test_type not in ['mcq', 'descriptive'] or not marks or int(marks) not in [10, 20, 50]:
-# # #             return Response({'error': 'Invalid data.'}, status=status.HTTP_400_BAD_REQUEST)
+# # #         # Check if user is the creator of the test
+# # #         if test.created_by != request.user:
+# # #             return Response(
+# # #                 {'error': 'You are not authorized to add questions to this test'},
+# # #                 status=status.HTTP_403_FORBIDDEN
+# # #             )
         
-# # #         try:
-# # #             chapter = Chapter.objects.get(id=chapter_id)
-# # #             test = Test.objects.create(type=test_type, chapter=chapter, marks=int(marks), created_by=request.user)
-# # #             return Response({'message': 'Test created!', 'test': {'id': test.id, 'type': test.type}}, status=status.HTTP_201_CREATED)
-# # #         except Chapter.DoesNotExist:
-# # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-# # # # ═══════════════════════════════════════════════════════════
-# # # #  ATTENDANCE & ASSIGNMENTS
-# # # # ═══════════════════════════════════════════════════════════
-
-# # # class AttendanceMarkView(APIView):
-# # #     permission_classes = [IsTeacherRole]
-    
-# # #     def post(self, request):
-# # #         class_id = request.data.get('class_id')
-# # #         date_str = request.data.get('date')
-# # #         student_ids = request.data.get('student_ids', [])
+# # #         # Create question
+# # #         question = Question.objects.create(
+# # #             test=test,
+# # #             question_text=question_text,
+# # #             question_image=question_image,
+# # #             option1=option1,
+# # #             option2=option2,
+# # #             option3=option3,
+# # #             option4=option4,
+# # #             correct_option=int(correct_option) if correct_option else None,
+# # #             explanation=explanation
+# # #         )
         
-# # #         try:
-# # #             attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
-# # #             all_students = CustomUser.objects.filter(role='student', class_assigned_id=class_id, is_approved=True)
-            
-# # #             for student in all_students:
-# # #                 Attendance.objects.update_or_create(
-# # #                     teacher=request.user, student=student, class_assigned_id=class_id, date=attendance_date,
-# # #                     defaults={'is_present': student.id in student_ids, 'time': timezone.now().time()}
+# # #         return Response({
+# # #             'message': 'Question created successfully',
+# # #             'question_id': question.id,
+# # #             'question': {
+# # #                 'id': question.id,
+# # #                 'question_text': question.question_text,
+# # #                 'option1': question.option1,
+# # #                 'option2': question.option2,
+# # #                 'option3': question.option3,
+# # #                 'option4': question.option4,
+# # #                 'correct_option': question.correct_option,
+# # #             }
+# # #         }, status=status.HTTP_201_CREATED)
+        
+# # #     except Exception as e:
+# # #         print("Error creating question:", str(e))
+# # #         import traceback
+# # #         print("Traceback:", traceback.format_exc())
+# # #         return Response({
+# # #             'error': 'Failed to create question',
+# # #             'details': str(e)
+# # #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# # # @api_view(['POST'])
+# # # @permission_classes([IsAuthenticated])
+# # # def create_test(request):
+# # #     """Create a new test"""
+# # #     try:
+# # #         data = request.data
+# # #         print("Received data for test creation:", data)  # Debug
+        
+# # #         # Validate required fields
+# # #         required_fields = ['chapter', 'name', 'type', 'marks', 'duration_minutes']
+# # #         for field in required_fields:
+# # #             if field not in data:
+# # #                 return Response(
+# # #                     {'error': f'Missing required field: {field}'}, 
+# # #                     status=status.HTTP_400_BAD_REQUEST
 # # #                 )
-# # #             return Response({'message': 'Attendance marked successfully!'})
-# # #         except Exception as e:
-# # #             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # #         # Create the test
+# # #         test = Test.objects.create(
+# # #             chapter_id=data['chapter'],
+# # #             name=data['name'],
+# # #             description=data.get('description', ''),
+# # #             type=data['type'],
+# # #             marks=data['marks'],
+# # #             duration_minutes=data['duration_minutes'],
+# # #             created_by=request.user
+# # #         )
+        
+# # #         print(f"Test created successfully with ID: {test.id}")  # Debug
+        
+# # #         # Return response with ID
+# # #         return Response({
+# # #             'id': test.id,  # THIS IS THE IMPORTANT PART!
+# # #             'message': 'Test created successfully',
+# # #             'test': {
+# # #                 'id': test.id,
+# # #                 'name': test.name,
+# # #                 'description': test.description,
+# # #                 'type': test.type,
+# # #                 'marks': test.marks,
+# # #                 'duration_minutes': test.duration_minutes,
+# # #                 'chapter': test.chapter_id
+# # #             }
+# # #         }, status=status.HTTP_201_CREATED)
+        
+# # #     except Exception as e:
+# # #         print("Error creating test:", str(e))
+# # #         import traceback
+# # #         print("Traceback:", traceback.format_exc())
+# # #         return Response({
+# # #             'error': 'Failed to create test',
+# # #             'details': str(e)
+# # #         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
 
-# # # class AssignmentCreateView(APIView):
-# # #     permission_classes = [IsTeacherRole]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # # # # teachers/views.py - COMPLETE WITH ALL ENDPOINTS
+# # # # """
+# # # # Complete Teacher Module Views - ALL ENDPOINTS INCLUDED
+# # # # EduVibe Platform - 2026
+# # # # ✅ Resolved IsTeacherRole NameError
+# # # # ✅ Removed Duplicate Code & Imports
+# # # # ✅ All functionality preserved
+# # # # """
+
+# # # # from rest_framework.views import APIView
+# # # # from rest_framework.response import Response
+# # # # from rest_framework import status
+# # # # from rest_framework.permissions import IsAuthenticated
+# # # # from django.db.models import Count, Q, Avg
+# # # # from django.utils import timezone
+# # # # from datetime import date
+
+# # # # from users.models import CustomUser
+# # # # from admin_tasks.models import Class, Subject, Chapter
+# # # # from .models import (
+# # # #     TeacherAssignment, Test, Question, Attendance,
+# # # #     Assignment, Doubt, DoubtReply
+# # # # )
+# # # # from students.models import TestAttempt, StudentAnswer
+
+
+
+# # # # # teachers/views.py
+# # # # """
+# # # # Updated Teacher Module Views
+# # # # EduVibe Platform - 2026
+# # # # ✅ Fixed ImportError for TeacherSubjectClassesView, TeacherSearchView, etc.
+# # # # """
+
+# # # # from rest_framework.views import APIView
+# # # # from rest_framework.response import Response
+# # # # from rest_framework import status
+# # # # from rest_framework.permissions import IsAuthenticated
+# # # # from django.db.models import Count, Q, Avg
+# # # # from django.utils import timezone
+# # # # from datetime import date
+
+# # # # from users.models import CustomUser
+# # # # from admin_tasks.models import Class, Subject, Chapter
+# # # # from .models import (
+# # # #     TeacherAssignment, Test, Question, Attendance,
+# # # #     Assignment, Doubt, DoubtReply
+# # # # )
+# # # # from students.models import TestAttempt, StudentAnswer
+
+# # # # # ═══════════════════════════════════════════════════════════
+# # # # #  CUSTOM PERMISSION
+# # # # # ═══════════════════════════════════════════════════════════
+
+# # # # @api_view(['GET'])
+# # # # @permission_classes([IsAuthenticated])
+# # # # def get_all_teacher_tests(request):
+# # # #     """Get all tests created by the logged-in teacher, grouped by subject"""
+# # # #     try:
+# # # #         teacher = request.user
+        
+# # # #         # Get all assignments for this teacher
+# # # #         assignments = TeacherAssignment.objects.filter(
+# # # #             teacher=teacher
+# # # #         ).select_related('class_assigned', 'subject')
+        
+# # # #         tests_by_subject = []
+        
+# # # #         for assignment in assignments:
+# # # #             # Get all tests for this subject-class combination
+# # # #             tests = Test.objects.filter(
+# # # #                 chapter__subject=assignment.subject,
+# # # #                 chapter__class_for=assignment.class_assigned,
+# # # #                 created_by=teacher
+# # # #             ).select_related('chapter').annotate(
+# # # #                 questions_count=Count('questions'),
+# # # #                 attempts_count=Count('testattempt')
+# # # #             ).order_by('-created_at')
+            
+# # # #             if tests.exists():
+# # # #                 tests_data = []
+# # # #                 for test in tests:
+# # # #                     tests_data.append({
+# # # #                         'id': test.id,
+# # # #                         'name': test.name,
+# # # #                         'description': test.description,
+# # # #                         'type': test.type,
+# # # #                         'marks': test.marks,
+# # # #                         'duration_minutes': test.duration_minutes,
+# # # #                         'chapter_name': test.chapter.name,
+# # # #                         'chapter_id': test.chapter.id,
+# # # #                         'questions_count': test.questions_count,
+# # # #                         'attempts_count': test.attempts_count,
+# # # #                         'created_at': test.created_at
+# # # #                     })
+                
+# # # #                 tests_by_subject.append({
+# # # #                     'subject_id': assignment.subject.id,
+# # # #                     'subject_name': assignment.subject.name,
+# # # #                     'class_id': assignment.class_assigned.id,
+# # # #                     'class_name': assignment.class_assigned.name,
+# # # #                     'tests': tests_data
+# # # #                 })
+        
+# # # #         return Response({
+# # # #             'tests_by_subject': tests_by_subject
+# # # #         })
+        
+# # # #     except Exception as e:
+# # # #         return Response(
+# # # #             {'error': str(e)},
+# # # #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+# # # #         )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # # # class IsTeacherRole(IsAuthenticated):
+# # # #     def has_permission(self, request, view):
+# # # #         return (
+# # # #             super().has_permission(request, view) and
+# # # #             request.user.role == 'teacher'
+# # # #         )
+
+# # # # # ... (Keep TeacherHomeView, TeacherClassesListView, TeacherSubjectsListView as provided before) ...
+
+# # # # class TeacherHomeView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request):
+# # # #         teacher = request.user
+# # # #         assignments = TeacherAssignment.objects.filter(teacher=teacher).select_related('class_assigned', 'subject')
+# # # #         assignments_data = []
+# # # #         for assignment in assignments:
+# # # #             chapters = Chapter.objects.filter(subject=assignment.subject, class_assigned=assignment.class_assigned)
+# # # #             assignments_data.append({
+# # # #                 'id': assignment.id,
+# # # #                 'class': {'id': assignment.class_assigned.id, 'name': assignment.class_assigned.name},
+# # # #                 'subject': {'id': assignment.subject.id, 'name': assignment.subject.name},
+# # # #                 'total_chapters': chapters.count(),
+# # # #                 'completed_chapters': chapters.filter(is_completed=True).count()
+# # # #             })
+# # # #         stats = {
+# # # #             'total_tests': Test.objects.filter(created_by=teacher).count(),
+# # # #             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
+# # # #             'classes_teaching': TeacherAssignment.objects.filter(teacher=teacher).values('class_assigned').distinct().count()
+# # # #         }
+# # # #         return Response({'teacher': {'name': f'{teacher.first_name} {teacher.last_name}'.strip(), 'unique_id': teacher.unique_id}, 'assignments': assignments_data, 'stats': stats})
+
+# # # # class TeacherClassesListView(APIView):
+# # # #     """Get all classes assigned to teacher with statistics"""
+# # # #     permission_classes = [IsTeacherRole]
     
-# # #     def post(self, request):
-# # #         chapter_id = request.data.get('chapter_id')
-# # #         description = request.data.get('description', '').strip()
-# # #         file = request.FILES.get('file')
+# # # #     def get(self, request):
+# # # #         # Get unique classes assigned to this teacher
+# # # #         assignments = TeacherAssignment.objects.filter(
+# # # #             teacher=request.user
+# # # #         ).select_related('class_assigned').values(
+# # # #             'class_assigned__id', 
+# # # #             'class_assigned__name'
+# # # #         ).distinct()
         
-# # #         if not description:
-# # #             return Response({'error': 'Description is required.'}, status=status.HTTP_400_BAD_REQUEST)
+# # # #         classes_data = []
+# # # #         for assignment in assignments:
+# # # #             class_id = assignment['class_assigned__id']
+# # # #             class_name = assignment['class_assigned__name']
+            
+# # # #             # Count subjects assigned to this teacher for this class
+# # # #             subjects_count = TeacherAssignment.objects.filter(
+# # # #                 teacher=request.user,
+# # # #                 class_assigned_id=class_id
+# # # #             ).values('subject').distinct().count()
+            
+# # # #             # Count students in this class
+# # # #             students_count = CustomUser.objects.filter(
+# # # #                 role='student',
+# # # #                 class_assigned_id=class_id,
+# # # #                 is_approved=True
+# # # #             ).count()
+            
+# # # #             # Count tests created by this teacher for this class
+# # # #             tests_count = Test.objects.filter(
+# # # #                 created_by=request.user,
+# # # #                 chapter__class_assigned_id=class_id
+# # # #             ).count()
+            
+# # # #             classes_data.append({
+# # # #                 'id': class_id,
+# # # #                 'name': class_name,
+# # # #                 'subjects_count': subjects_count,
+# # # #                 'students_count': students_count,
+# # # #                 'tests_count': tests_count
+# # # #             })
         
-# # #         try:
-# # #             chapter = Chapter.objects.get(id=chapter_id)
-# # #             assignment = Assignment.objects.create(teacher=request.user, chapter=chapter, description=description, file=file)
-# # #             return Response({'message': 'Assignment created!', 'id': assignment.id}, status=status.HTTP_201_CREATED)
-# # #         except Chapter.DoesNotExist:
-# # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+# # # #         return Response(classes_data)
+
+# # # # class TeacherSubjectsListView(APIView):
+# # # #     """Get subjects assigned to teacher, optionally filtered by class"""
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def get(self, request):
+# # # #         class_id = request.GET.get('class_id')
+# # # #         assignments = TeacherAssignment.objects.filter(teacher=request.user)
+        
+# # # #         if class_id:
+# # # #             assignments = assignments.filter(class_assigned_id=class_id)
+        
+# # # #         subjects = assignments.values('subject__id', 'subject__name').distinct()
+# # # #         return Response([{'id': s['subject__id'], 'name': s['subject__name']} for s in subjects])
+
+
+# # # # class TeacherClassSubjectsView(APIView):
+# # # #     """Get all subjects for a specific class assigned to this teacher"""
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def get(self, request, class_id):
+# # # #         # Verify teacher is assigned to this class
+# # # #         if not TeacherAssignment.objects.filter(
+# # # #             teacher=request.user,
+# # # #             class_assigned_id=class_id
+# # # #         ).exists():
+# # # #             return Response({
+# # # #                 'error': 'You are not assigned to this class.'
+# # # #             }, status=status.HTTP_403_FORBIDDEN)
+        
+# # # #         # Get all subjects this teacher teaches in this class
+# # # #         assignments = TeacherAssignment.objects.filter(
+# # # #             teacher=request.user,
+# # # #             class_assigned_id=class_id
+# # # #         ).select_related('subject', 'class_assigned')
+        
+# # # #         subjects_data = []
+# # # #         for assignment in assignments:
+# # # #             # Count chapters for this subject in this class
+# # # #             chapters_count = Chapter.objects.filter(
+# # # #                 subject=assignment.subject,
+# # # #                 class_assigned_id=class_id
+# # # #             ).count()
+            
+# # # #             completed_chapters = Chapter.objects.filter(
+# # # #                 subject=assignment.subject,
+# # # #                 class_assigned_id=class_id,
+# # # #                 is_completed=True
+# # # #             ).count()
+            
+# # # #             # Count tests for this subject in this class
+# # # #             tests_count = Test.objects.filter(
+# # # #                 created_by=request.user,
+# # # #                 chapter__subject=assignment.subject,
+# # # #                 chapter__class_assigned_id=class_id
+# # # #             ).count()
+            
+# # # #             subjects_data.append({
+# # # #                 'id': assignment.subject.id,
+# # # #                 'name': assignment.subject.name,
+# # # #                 'class_id': class_id,
+# # # #                 'class_name': assignment.class_assigned.name,
+# # # #                 'chapters_count': chapters_count,
+# # # #                 'completed_chapters': completed_chapters,
+# # # #                 'tests_count': tests_count
+# # # #             })
+        
+# # # #         return Response({
+# # # #             'class_id': class_id,
+# # # #             'class_name': assignments.first().class_assigned.name if assignments.exists() else None,
+# # # #             'subjects': subjects_data
+# # # #         })
+
+# # # # # ═══════════════════════════════════════════════════════════
+# # # # #  MISSING VIEWS ADDED BELOW
+# # # # # ═══════════════════════════════════════════════════════════
+
+# # # # class TeacherSubjectClassesView(APIView):
+# # # #     """Returns classes filtered by subject for the teacher"""
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request):
+# # # #         subject_id = request.GET.get('subject_id')
+# # # #         assignments = TeacherAssignment.objects.filter(teacher=request.user)
+# # # #         if subject_id:
+# # # #             assignments = assignments.filter(subject_id=subject_id)
+# # # #         classes = assignments.values('class_assigned__id', 'class_assigned__name').distinct()
+# # # #         return Response([{'id': c['class_assigned__id'], 'name': c['class_assigned__name']} for c in classes])
+
+# # # # class TeacherSearchView(APIView):
+# # # #     """Search for students or resources"""
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request):
+# # # #         query = request.GET.get('q', '')
+# # # #         students = CustomUser.objects.filter(
+# # # #             Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(unique_id__icontains=query),
+# # # #             role='student'
+# # # #         )[:10]
+# # # #         return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'uid': s.unique_id} for s in students])
+
+# # # # class ClassStudentsView(APIView):
+# # # #     """Get all students in a specific class assigned to the teacher"""
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request, class_id):
+# # # #         students = CustomUser.objects.filter(class_assigned_id=class_id, role='student', is_approved=True)
+# # # #         return Response([{'id': s.id, 'name': f"{s.first_name} {s.last_name}", 'unique_id': s.unique_id} for s in students])
+
+# # # # class TestListView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request):
+# # # #         tests = Test.objects.filter(created_by=request.user).select_related('chapter')
+# # # #         return Response([{'id': t.id, 'chapter': t.chapter.name, 'type': t.type, 'marks': t.marks} for t in tests])
+
+# # # # class TestDetailView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request, test_id):
+# # # #         try:
+# # # #             test = Test.objects.get(id=test_id, created_by=request.user)
+# # # #             questions = Question.objects.filter(test=test)
+# # # #             return Response({
+# # # #                 'id': test.id,
+# # # #                 'type': test.type,
+# # # #                 'questions': [{'id': q.id, 'text': q.text} for q in questions]
+# # # #             })
+# # # #         except Test.DoesNotExist:
+# # # #             return Response(status=status.HTTP_404_NOT_FOUND)
+
+# # # # class TestResultsView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request, test_id):
+# # # #         attempts = TestAttempt.objects.filter(test_id=test_id).select_related('student')
+# # # #         return Response([{'student': a.student.first_name, 'score': a.score, 'completed': a.completed_at} for a in attempts])
+
+# # # # class QuestionCreateView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def post(self, request, test_id):
+# # # #         return Response({'message': 'Question endpoint placeholder'}, status=201)
+
+# # # # class QuestionUpdateView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def put(self, request, question_id):
+# # # #         return Response({'message': 'Update placeholder'})
+
+# # # # class QuestionDeleteView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def delete(self, request, question_id):
+# # # #         return Response(status=204)
+
+# # # # class AttendanceListView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request):
+# # # #         return Response([])
+
+# # # # class StudentAttendanceHistoryView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request, student_id):
+# # # #         return Response([])
+
+# # # # class AssignmentListView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request):
+# # # #         assignments = Assignment.objects.filter(teacher=request.user)
+# # # #         return Response([{'id': a.id, 'desc': a.description} for a in assignments])
+
+# # # # class AssignmentDetailView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request, assignment_id):
+# # # #         return Response({'id': assignment_id})
+
+# # # # class DoubtDetailView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+# # # #     def get(self, request, doubt_id):
+# # # #         return Response({'id': doubt_id})
+
+# # # # # ... (Keep existing DoubtListView, DoubtReplyCreateView, TeacherChaptersView, MarkChapterCompleteView, TestCreateView, AttendanceMarkView, AssignmentCreateView) ...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # # # # ═══════════════════════════════════════════════════════════
+# # # # #  CUSTOM PERMISSION
+# # # # # ═══════════════════════════════════════════════════════════
+
+# # # # class IsTeacherRole(IsAuthenticated):
+# # # #     """Only allow authenticated users with the 'teacher' role"""
+    
+# # # #     def has_permission(self, request, view):
+# # # #         return (
+# # # #             super().has_permission(request, view) and
+# # # #             request.user.role == 'teacher'
+# # # #         )
+
+# # # # # ═══════════════════════════════════════════════════════════
+# # # # #  TEACHER DASHBOARD & CORE LISTS
+# # # # # ═══════════════════════════════════════════════════════════
+
+# # # # class TeacherHomeView(APIView):
+# # # #     """Teacher dashboard/home"""
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def get(self, request):
+# # # #         teacher = request.user
+        
+# # # #         # Get teacher's assignments
+# # # #         assignments = TeacherAssignment.objects.filter(
+# # # #             teacher=teacher
+# # # #         ).select_related('class_assigned', 'subject')
+        
+# # # #         assignments_data = []
+# # # #         for assignment in assignments:
+# # # #             # Get chapters for this class-subject
+# # # #             chapters = Chapter.objects.filter(
+# # # #                 subject=assignment.subject,
+# # # #                 class_assigned=assignment.class_assigned
+# # # #             )
+            
+# # # #             assignments_data.append({
+# # # #                 'id': assignment.id,
+# # # #                 'class': {
+# # # #                     'id': assignment.class_assigned.id,
+# # # #                     'name': assignment.class_assigned.name
+# # # #                 },
+# # # #                 'subject': {
+# # # #                     'id': assignment.subject.id,
+# # # #                     'name': assignment.subject.name
+# # # #                 },
+# # # #                 'total_chapters': chapters.count(),
+# # # #                 'completed_chapters': chapters.filter(is_completed=True).count()
+# # # #             })
+        
+# # # #         # Get stats
+# # # #         stats = {
+# # # #             'total_tests': Test.objects.filter(created_by=teacher).count(),
+# # # #             'total_assignments': Assignment.objects.filter(teacher=teacher).count(),
+# # # #             'classes_teaching': TeacherAssignment.objects.filter(teacher=teacher).values('class_assigned').distinct().count()
+# # # #         }
+        
+# # # #         return Response({
+# # # #             'teacher': {
+# # # #                 'name': f'{teacher.first_name} {teacher.last_name}'.strip(),
+# # # #                 'unique_id': teacher.unique_id,
+# # # #                 'subjects': [
+# # # #                     {'id': s.id, 'name': s.name}
+# # # #                     for s in teacher.subjects.all()
+# # # #                 ]
+# # # #             },
+# # # #             'assignments': assignments_data,
+# # # #             'stats': stats
+# # # #         })
+
+# # # # class TeacherClassesListView(APIView):
+# # # #     """
+# # # #     Get all classes where teacher is assigned.
+# # # #     Used for: Dropdowns in TeacherDoubts, TeacherAttendance, etc.
+# # # #     """
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def get(self, request):
+# # # #         teacher = request.user
+# # # #         assignments = TeacherAssignment.objects.filter(
+# # # #             teacher=teacher
+# # # #         ).select_related('class_assigned').values(
+# # # #             'class_assigned__id', 'class_assigned__name'
+# # # #         ).distinct()
+        
+# # # #         classes = [
+# # # #             {'id': a['class_assigned__id'], 'name': a['class_assigned__name']}
+# # # #             for a in assignments
+# # # #         ]
+# # # #         return Response(classes)
+
+# # # # class TeacherSubjectsListView(APIView):
+# # # #     """
+# # # #     Get all subjects teacher teaches (optionally filtered by class)
+# # # #     """
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def get(self, request):
+# # # #         teacher = request.user
+# # # #         class_id = request.GET.get('class_id')
+        
+# # # #         assignments = TeacherAssignment.objects.filter(teacher=teacher)
+# # # #         if class_id:
+# # # #             assignments = assignments.filter(class_assigned_id=class_id)
+        
+# # # #         subjects = assignments.select_related('subject').values(
+# # # #             'subject__id', 'subject__name'
+# # # #         ).distinct()
+        
+# # # #         return Response([
+# # # #             {'id': s['subject__id'], 'name': s['subject__name']}
+# # # #             for s in subjects
+# # # #         ])
+
+# # # # # ═══════════════════════════════════════════════════════════
+# # # # #  DOUBT MANAGEMENT
+# # # # # ═══════════════════════════════════════════════════════════
+
+# # # # class DoubtListView(APIView):
+# # # #     """Get doubts filtered by class and/or subject"""
+# # # #     permission_classes = [IsAuthenticated]
+    
+# # # #     def get(self, request):
+# # # #         class_id = request.GET.get('class_id')
+# # # #         subject_id = request.GET.get('subject_id')
+        
+# # # #         if request.user.role == 'teacher':
+# # # #             teacher_subjects = request.user.subjects.all()
+# # # #             doubts = Doubt.objects.filter(subject__in=teacher_subjects)
+# # # #             if class_id:
+# # # #                 doubts = doubts.filter(student__class_assigned_id=class_id)
+# # # #             if subject_id:
+# # # #                 doubts = doubts.filter(subject_id=subject_id)
+        
+# # # #         elif request.user.role == 'student':
+# # # #             if not request.user.class_assigned:
+# # # #                 return Response([], status=status.HTTP_200_OK)
+# # # #             doubts = Doubt.objects.filter(student__class_assigned=request.user.class_assigned)
+# # # #             if subject_id:
+# # # #                 doubts = doubts.filter(subject_id=subject_id)
+# # # #         else:
+# # # #             return Response({'error': 'Invalid role.'}, status=status.HTTP_403_FORBIDDEN)
+        
+# # # #         doubts = doubts.select_related('student', 'subject').prefetch_related('doubtreply_set__user').order_by('-created_at')
+        
+# # # #         doubts_data = []
+# # # #         for doubt in doubts:
+# # # #             replies = doubt.doubtreply_set.all()
+# # # #             replies_data = [{
+# # # #                 'id': r.id,
+# # # #                 'user': {'id': r.user.id, 'name': f'{r.user.first_name} {r.user.last_name}'.strip() or r.user.username, 'role': r.user.role},
+# # # #                 'text': r.text,
+# # # #                 'image_url': request.build_absolute_uri(r.image.url) if r.image else None,
+# # # #                 'created_at': r.created_at
+# # # #             } for r in replies]
+            
+# # # #             doubts_data.append({
+# # # #                 'id': doubt.id,
+# # # #                 'student': {'id': doubt.student.id, 'name': f'{doubt.student.first_name} {doubt.student.last_name}'.strip(), 'unique_id': doubt.student.unique_id},
+# # # #                 'subject': {'id': doubt.subject.id, 'name': doubt.subject.name},
+# # # #                 'text': doubt.text,
+# # # #                 'image_url': request.build_absolute_uri(doubt.image.url) if doubt.image else None,
+# # # #                 'created_at': doubt.created_at,
+# # # #                 'reply_count': len(replies_data),
+# # # #                 'replies': replies_data
+# # # #             })
+# # # #         return Response(doubts_data)
+
+# # # # class DoubtReplyCreateView(APIView):
+# # # #     """Teachers can reply to doubts in their subjects"""
+# # # #     permission_classes = [IsAuthenticated]
+    
+# # # #     def post(self, request, doubt_id):
+# # # #         text = request.data.get('text', '').strip()
+# # # #         image = request.FILES.get('image')
+        
+# # # #         if not text and not image:
+# # # #             return Response({'error': 'Provide text or image.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # # #         try:
+# # # #             doubt = Doubt.objects.get(id=doubt_id)
+# # # #             if request.user.role == 'teacher':
+# # # #                 if doubt.subject not in request.user.subjects.all():
+# # # #                     return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+# # # #             elif request.user.role == 'student':
+# # # #                 if request.user.class_assigned != doubt.student.class_assigned:
+# # # #                     return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+            
+# # # #             reply = DoubtReply.objects.create(doubt=doubt, user=request.user, text=text, image=image)
+# # # #             return Response({
+# # # #                 'message': 'Reply posted successfully!',
+# # # #                 'reply': {'id': reply.id, 'text': text, 'created_at': reply.created_at}
+# # # #             }, status=status.HTTP_201_CREATED)
+# # # #         except Doubt.DoesNotExist:
+# # # #             return Response({'error': 'Doubt not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+# # # # # ═══════════════════════════════════════════════════════════
+# # # # #  CHAPTER & TEST MANAGEMENT
+# # # # # ═══════════════════════════════════════════════════════════
+
+# # # # class TeacherChaptersView(APIView):
+# # # #     """Get chapters for class-subject"""
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def get(self, request):
+# # # #         class_id = request.GET.get('class_id')
+# # # #         subject_id = request.GET.get('subject_id')
+        
+# # # #         if not class_id or not subject_id:
+# # # #             return Response({'error': 'class_id and subject_id required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # # #         if not TeacherAssignment.objects.filter(teacher=request.user, class_assigned_id=class_id, subject_id=subject_id).exists():
+# # # #             return Response({'error': 'Not assigned to this class-subject.'}, status=status.HTTP_403_FORBIDDEN)
+        
+# # # #         chapters = Chapter.objects.filter(class_assigned_id=class_id, subject_id=subject_id)
+# # # #         chapters_data = [{
+# # # #             'id': c.id,
+# # # #             'name': c.name,
+# # # #             'is_completed': c.is_completed,
+# # # #             'tests_count': Test.objects.filter(chapter=c).count()
+# # # #         } for c in chapters]
+# # # #         return Response(chapters_data)
+
+# # # # class MarkChapterCompleteView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def post(self, request, chapter_id):
+# # # #         try:
+# # # #             chapter = Chapter.objects.get(id=chapter_id)
+# # # #             if not TeacherAssignment.objects.filter(teacher=request.user, class_assigned=chapter.class_assigned, subject=chapter.subject).exists():
+# # # #                 return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+            
+# # # #             chapter.is_completed = True
+# # # #             chapter.save()
+# # # #             return Response({'message': 'Chapter marked as completed!'})
+# # # #         except Chapter.DoesNotExist:
+# # # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+# # # # class TestCreateView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def post(self, request):
+# # # #         test_type = request.data.get('type')
+# # # #         chapter_id = request.data.get('chapter_id')
+# # # #         marks = request.data.get('marks')
+        
+# # # #         if test_type not in ['mcq', 'descriptive'] or not marks or int(marks) not in [10, 20, 50]:
+# # # #             return Response({'error': 'Invalid data.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # # #         try:
+# # # #             chapter = Chapter.objects.get(id=chapter_id)
+# # # #             test = Test.objects.create(type=test_type, chapter=chapter, marks=int(marks), created_by=request.user)
+# # # #             return Response({'message': 'Test created!', 'test': {'id': test.id, 'type': test.type}}, status=status.HTTP_201_CREATED)
+# # # #         except Chapter.DoesNotExist:
+# # # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+# # # # # ═══════════════════════════════════════════════════════════
+# # # # #  ATTENDANCE & ASSIGNMENTS
+# # # # # ═══════════════════════════════════════════════════════════
+
+# # # # class AttendanceMarkView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def post(self, request):
+# # # #         class_id = request.data.get('class_id')
+# # # #         date_str = request.data.get('date')
+# # # #         student_ids = request.data.get('student_ids', [])
+        
+# # # #         try:
+# # # #             attendance_date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
+# # # #             all_students = CustomUser.objects.filter(role='student', class_assigned_id=class_id, is_approved=True)
+            
+# # # #             for student in all_students:
+# # # #                 Attendance.objects.update_or_create(
+# # # #                     teacher=request.user, student=student, class_assigned_id=class_id, date=attendance_date,
+# # # #                     defaults={'is_present': student.id in student_ids, 'time': timezone.now().time()}
+# # # #                 )
+# # # #             return Response({'message': 'Attendance marked successfully!'})
+# # # #         except Exception as e:
+# # # #             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# # # # class AssignmentCreateView(APIView):
+# # # #     permission_classes = [IsTeacherRole]
+    
+# # # #     def post(self, request):
+# # # #         chapter_id = request.data.get('chapter_id')
+# # # #         description = request.data.get('description', '').strip()
+# # # #         file = request.FILES.get('file')
+        
+# # # #         if not description:
+# # # #             return Response({'error': 'Description is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# # # #         try:
+# # # #             chapter = Chapter.objects.get(id=chapter_id)
+# # # #             assignment = Assignment.objects.create(teacher=request.user, chapter=chapter, description=description, file=file)
+# # # #             return Response({'message': 'Assignment created!', 'id': assignment.id}, status=status.HTTP_201_CREATED)
+# # # #         except Chapter.DoesNotExist:
+# # # #             return Response({'error': 'Chapter not found.'}, status=status.HTTP_404_NOT_FOUND)
 
 
 

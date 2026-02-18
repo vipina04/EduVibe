@@ -14,7 +14,8 @@ from django.db.models import Q, Count
 
 # ✅ FIXED IMPORTS - Using correct model names
 from users.models import CustomUser
-from academics.models import AcademicClass, Subject, Chapter, TeacherSubjectAssignment, Doubt, DoubtReply
+# from academics.models import AcademicClass, Subject, Chapter, TeacherSubjectAssignment, Doubt, DoubtReply
+from academics.models import AcademicClass, Subject, Chapter, TeacherAssignment, Doubt, DoubtReply
 from students.models import StudentAcademicInfo
 
 

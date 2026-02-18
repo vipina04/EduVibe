@@ -291,18 +291,24 @@ const StudentDashboard = () => {
                 <Card key={test.id} className="hover:shadow-md transition-shadow">
                   <div className="flex justify-between items-center">
                     <div>
-                      <h3 className="font-semibold text-gray-900 dark:text-white">{test.name}</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        {test.subject_name} • {test.class_name}
-                      </p>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{test.test_name}</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                         {test.subject} • {test.chapter}
+                        </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                      {/* <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
                         {test.score || 0}/{test.marks}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         {Math.round((test.score / test.marks) * 100)}%
+                      </p> */}
+                      <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                       {test.score || 0}/{test.total_marks}
                       </p>
+                       <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {test.percentage || 0}%
+                       </p>
                     </div>
                   </div>
                 </Card>
