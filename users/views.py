@@ -17,9 +17,9 @@ from django.db.models import Q
 import random
 
 from .models import CustomUser
-from admin_tasks.models import Class, Subject
-
-
+# from admin_tasks.models import Class, Subject
+# from academics.models import AcademicClass as Class, Subject
+from academics.models import AcademicClass as Class, Subject as AcademicSubject
 # ═══════════════════════════════════════════════════════════
 #  REGISTRATION & OTP VERIFICATION
 # ═══════════════════════════════════════════════════════════
@@ -74,7 +74,9 @@ class RegisterView(APIView):
                 subject_ids = request.data.get('subject_ids', [])
                 if not subject_ids or len(subject_ids) > 3:
                     return Response({'error': 'Select 1–3 subjects.'}, status=400)
-                subjects = Subject.objects.filter(id__in=subject_ids)
+                # subjects = Subject.objects.filter(id__in=subject_ids)
+                # if subjects.count() != len(subject_ids):
+                subjects = AcademicSubject.objects.filter(id__in=subject_ids)
                 if subjects.count() != len(subject_ids):
                     return Response({'error': 'Invalid subjects.'}, status=400)
 
@@ -301,14 +303,31 @@ class ProfileView(APIView):
         })
 
 
+# class GetClassListView(APIView):
+#     def get(self, request):
+#         return Response(list(Class.objects.values('id', 'name')))
 class GetClassListView(APIView):
     def get(self, request):
-        return Response(list(Class.objects.values('id', 'name')))
+        from academics.models import AcademicClass
+        return Response(list(AcademicClass.objects.values('id', 'name')))
 
-
+# class GetSubjectListView(APIView):
+#     def get(self, request):
+#         return Response(list(Subject.objects.values('id', 'name')))
+# class GetSubjectListView(APIView):
+#     def get(self, request):
+#         from academics.models import Subject as AcademicSubject
+#         return Response(list(AcademicSubject.objects.values('id', 'name')))
 class GetSubjectListView(APIView):
     def get(self, request):
-        return Response(list(Subject.objects.values('id', 'name')))
+        from academics.models import Subject as AcademicSubject
+        seen = set()
+        result = []
+        for s in AcademicSubject.objects.all():
+            if s.name.lower() not in seen:
+                seen.add(s.name.lower())
+                result.append({'id': s.id, 'name': s.name})
+        return Response(result)
 
 # Add to top imports
 from google.oauth2 import id_token

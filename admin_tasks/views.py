@@ -17,7 +17,8 @@ from django.utils import timezone
 from users.models import CustomUser
 from .models import Class, Subject, Chapter, Notification, FeePayment
 from teachers.models import TeacherAssignment
-from academics.models import AcademicClass  # ✅ Import from academics too
+from academics.models import AcademicClass, Subject as AcademicSubject, Chapter as AcademicChapter
+# from academics.models import AcademicClass  # ✅ Import from academics too
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -876,9 +877,12 @@ class AdminDashboardStatsView(APIView):
                 'pending': CustomUser.objects.filter(is_approved=False).count()
             },
             'academics': {
-                'classes': Class.objects.count(),
-                'subjects': Subject.objects.count(),
-                'chapters': Chapter.objects.count()
+                # 'classes': Class.objects.count(),
+                # 'subjects': Subject.objects.count(),
+                # 'chapters': Chapter.objects.count()
+                 'classes': AcademicClass.objects.count(),
+                 'subjects': AcademicSubject.objects.count(),
+                 'chapters': AcademicChapter.objects.count()
             },
             'fees': {
                 'total_collected': FeePayment.objects.aggregate(
@@ -964,30 +968,194 @@ class ManageAcademicClassesView(APIView):
         }, status=201)
 
 
-class AcademicClassDetailView(APIView):
-    """GET, PUT, DELETE academic class details"""
-    permission_classes = [IsAuthenticated]
+# class AcademicClassDetailView(APIView):
+#     """GET, PUT, DELETE academic class details"""
+#     permission_classes = [IsAuthenticated]
     
+#     def get(self, request, class_id):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+        
+#         try:
+#             cls = AcademicClass.objects.get(id=class_id)
+            
+#             return Response({
+#                 'id': cls.id,
+#                 'name': cls.name,
+#                 'description': cls.description,
+#                 'subjects': [{
+#                     'id': s.id,
+#                     'name': s.name
+#                 } for s in cls.subjects.all()],
+#                 'created_at': cls.created_at.isoformat()
+#             }, status=200)
+            
+#         except AcademicClass.DoesNotExist:
+#             return Response({'error': 'Class not found'}, status=404)
+class AcademicClassDetailView(APIView):
+    """GET, PATCH, DELETE academic class details"""
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, class_id):
         if not is_admin(request.user):
             return Response({'error': 'Admin access required'}, status=403)
-        
         try:
+            from academics.models import Subject as AcSubject, TeacherSubjectAssignment
             cls = AcademicClass.objects.get(id=class_id)
-            
+
+    # def get(self, request, class_id):
+    #     if not is_admin(request.user):
+    #         return Response({'error': 'Admin access required'}, status=403)
+    #     try:
+    #         from academics.models import AcademicClass as AcClass, Subject as AcSubject, TeacherSubjectAssignment
+    #         cls = AcClass.objects.get(id=class_id)
+
+            # Build subjects list with assigned teacher info
+            subjects_data = []
+            for s in cls.subjects.all():
+                assignment = TeacherSubjectAssignment.objects.filter(
+                    subject=s, class_assigned=cls
+                ).select_related('teacher').first()
+                subjects_data.append({
+                    'id': s.id,
+                    'name': s.name,
+                    'chapter_count': s.chapters.count(),
+                    'assigned_teacher': {
+                        'id': assignment.teacher.id,
+                        'name': assignment.teacher.get_full_name() or assignment.teacher.username,
+                        'unique_id': assignment.teacher.unique_id,
+                    } if assignment else None,
+                })
+
+            # Get students enrolled in this class
+            students = CustomUser.objects.filter(
+                class_assigned_id=class_id, role='student', is_approved=True
+            )
+            students_data = [{
+                'id': st.id,
+                'name': st.get_full_name() or st.username,
+                'unique_id': st.unique_id,
+                'email': st.email,
+                'phone': st.phone if hasattr(st, 'phone') else '',
+            } for st in students]
+
             return Response({
                 'id': cls.id,
                 'name': cls.name,
-                'description': cls.description,
-                'subjects': [{
-                    'id': s.id,
-                    'name': s.name
-                } for s in cls.subjects.all()],
+                'description': cls.description or '',
+                'subjects': subjects_data,
+                'students': students_data,
+                'student_count': len(students_data),
+                'subject_count': len(subjects_data),
                 'created_at': cls.created_at.isoformat()
             }, status=200)
-            
+
         except AcademicClass.DoesNotExist:
             return Response({'error': 'Class not found'}, status=404)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+    def patch(self, request, class_id):
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+        try:
+            cls = AcademicClass.objects.get(id=class_id)
+            name = request.data.get('name', '').strip()
+            if not name:
+                return Response({'error': 'Class name is required'}, status=400)
+            if AcademicClass.objects.filter(name=name).exclude(id=class_id).exists():
+                return Response({'error': 'A class with this name already exists'}, status=400)
+            cls.name = name
+            cls.save()
+            return Response({
+                'message': 'Class renamed successfully',
+                'class': {'id': cls.id, 'name': cls.name}
+            }, status=200)
+        except AcademicClass.DoesNotExist:
+            return Response({'error': 'Class not found'}, status=404)
+
+    def delete(self, request, class_id):
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+        try:
+            cls = AcademicClass.objects.get(id=class_id)
+            student_count = CustomUser.objects.filter(
+                class_assigned_id=class_id, role='student'
+            ).count()
+            if student_count > 0:
+                return Response({
+                    'error': f'Cannot delete. {student_count} student(s) are enrolled in this class. Reassign them first.'
+                }, status=400)
+            cls.delete()
+            return Response({'message': 'Class deleted successfully'}, status=200)
+        except AcademicClass.DoesNotExist:
+            return Response({'error': 'Class not found'}, status=404)
+
+
+class AcademicSubjectManageView(APIView):
+    """
+    POST: Add a new subject to a class
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+        from academics.models import Subject as AcSubject
+        name = request.data.get('name', '').strip()
+        class_id = request.data.get('class_id')
+        if not name:
+            return Response({'error': 'Subject name is required'}, status=400)
+        if not class_id:
+            return Response({'error': 'class_id is required'}, status=400)
+        try:
+            cls = AcademicClass.objects.get(id=class_id)
+        except AcClass.DoesNotExist:
+            return Response({'error': 'Class not found'}, status=404)
+        if AcSubject.objects.filter(name__iexact=name, academic_class=cls).exists():
+            return Response({'error': 'This subject already exists in this class'}, status=400)
+        subject = AcSubject.objects.create(name=name, academic_class=cls)
+        return Response({
+            'message': 'Subject added successfully',
+            'subject': {'id': subject.id, 'name': subject.name}
+        }, status=201)
+
+
+class AcademicSubjectDetailView(APIView):
+    """
+    PATCH: Rename a subject
+    DELETE: Delete a subject
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, subject_id):
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+        from academics.models import Subject as AcSubject
+        try:
+            subject = AcSubject.objects.get(id=subject_id)
+            name = request.data.get('name', '').strip()
+            if not name:
+                return Response({'error': 'Subject name is required'}, status=400)
+            subject.name = name
+            subject.save()
+            return Response({
+                'message': 'Subject renamed successfully',
+                'subject': {'id': subject.id, 'name': subject.name}
+            }, status=200)
+        except AcSubject.DoesNotExist:
+            return Response({'error': 'Subject not found'}, status=404)
+
+    def delete(self, request, subject_id):
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+        from academics.models import Subject as AcSubject
+        try:
+            subject = AcSubject.objects.get(id=subject_id)
+            subject.delete()
+            return Response({'message': 'Subject deleted successfully'}, status=200)
+        except AcSubject.DoesNotExist:
+            return Response({'error': 'Subject not found'}, status=404)
 
 
 # ═══════════════════════════════════════════════════════════════════

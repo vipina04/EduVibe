@@ -185,7 +185,8 @@ const StudentDashboard = () => {
 
         {/* Stats Overview */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="hover:shadow-md transition-shadow">
+          {/* <Card className="hover:shadow-md transition-shadow"> */}
+          <Card key="tests" className="hover:shadow-md transition-shadow">
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Tests Completed</p>
@@ -197,7 +198,8 @@ const StudentDashboard = () => {
             </div>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow">
+          {/* <Card className="hover:shadow-md transition-shadow"> */}
+            <Card key="attendance" className="hover:shadow-md transition-shadow">
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Attendance</p>
@@ -209,7 +211,8 @@ const StudentDashboard = () => {
             </div>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow">
+          {/* <Card className="hover:shadow-md transition-shadow"> */}
+            <Card key="assignments" className="hover:shadow-md transition-shadow">
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Pending Assignments</p>
@@ -221,7 +224,8 @@ const StudentDashboard = () => {
             </div>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow">
+          {/* <Card className="hover:shadow-md transition-shadow"> */}
+            <Card key="score" className="hover:shadow-md transition-shadow">
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Average Score</p>

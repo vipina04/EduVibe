@@ -39,19 +39,31 @@ class CustomUser(AbstractUser):
     is_approved = models.BooleanField(default=False)
 
     # ✅ FIXED: Use string reference instead of importing
+    # class_assigned = models.ForeignKey(
+    #     'admin_tasks.Class',  # ✅ String reference - no import needed
+    #     on_delete=models.SET_NULL,
+    #     null=True,
+    #     blank=True,
+    #     related_name='students'
+    # )
     class_assigned = models.ForeignKey(
-        'admin_tasks.Class',  # ✅ String reference - no import needed
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='students'
+    'academics.AcademicClass',
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    related_name='students'
     )
 
     # ✅ FIXED: Use string reference instead of importing
+    # subjects = models.ManyToManyField(
+    #     'admin_tasks.Subject',  # ✅ String reference - no import needed
+    #     blank=True,
+    #     related_name='teachers'
+    # )
     subjects = models.ManyToManyField(
-        'admin_tasks.Subject',  # ✅ String reference - no import needed
-        blank=True,
-        related_name='teachers'
+    'academics.Subject',
+    blank=True,
+    related_name='teachers'
     )
 
     # OTP fields

@@ -4,6 +4,7 @@ from .views import (
     PendingUsersView, ApproveUserView, RejectUserView, AllUsersView,
     ClassListView, ClassCreateView, ClassDetailView, ClassDeleteView,
     ManageAcademicClassesView, AcademicClassDetailView,
+    AcademicSubjectManageView, AcademicSubjectDetailView,
     SubjectListView, SubjectCreateView, SubjectDetailView, ManageSubjectsView,
     ChapterCreateView, ManageChaptersView, ChapterDetailView,
     TeacherAssignmentListView, TeacherAssignmentCreateView,
@@ -11,6 +12,8 @@ from .views import (
     FeePaymentCreateView, FeePaymentListView, FeePaymentDetailView,
     AdminDashboardStatsView, GetTeachersView,DeleteUserView, UpdateUserView,
 )
+
+
 
 app_name = 'admin_tasks'
 
@@ -28,6 +31,16 @@ urlpatterns = [
     path('classes/<int:class_id>/', AcademicClassDetailView.as_view(), name='academic-class-detail'),
     path('classes/old/', ClassListView.as_view(), name='class-list'),
     path('classes/old/create/', ClassCreateView.as_view(), name='class-create'),
+
+
+    path('academic-subjects/',              AcademicSubjectManageView.as_view(),    name='academic-subject-manage'),
+    path('academic-subjects/<int:subject_id>/', AcademicSubjectDetailView.as_view(), name='academic-subject-detail'),
+
+
+
+
+
+
     
     # Subject Management
     path('subjects/', ManageSubjectsView.as_view(), name='manage-subjects'),

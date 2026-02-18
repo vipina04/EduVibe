@@ -252,12 +252,22 @@ export const adminAPI = {
   
   // Class Management
 
- getClasses:    ()               => api.get('/admin/classes/'),
- getAllClasses: ()               => api.get('/admin/classes/'),
-  createClass:   (data)           => api.post('/admin/classes/', data),
-  updateClass:   (id, data)       => api.patch(`/admin/classes/${id}/`, data),
-  deleteClass:   (id)             => api.delete(`/admin/classes/${id}/`),
+//  getClasses:    ()               => api.get('/admin/classes/'),
+//  getAllClasses: ()               => api.get('/admin/classes/'),
+//   createClass:   (data)           => api.post('/admin/classes/', data),
+//   updateClass:   (id, data)       => api.patch(`/admin/classes/${id}/`, data),
+//   deleteClass:   (id)             => api.delete(`/admin/classes/${id}/`),
+  getClasses:             ()               => api.get('/admin/classes/'),
+  getAllClasses:           ()               => api.get('/admin/classes/'),
+  getClassDetail:         (id)             => api.get(`/admin/classes/${id}/`),
+  createClass:            (data)           => api.post('/admin/classes/', data),
+  updateClass:            (id, data)       => api.patch(`/admin/classes/${id}/`, data),
+  deleteClass:            (id)             => api.delete(`/admin/classes/${id}/`),
 
+  // Academic Subject management (subjects inside a class)
+  addSubjectToClass:      (data)           => api.post('/admin/academic-subjects/', data),
+  updateAcademicSubject:  (id, data)       => api.patch(`/admin/academic-subjects/${id}/`, data),
+  deleteAcademicSubject:  (id)             => api.delete(`/admin/academic-subjects/${id}/`),
 
 
 
