@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { label: 'Total Users',      path: '/admin/users' },
   { label: 'Students',         path: '/admin/users' },
   { label: 'Teachers',         path: '/admin/users' },
+  { label: 'Teacher Assignments', path: '/admin/teacher-assignments' }
 ];
 
 const AdminDashboard = () => {

@@ -43,7 +43,7 @@ from .views import (
 )
 
 # Import doubt views from separate file
-from .views_doubts import StudentDoubtListView, StudentDoubtReplyView
+from .views_doubts import StudentDoubtListView, StudentDoubtReplyView,StudentCreateDoubtView
 
 app_name = 'students'
 
@@ -84,8 +84,10 @@ urlpatterns = [
     #  DOUBTS
     # ═══════════════════════════════════════════════════════════
     path('subjects/', EnrolledSubjectsView.as_view(), name='enrolled-subjects'),
-    path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
+    # path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
+    path('doubts/create/', StudentCreateDoubtView.as_view(), name='doubt-create'),
     path('doubts/', StudentDoubtListView.as_view(), name='doubt-list'),
+    
     path('doubts/<int:doubt_id>/reply/', StudentDoubtReplyView.as_view(), name='doubt-reply'),
     
     # ═══════════════════════════════════════════════════════════

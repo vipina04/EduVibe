@@ -45,6 +45,7 @@ import TeacherTestSelection from './pages/teacher/TeacherTestSelection';
 import TeacherChapterSelection from './pages/teacher/TeacherChapterSelection';
 
 // Admin Pages
+import ManageTeacherAssignments from './pages/admin/ManageTeacherAssignments';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ManageUsers from './pages/admin/ManageUsers';
 import ManageClasses from './pages/admin/ManageClasses';
@@ -130,6 +131,7 @@ function App() {
       <Route path="/teacher/class/:classId/subject/:subjectId/doubts"             element={<ProtectedRoute allowedRoles={['teacher']}><TeacherDoubts /></ProtectedRoute>} />
 
       {/* ── Admin ── */}
+      
 
       <Route path="/admin/dashboard" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
       <Route path="/admin/users" element={<AdminUsers />} />
@@ -137,7 +139,7 @@ function App() {
       <Route path="/admin/classes"   element={<ProtectedRoute allowedRoles={['admin']}><ManageClasses /></ProtectedRoute>} />
       <Route path="/admin/subjects"  element={<ProtectedRoute allowedRoles={['admin']}><ManageSubjects /></ProtectedRoute>} />
       <Route path="/admin/chapters"  element={<ProtectedRoute allowedRoles={['admin']}><ManageChapters /></ProtectedRoute>} />
-
+      <Route path="/admin/teacher-assignments" element={<ProtectedRoute allowedRoles={['admin']}><ManageTeacherAssignments /></ProtectedRoute>} />
       {/* ── Fallback ── */}
       <Route path="*" element={<Navigate to="/" replace />} />
 

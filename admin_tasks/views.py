@@ -362,72 +362,119 @@ class SubjectCreateView(APIView):
         return SubjectListView().post(request)
 
 
+# class SubjectDetailView(APIView):
+#     """
+#     GET: Get subject details
+#     PUT: Update subject
+#     DELETE: Delete subject
+#     """
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request, subject_id):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         try:
+#             subject = Subject.objects.get(id=subject_id)
+
+#             return Response({
+#                 'id': subject.id,
+#                 'name': subject.name,
+#                 'classes': [{
+#                     'id': c.id,
+#                     'name': c.name
+#                 } for c in subject.classes.all()],
+#                 'chapters': [{
+#                     'id': ch.id,
+#                     'name': ch.name,
+#                     'class': ch.class_assigned.name
+#                 } for ch in subject.chapter_set.all()]
+#             }, status=200)
+
+#         except Subject.DoesNotExist:
+#             return Response({'error': 'Subject not found'}, status=404)
+
+#     def put(self, request, subject_id):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         try:
+#             subject = Subject.objects.get(id=subject_id)
+
+#             name = request.data.get('name')
+#             class_ids = request.data.get('class_ids')
+
+#             if name:
+#                 subject.name = name
+#                 subject.save()
+
+#             if class_ids is not None:
+#                 classes = Class.objects.filter(id__in=class_ids)
+#                 subject.classes.set(classes)
+
+#             return Response({'message': 'Subject updated successfully'}, status=200)
+
+#         except Subject.DoesNotExist:
+#             return Response({'error': 'Subject not found'}, status=404)
+
+#     def delete(self, request, subject_id):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         try:
+#             subject = Subject.objects.get(id=subject_id)
+#             subject.delete()
+
+#             return Response({'message': 'Subject deleted successfully'}, status=200)
+
+#         except Subject.DoesNotExist:
+#             return Response({'error': 'Subject not found'}, status=404)
 class SubjectDetailView(APIView):
     """
-    GET: Get subject details
-    PUT: Update subject
-    DELETE: Delete subject
+    PATCH: Rename a subject
+    DELETE: Delete a subject and all its class links
     """
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, subject_id):
+    def patch(self, request, subject_id):
         if not is_admin(request.user):
             return Response({'error': 'Admin access required'}, status=403)
 
+        from academics.models import Subject as AcSubject
+
         try:
-            subject = Subject.objects.get(id=subject_id)
+            subject = AcSubject.objects.get(id=subject_id)
+            name = request.data.get('name', '').strip()
+
+            if not name:
+                return Response({'error': 'Subject name is required'}, status=400)
+
+            if AcSubject.objects.filter(name__iexact=name).exclude(id=subject_id).exists():
+                return Response({'error': 'A subject with this name already exists'}, status=400)
+
+            subject.name = name.upper()
+            subject.save()
 
             return Response({
-                'id': subject.id,
-                'name': subject.name,
-                'classes': [{
-                    'id': c.id,
-                    'name': c.name
-                } for c in subject.classes.all()],
-                'chapters': [{
-                    'id': ch.id,
-                    'name': ch.name,
-                    'class': ch.class_assigned.name
-                } for ch in subject.chapter_set.all()]
+                'message': 'Subject updated successfully',
+                'subject': {'id': subject.id, 'name': subject.name}
             }, status=200)
 
-        except Subject.DoesNotExist:
-            return Response({'error': 'Subject not found'}, status=404)
-
-    def put(self, request, subject_id):
-        if not is_admin(request.user):
-            return Response({'error': 'Admin access required'}, status=403)
-
-        try:
-            subject = Subject.objects.get(id=subject_id)
-
-            name = request.data.get('name')
-            class_ids = request.data.get('class_ids')
-
-            if name:
-                subject.name = name
-                subject.save()
-
-            if class_ids is not None:
-                classes = Class.objects.filter(id__in=class_ids)
-                subject.classes.set(classes)
-
-            return Response({'message': 'Subject updated successfully'}, status=200)
-
-        except Subject.DoesNotExist:
+        except AcSubject.DoesNotExist:
             return Response({'error': 'Subject not found'}, status=404)
 
     def delete(self, request, subject_id):
         if not is_admin(request.user):
             return Response({'error': 'Admin access required'}, status=403)
 
-        try:
-            subject = Subject.objects.get(id=subject_id)
-            subject.delete()
+        from academics.models import Subject as AcSubject
 
+        try:
+            subject = AcSubject.objects.get(id=subject_id)
+            subject.delete()
             return Response({'message': 'Subject deleted successfully'}, status=200)
 
-        except Subject.DoesNotExist:
+        except AcSubject.DoesNotExist:
             return Response({'error': 'Subject not found'}, status=404)
 
 
@@ -443,10 +490,181 @@ class SubjectDeleteView(APIView):
 #  SECTION 4: CHAPTER MANAGEMENT (CRUD for Chapters)
 # ═══════════════════════════════════════════════════════════════════
 
+# class ChapterListView(APIView):
+#     """
+#     GET: List all chapters (filter by class and/or subject)
+#     POST: Create new chapter
+#     """
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         class_id = request.GET.get('class_id')
+#         subject_id = request.GET.get('subject_id')
+
+#         chapters = Chapter.objects.all()
+
+#         if class_id:
+#             chapters = chapters.filter(class_assigned__id=class_id)
+
+#         if subject_id:
+#             chapters = chapters.filter(subject__id=subject_id)
+
+#         chapters_data = [{
+#             'id': ch.id,
+#             'name': ch.name,
+#             'subject': {
+#                 'id': ch.subject.id,
+#                 'name': ch.subject.name
+#             },
+#             'class': {
+#                 'id': ch.class_assigned.id,
+#                 'name': ch.class_assigned.name
+#             },
+#             'is_completed': ch.is_completed
+#         } for ch in chapters]
+
+#         return Response(chapters_data, status=200)
+
+#     def post(self, request):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         name = request.data.get('name')
+#         subject_id = request.data.get('subject_id')
+#         class_id = request.data.get('class_id')
+
+#         if not name:
+#             return Response({'error': 'Chapter name is required'}, status=400)
+
+#         if not subject_id:
+#             return Response({'error': 'Subject is required'}, status=400)
+
+#         if not class_id:
+#             return Response({'error': 'Class is required'}, status=400)
+
+#         try:
+#             subject = Subject.objects.get(id=subject_id)
+#             cls = Class.objects.get(id=class_id)
+
+#             # Check if chapter already exists for this subject in this class
+#             if Chapter.objects.filter(
+#                 name=name, subject=subject, class_assigned=cls
+#             ).exists():
+#                 return Response({
+#                     'error': f'Chapter "{name}" already exists for {subject.name} in {cls.name}'
+#                 }, status=400)
+
+#             # Create chapter
+#             new_chapter = Chapter.objects.create(
+#                 name=name,
+#                 subject=subject,
+#                 class_assigned=cls
+#             )
+
+#             return Response({
+#                 'message': 'Chapter created successfully',
+#                 'chapter': {
+#                     'id': new_chapter.id,
+#                     'name': new_chapter.name,
+#                     'subject': subject.name,
+#                     'class': cls.name
+#                 }
+#             }, status=201)
+
+#         except Subject.DoesNotExist:
+#             return Response({'error': 'Subject not found'}, status=404)
+#         except Class.DoesNotExist:
+#             return Response({'error': 'Class not found'}, status=404)
+
+
+# class ChapterCreateView(APIView):
+#     """POST: Create a new chapter"""
+#     permission_classes = [IsAuthenticated]
+
+#     def post(self, request):
+#         return ChapterListView().post(request)
+
+
+# class ChapterDetailView(APIView):
+#     """
+#     GET: Get chapter details
+#     PUT: Update chapter
+#     DELETE: Delete chapter
+#     """
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request, chapter_id):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         try:
+#             chapter = Chapter.objects.get(id=chapter_id)
+
+#             return Response({
+#                 'id': chapter.id,
+#                 'name': chapter.name,
+#                 'subject': {
+#                     'id': chapter.subject.id,
+#                     'name': chapter.subject.name
+#                 },
+#                 'class': {
+#                     'id': chapter.class_assigned.id,
+#                     'name': chapter.class_assigned.name
+#                 },
+#                 'is_completed': chapter.is_completed
+#             }, status=200)
+
+#         except Chapter.DoesNotExist:
+#             return Response({'error': 'Chapter not found'}, status=404)
+
+#     def put(self, request, chapter_id):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         try:
+#             chapter = Chapter.objects.get(id=chapter_id)
+
+#             name = request.data.get('name')
+#             is_completed = request.data.get('is_completed')
+
+#             if name:
+#                 chapter.name = name
+
+#             if is_completed is not None:
+#                 chapter.is_completed = is_completed
+
+#             chapter.save()
+
+#             return Response({'message': 'Chapter updated successfully'}, status=200)
+
+#         except Chapter.DoesNotExist:
+#             return Response({'error': 'Chapter not found'}, status=404)
+
+#     def delete(self, request, chapter_id):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         try:
+#             chapter = Chapter.objects.get(id=chapter_id)
+#             chapter.delete()
+
+#             return Response({'message': 'Chapter deleted successfully'}, status=200)
+
+#         except Chapter.DoesNotExist:
+#             return Response({'error': 'Chapter not found'}, status=404)
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECTION 4: CHAPTER MANAGEMENT — uses academics.Chapter via ClassSubject
+# ═══════════════════════════════════════════════════════════════════
+
 class ChapterListView(APIView):
     """
-    GET: List all chapters (filter by class and/or subject)
-    POST: Create new chapter
+    GET: List chapters filtered by class_id and/or subject_id
+    POST: Create a new chapter
+    Both use academics.Chapter which has class_subject FK → ClassSubject
     """
     permission_classes = [IsAuthenticated]
 
@@ -454,29 +672,34 @@ class ChapterListView(APIView):
         if not is_admin(request.user):
             return Response({'error': 'Admin access required'}, status=403)
 
-        class_id = request.GET.get('class_id')
+        from academics.models import Chapter as AcChapter
+
+        class_id   = request.GET.get('class_id')
         subject_id = request.GET.get('subject_id')
 
-        chapters = Chapter.objects.all()
+        # Chapter → class_subject → ClassSubject → academic_class & subject
+        chapters = AcChapter.objects.select_related(
+            'class_subject__subject',
+            'class_subject__academic_class'
+        ).all()
 
         if class_id:
-            chapters = chapters.filter(class_assigned__id=class_id)
-
+            chapters = chapters.filter(class_subject__academic_class__id=class_id)
         if subject_id:
-            chapters = chapters.filter(subject__id=subject_id)
+            chapters = chapters.filter(class_subject__subject__id=subject_id)
 
         chapters_data = [{
-            'id': ch.id,
-            'name': ch.name,
+            'id':    ch.id,
+            'name':  ch.name,
+            'order': ch.order,
             'subject': {
-                'id': ch.subject.id,
-                'name': ch.subject.name
+                'id':   ch.class_subject.subject.id,
+                'name': ch.class_subject.subject.name,
             },
             'class': {
-                'id': ch.class_assigned.id,
-                'name': ch.class_assigned.name
+                'id':   ch.class_subject.academic_class.id,
+                'name': ch.class_subject.academic_class.name,
             },
-            'is_completed': ch.is_completed
         } for ch in chapters]
 
         return Response(chapters_data, status=200)
@@ -485,56 +708,60 @@ class ChapterListView(APIView):
         if not is_admin(request.user):
             return Response({'error': 'Admin access required'}, status=403)
 
-        name = request.data.get('name')
-        subject_id = request.data.get('subject_id')
-        class_id = request.data.get('class_id')
+        from academics.models import Chapter as AcChapter, ClassSubject
+
+        name       = request.data.get('name', '').strip()
+        subject_id = request.data.get('subject_id')   # AcSubject.id
+        class_id   = request.data.get('class_id')     # AcademicClass.id
+        order      = request.data.get('order', 0)
 
         if not name:
             return Response({'error': 'Chapter name is required'}, status=400)
-
         if not subject_id:
-            return Response({'error': 'Subject is required'}, status=400)
-
+            return Response({'error': 'subject_id is required'}, status=400)
         if not class_id:
-            return Response({'error': 'Class is required'}, status=400)
+            return Response({'error': 'class_id is required'}, status=400)
 
+        # Find the ClassSubject that links this subject to this class
         try:
-            subject = Subject.objects.get(id=subject_id)
-            cls = Class.objects.get(id=class_id)
-
-            # Check if chapter already exists for this subject in this class
-            if Chapter.objects.filter(
-                name=name, subject=subject, class_assigned=cls
-            ).exists():
-                return Response({
-                    'error': f'Chapter "{name}" already exists for {subject.name} in {cls.name}'
-                }, status=400)
-
-            # Create chapter
-            new_chapter = Chapter.objects.create(
-                name=name,
-                subject=subject,
-                class_assigned=cls
-            )
-
+            class_subject = ClassSubject.objects.select_related(
+                'subject', 'academic_class'
+            ).get(subject__id=subject_id, academic_class__id=class_id)
+        except ClassSubject.DoesNotExist:
             return Response({
-                'message': 'Chapter created successfully',
-                'chapter': {
-                    'id': new_chapter.id,
-                    'name': new_chapter.name,
-                    'subject': subject.name,
-                    'class': cls.name
-                }
-            }, status=201)
+                'error': 'This subject is not linked to this class. Link it from Manage Subjects first.'
+            }, status=404)
 
-        except Subject.DoesNotExist:
-            return Response({'error': 'Subject not found'}, status=404)
-        except Class.DoesNotExist:
-            return Response({'error': 'Class not found'}, status=404)
+        # Check duplicate
+        if AcChapter.objects.filter(name__iexact=name, class_subject=class_subject).exists():
+            return Response({'error': f'Chapter "{name}" already exists for this subject in this class'}, status=400)
+
+        chapter = AcChapter.objects.create(
+            name=name,
+            class_subject=class_subject,
+            order=int(order) if order else 0,
+        )
+
+        return Response({
+            'message': 'Chapter created successfully',
+            'chapter': {
+                'id':    chapter.id,
+                'name':  chapter.name,
+                'order': chapter.order,
+                'subject': {
+                    'id':   class_subject.subject.id,
+                    'name': class_subject.subject.name,
+                },
+                'class': {
+                    'id':   class_subject.academic_class.id,
+                    'name': class_subject.academic_class.name,
+                },
+            }
+        }, status=201)
 
 
 class ChapterCreateView(APIView):
-    """POST: Create a new chapter"""
+    """POST: Create a new chapter (alias endpoint)"""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -544,72 +771,63 @@ class ChapterCreateView(APIView):
 class ChapterDetailView(APIView):
     """
     GET: Get chapter details
-    PUT: Update chapter
+    PUT/PATCH: Update chapter name or order
     DELETE: Delete chapter
     """
     permission_classes = [IsAuthenticated]
 
+    def _get_chapter(self, chapter_id):
+        from academics.models import Chapter as AcChapter
+        return AcChapter.objects.select_related(
+            'class_subject__subject',
+            'class_subject__academic_class'
+        ).get(id=chapter_id)
+
     def get(self, request, chapter_id):
         if not is_admin(request.user):
             return Response({'error': 'Admin access required'}, status=403)
-
+        from academics.models import Chapter as AcChapter
         try:
-            chapter = Chapter.objects.get(id=chapter_id)
-
+            ch = self._get_chapter(chapter_id)
             return Response({
-                'id': chapter.id,
-                'name': chapter.name,
-                'subject': {
-                    'id': chapter.subject.id,
-                    'name': chapter.subject.name
-                },
-                'class': {
-                    'id': chapter.class_assigned.id,
-                    'name': chapter.class_assigned.name
-                },
-                'is_completed': chapter.is_completed
+                'id':    ch.id,
+                'name':  ch.name,
+                'order': ch.order,
+                'subject': {'id': ch.class_subject.subject.id,   'name': ch.class_subject.subject.name},
+                'class':   {'id': ch.class_subject.academic_class.id, 'name': ch.class_subject.academic_class.name},
             }, status=200)
-
-        except Chapter.DoesNotExist:
+        except AcChapter.DoesNotExist:
             return Response({'error': 'Chapter not found'}, status=404)
 
     def put(self, request, chapter_id):
+        return self.patch(request, chapter_id)
+
+    def patch(self, request, chapter_id):
         if not is_admin(request.user):
             return Response({'error': 'Admin access required'}, status=403)
-
+        from academics.models import Chapter as AcChapter
         try:
-            chapter = Chapter.objects.get(id=chapter_id)
-
-            name = request.data.get('name')
-            is_completed = request.data.get('is_completed')
-
+            ch = AcChapter.objects.get(id=chapter_id)
+            name  = request.data.get('name', '').strip()
+            order = request.data.get('order')
             if name:
-                chapter.name = name
-
-            if is_completed is not None:
-                chapter.is_completed = is_completed
-
-            chapter.save()
-
+                ch.name = name
+            if order is not None:
+                ch.order = int(order)
+            ch.save()
             return Response({'message': 'Chapter updated successfully'}, status=200)
-
-        except Chapter.DoesNotExist:
+        except AcChapter.DoesNotExist:
             return Response({'error': 'Chapter not found'}, status=404)
 
     def delete(self, request, chapter_id):
         if not is_admin(request.user):
             return Response({'error': 'Admin access required'}, status=403)
-
+        from academics.models import Chapter as AcChapter
         try:
-            chapter = Chapter.objects.get(id=chapter_id)
-            chapter.delete()
-
+            AcChapter.objects.get(id=chapter_id).delete()
             return Response({'message': 'Chapter deleted successfully'}, status=200)
-
-        except Chapter.DoesNotExist:
+        except AcChapter.DoesNotExist:
             return Response({'error': 'Chapter not found'}, status=404)
-
-
 # ═══════════════════════════════════════════════════════════════════
 #  SECTION 5: TEACHER ASSIGNMENT MANAGEMENT
 # ═══════════════════════════════════════════════════════════════════
@@ -694,7 +912,57 @@ class TeacherAssignmentCreateView(APIView):
         except Subject.DoesNotExist:
             return Response({'error': 'Subject not found'}, status=404)
 
+class TeacherAssignmentDeleteView(APIView):
+    """DELETE: Remove a teacher assignment"""
+    permission_classes = [IsAuthenticated]
 
+    def delete(self, request, assignment_id):
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+        try:
+            from academics.models import TeacherAssignment as AcTeacherAssignment
+            assignment = AcTeacherAssignment.objects.select_related(
+                'teacher', 'class_subject__subject', 'class_subject__academic_class'
+            ).get(id=assignment_id)
+            assignment.delete()
+            return Response({'message': 'Assignment removed successfully'}, status=200)
+        except AcTeacherAssignment.DoesNotExist:
+            return Response({'error': 'Assignment not found'}, status=404)
+
+
+class GetTeacherAssignmentsView(APIView):
+    """GET: List all teacher assignments using academics model"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+
+        from academics.models import TeacherAssignment as AcTeacherAssignment
+        assignments = AcTeacherAssignment.objects.select_related(
+            'teacher',
+            'class_subject__subject',
+            'class_subject__academic_class',
+        ).all()
+
+        data = [{
+            'id': a.id,
+            'teacher': {
+                'id':   a.teacher.id,
+                'name': a.teacher.get_full_name() or a.teacher.username,
+            },
+            'subject': {
+                'id':   a.class_subject.subject.id,
+                'name': a.class_subject.subject.name,
+            },
+            'class': {
+                'id':   a.class_subject.academic_class.id,
+                'name': a.class_subject.academic_class.name,
+            },
+            'class_subject_id': a.class_subject.id,
+        } for a in assignments]
+
+        return Response(data, status=200)
 # ═══════════════════════════════════════════════════════════════════
 #  SECTION 6: NOTIFICATION MANAGEMENT
 # ═══════════════════════════════════════════════════════════════════
