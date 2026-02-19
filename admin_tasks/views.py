@@ -315,7 +315,8 @@ class SubjectListView(APIView):
                 'id': c.id,
                 'name': c.name
             } for c in s.classes.all()],
-            'chapter_count': s.chapter_set.count()
+            # 'chapter_count': s.chapter_set.count()
+            'chapter_count': Chapter.objects.filter(subject=s).count()
         } for s in subjects]
 
         return Response(subjects_data, status=200)
@@ -1263,12 +1264,39 @@ class GetSubjectsByClassView(APIView):
 #  MANAGE SUBJECTS & CHAPTERS (for academics app compatibility)
 # ═══════════════════════════════════════════════════════════════════
 
+# class ManageSubjectsView(APIView):
+#     """GET, POST for subjects management"""
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         return SubjectListView().get(request)
+
+#     def post(self, request):
+#         return SubjectListView().post(request)
+
+
 class ManageSubjectsView(APIView):
-    """GET, POST for subjects management"""
+    """GET all subjects (from academics.Subject), POST to create"""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return SubjectListView().get(request)
+        if not is_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=403)
+
+        from academics.models import Subject as AcSubject, ClassSubject
+        subjects = AcSubject.objects.prefetch_related('class_subjects__academic_class').all()
+
+        subjects_data = [{
+            'id': s.id,
+            'name': s.name,
+            'classes': [{
+                'id': cs.academic_class.id,
+                'name': cs.academic_class.name
+            } for cs in s.class_subjects.all()],
+            'chapter_count': sum(cs.chapters.count() for cs in s.class_subjects.all())
+        } for s in subjects]
+
+        return Response(subjects_data, status=200)
 
     def post(self, request):
         return SubjectListView().post(request)

@@ -118,7 +118,9 @@ class Doubt(models.Model):
     class_subject = models.ForeignKey(
         ClassSubject,
         on_delete=models.CASCADE,
-        related_name='doubts'
+        related_name='doubts',
+        null=True,      # ← add this
+        blank=True  
     )
     doubt_text = models.TextField(blank=True)
     doubt_image = models.ImageField(upload_to='doubts/', blank=True, null=True)

@@ -46,6 +46,7 @@ urlpatterns = [
     path('subjects/', ManageSubjectsView.as_view(), name='manage-subjects'),
     path('subjects/create/', SubjectCreateView.as_view(), name='subject-create'),
     path('subjects/<int:subject_id>/', SubjectDetailView.as_view(), name='subject-detail'),
+    path('subjects/<int:subject_id>/update/', SubjectDetailView.as_view(), name='subject-update'),
     
     # Chapter Management
     path('chapters/', ManageChaptersView.as_view(), name='manage-chapters'),
