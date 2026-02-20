@@ -601,15 +601,31 @@ class TeacherSubjectsListView(APIView):
         if class_id:
             assignments = assignments.filter(class_subject__academic_class_id=class_id)
 
+        # subjects = assignments.values(
+        #     'class_subject__subject__id',
+        #     'class_subject__subject__name'
+        # ).distinct()
+
+        # return Response([{
+        #     'id': s['class_subject__subject__id'],
+        #     'name': s['class_subject__subject__name']
+        # } for s in subjects])
         subjects = assignments.values(
             'class_subject__subject__id',
             'class_subject__subject__name'
         ).distinct()
 
+        # ✅ Deduplicate by subject id using dict
+        seen = {}
+        for s in subjects:
+            sid = s['class_subject__subject__id']
+            if sid not in seen:
+                seen[sid] = s['class_subject__subject__name']
+
         return Response([{
-            'id': s['class_subject__subject__id'],
-            'name': s['class_subject__subject__name']
-        } for s in subjects])
+            'id': sid,
+            'name': sname
+        } for sid, sname in seen.items()])
 
 
 class TeacherClassSubjectsView(APIView):

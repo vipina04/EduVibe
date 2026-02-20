@@ -256,6 +256,8 @@ markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/co
   updateTest:     (testId, data)  => api.put(`/teachers/tests/${testId}/`, data),
   deleteTest:     (testId)        => api.delete(`/teachers/tests/${testId}/`),
   getTestResults: (testId)        => api.get(`/teachers/tests/${testId}/results/`),
+  getSubjectClasses: (subjectId) => api.get('/teachers/subject-classes/', { params: { subject_id: subjectId } }),
+  getClassChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),   
 
   // Questions
   addQuestion:    (testId, data)      => api.post(`/teachers/tests/${testId}/add-question/`, data),
