@@ -40,6 +40,11 @@ from .views import (
     StudentSearchView,
     DiagnosticView,
     StudentDashboardView,
+    
+    # Notifications
+    StudentNotificationsView,
+    StudentMarkNotificationReadView,
+    StudentMarkAllReadView,
 )
 
 # Import doubt views from separate file
@@ -94,6 +99,9 @@ urlpatterns = [
     #  NOTIFICATIONS
     # ═══════════════════════════════════════════════════════════
     path('my-notifications/', MyNotificationsView.as_view(), name='my-notifications'),
+    path('notifications/', StudentNotificationsView.as_view(), name='student-notifications'),
+    path('notifications/mark-all-read/', StudentMarkAllReadView.as_view(), name='student-mark-all-read'),
+    path('notifications/<int:notification_id>/mark-read/', StudentMarkNotificationReadView.as_view(), name='student-mark-read'),
     
     # ═══════════════════════════════════════════════════════════
     #  SEARCH

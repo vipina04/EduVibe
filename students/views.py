@@ -1438,7 +1438,59 @@ class DiagnosticView(APIView):
 
 
 
+# ── Student Notification Views ────────────────────────────────────────────────
 
+class StudentNotificationsView(APIView):
+    """GET /api/students/notifications/"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'student':
+            return Response({'error': 'Student access required'}, status=403)
+        from admin_tasks.models import Notification
+        notifs = Notification.objects.filter(
+            user=request.user
+        ).order_by('-created_at')[:50]
+
+        data = [{
+            'id':         n.id,
+            'title':      n.title,
+            'message':    n.message,
+            'is_read':    n.is_read,
+            'created_at': n.created_at.strftime('%d %b %Y, %I:%M %p'),
+        } for n in notifs]
+
+        return Response({
+            'notifications': data,
+            'unread_count':  sum(1 for n in data if not n['is_read']),
+        }, status=200)
+
+
+class StudentMarkNotificationReadView(APIView):
+    """POST /api/students/notifications/<id>/mark-read/"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, notification_id):
+        from admin_tasks.models import Notification
+        try:
+            n = Notification.objects.get(id=notification_id, user=request.user)
+            n.is_read = True
+            n.save()
+            return Response({'message': 'Marked as read'}, status=200)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+
+
+class StudentMarkAllReadView(APIView):
+    """POST /api/students/notifications/mark-all-read/"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from admin_tasks.models import Notification
+        Notification.objects.filter(
+            user=request.user, is_read=False
+        ).update(is_read=True)
+        return Response({'message': 'All marked as read'}, status=200)
 
 
 

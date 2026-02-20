@@ -130,95 +130,184 @@ export const studentAPI = {
   markNotificationRead: (notificationId) => 
     api.post(`/students/notifications/${notificationId}/mark-read/`),
 
+  markAllNotificationsRead: () => api.post('/students/notifications/mark-all-read/'),
+
   // Attendance
   getMyAttendance: (params) => api.get('/students/my-attendance/', { params }),
   getAttendance: (params) => api.get('/students/my-attendance/', { params }), 
 };
 
 // ============ TEACHER APIs ============
+// export const teacherAPI = {
+//   // Dashboard
+//   getDashboard: () => api.get('/teachers/home/'),
+
+//   // Classes & Subjects — RESTORED from original working version
+//   getMyClasses: () => api.get('/teachers/my-classes/'),
+//   getMySubjects: () => api.get('/teachers/my-subjects/'),
+//   getClassSubject: (classId, subjectId) => 
+//     api.get(`/teachers/class/${classId}/subject/${subjectId}/`),
+
+//   // ✅ NEW — correct endpoints used by TeacherDoubts, TeacherClasses etc.
+//   getClasses: () => api.get('/teachers/classes/'),
+//   getSubjects: (params) => api.get('/teachers/subjects/', { params }),
+//   getClassSubjects: (classId) => api.get(`/teachers/class/${classId}/subjects/`),
+  
+//   // Students
+//   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
+//   getStudentProfile: (studentId) => api.get(`/teachers/students/${studentId}/profile/`),
+  
+//   // Tests
+//   getMyTests: () => api.get('/teachers/tests/'),
+//   createTest: (data) => api.post('/teachers/tests/create/', data),
+//   getTestDetails: (testId) => api.get(`/teachers/tests/${testId}/`),
+//   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/`, data),
+//   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/`),
+//   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
+  
+//   // Questions
+//   addQuestion: (testId, data) => api.post(`/teachers/tests/${testId}/add-question/`, data),
+//   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/`, data),
+//   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/`),
+  
+//   // Notes
+//   createNote: (data) => api.post('/teachers/notes/create/', data),
+//   getMyNotes: () => api.get('/teachers/notes/'),
+//   updateNote: (noteId, data) => api.put(`/teachers/notes/${noteId}/`, data),
+//   deleteNote: (noteId) => api.delete(`/teachers/notes/${noteId}/`),
+  
+//   // Assignments
+//   createAssignment: (data) => api.post('/teachers/assignments/create/', data),
+//   getAssignments: () => api.get('/teachers/assignments/'),    // ✅ ADDED — was missing
+//   getMyAssignments: () => api.get('/teachers/assignments/'),  // alias
+//   getAssignmentSubmissions: (assignmentId) => 
+//     api.get(`/teachers/assignments/${assignmentId}/submissions/`),
+//   gradeSubmission: (submissionId, data) => 
+//     api.post(`/teachers/submissions/${submissionId}/grade/`, data),
+  
+//   // Doubts — RESTORED original async pattern that returned response.data
+//   // (kept for any code that relied on the old pattern)
+//   getDoubts: async (params) => {
+//     const response = await api.get('/teachers/doubts/', { params });
+//     return response;   // returns full response so .data works on callers
+//   },
+//   replyToDoubt: async (doubtId, formData) => {
+//     const response = await api.post(`/teachers/doubts/${doubtId}/reply/`, formData, {
+//       headers: { 'Content-Type': 'multipart/form-data' },
+//     });
+//     return response;
+//   },
+
+//   // Old doubts endpoints (keeping for compatibility)
+//   replyDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data),
+  
+//   // Attendance
+//   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
+//   getAttendance: (classId, date) => 
+//     api.get(`/teachers/class/${classId}/attendance/`, { params: { date } }),
+  
+//   // Performance
+//   getClassPerformance: (classId) => api.get(`/teachers/class/${classId}/performance/`),
+//   getStudentPerformance: (studentId) => 
+//     api.get(`/teachers/students/${studentId}/performance/`),
+  
+//   // Profile
+//   getProfile: () => api.get('/teachers/profile/'),
+//   updateProfile: (data) => api.put('/teachers/profile/', data),
+  
+//   // Notifications
+//   getNotifications: () => api.get('/teachers/notifications/'),
+//   markNotificationRead: (notificationId) => 
+//     api.post(`/teachers/notifications/${notificationId}/mark-read/`),
+// };
 export const teacherAPI = {
   // Dashboard
   getDashboard: () => api.get('/teachers/home/'),
 
-  // Classes & Subjects — RESTORED from original working version
+  // Classes & Subjects
   getMyClasses: () => api.get('/teachers/my-classes/'),
   getMySubjects: () => api.get('/teachers/my-subjects/'),
-  getClassSubject: (classId, subjectId) => 
+  getClassSubject: (classId, subjectId) =>
     api.get(`/teachers/class/${classId}/subject/${subjectId}/`),
 
-  // ✅ NEW — correct endpoints used by TeacherDoubts, TeacherClasses etc.
-  getClasses: () => api.get('/teachers/classes/'),
+  // ✅ FIXED — uses correct endpoints matching our backend logic
+  getClasses: async () => {
+    const response = await api.get('/teachers/teacher-assigned-classes/');
+    // Backend returns { success: true, classes: [...] }
+    const data = response.data?.classes || [];
+    return { data: Array.isArray(data) ? data : [] };
+  },
   getSubjects: (params) => api.get('/teachers/subjects/', { params }),
   getClassSubjects: (classId) => api.get(`/teachers/class/${classId}/subjects/`),
-  
+
   // Students
   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
   getStudentProfile: (studentId) => api.get(`/teachers/students/${studentId}/profile/`),
-  
+
   // Tests
-  getMyTests: () => api.get('/teachers/tests/'),
-  createTest: (data) => api.post('/teachers/tests/create/', data),
-  getTestDetails: (testId) => api.get(`/teachers/tests/${testId}/`),
-  updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/`, data),
-  deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/`),
-  getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
-  
+  getMyTests:     ()              => api.get('/teachers/tests/'),
+  createTest:     (data)          => api.post('/teachers/tests/create/', data),
+  getTestDetails: (testId)        => api.get(`/teachers/tests/${testId}/`),
+  updateTest:     (testId, data)  => api.put(`/teachers/tests/${testId}/`, data),
+  deleteTest:     (testId)        => api.delete(`/teachers/tests/${testId}/`),
+  getTestResults: (testId)        => api.get(`/teachers/tests/${testId}/results/`),
+
   // Questions
-  addQuestion: (testId, data) => api.post(`/teachers/tests/${testId}/add-question/`, data),
-  updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/`, data),
-  deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/`),
-  
+  addQuestion:    (testId, data)      => api.post(`/teachers/tests/${testId}/add-question/`, data),
+  updateQuestion: (questionId, data)  => api.put(`/teachers/questions/${questionId}/`, data),
+  deleteQuestion: (questionId)        => api.delete(`/teachers/questions/${questionId}/`),
+
   // Notes
-  createNote: (data) => api.post('/teachers/notes/create/', data),
-  getMyNotes: () => api.get('/teachers/notes/'),
-  updateNote: (noteId, data) => api.put(`/teachers/notes/${noteId}/`, data),
-  deleteNote: (noteId) => api.delete(`/teachers/notes/${noteId}/`),
-  
+  createNote: (data)          => api.post('/teachers/notes/create/', data),
+  getMyNotes: ()              => api.get('/teachers/notes/'),
+  updateNote: (noteId, data)  => api.put(`/teachers/notes/${noteId}/`, data),
+  deleteNote: (noteId)        => api.delete(`/teachers/notes/${noteId}/`),
+
   // Assignments
-  createAssignment: (data) => api.post('/teachers/assignments/create/', data),
-  getAssignments: () => api.get('/teachers/assignments/'),    // ✅ ADDED — was missing
-  getMyAssignments: () => api.get('/teachers/assignments/'),  // alias
-  getAssignmentSubmissions: (assignmentId) => 
+  createAssignment:       (data)          => api.post('/teachers/assignments/create/', data),
+  getAssignments:         ()              => api.get('/teachers/assignments/'),
+  getMyAssignments:       ()              => api.get('/teachers/assignments/'),
+  getAssignmentSubmissions: (assignmentId) =>
     api.get(`/teachers/assignments/${assignmentId}/submissions/`),
-  gradeSubmission: (submissionId, data) => 
+  gradeSubmission: (submissionId, data)   =>
     api.post(`/teachers/submissions/${submissionId}/grade/`, data),
-  
-  // Doubts — RESTORED original async pattern that returned response.data
-  // (kept for any code that relied on the old pattern)
+
+  // ✅ FIXED Doubts — correct endpoints + normalized response
   getDoubts: async (params) => {
-    const response = await api.get('/teachers/doubts/', { params });
-    return response;   // returns full response so .data works on callers
+    const response = await api.get('/teachers/teacher-doubts/', { params });
+    // Backend returns { success: true, doubts: [...] }
+    const data = response.data?.doubts || [];
+    return { data: Array.isArray(data) ? data : [] };
   },
   replyToDoubt: async (doubtId, formData) => {
-    const response = await api.post(`/teachers/doubts/${doubtId}/reply/`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await api.post(
+      `/teachers/teacher-doubts/${doubtId}/reply/`,
+      formData
+    );
     return response;
   },
+  replyDoubt: (doubtId, data) =>
+    api.post(`/teachers/teacher-doubts/${doubtId}/reply/`, data),
 
-  // Old doubts endpoints (keeping for compatibility)
-  replyDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data),
-  
   // Attendance
   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
-  getAttendance: (classId, date) => 
+  getAttendance:  (classId, date) =>
     api.get(`/teachers/class/${classId}/attendance/`, { params: { date } }),
-  
-  // Performance
-  getClassPerformance: (classId) => api.get(`/teachers/class/${classId}/performance/`),
-  getStudentPerformance: (studentId) => 
-    api.get(`/teachers/students/${studentId}/performance/`),
-  
-  // Profile
-  getProfile: () => api.get('/teachers/profile/'),
-  updateProfile: (data) => api.put('/teachers/profile/', data),
-  
-  // Notifications
-  getNotifications: () => api.get('/teachers/notifications/'),
-  markNotificationRead: (notificationId) => 
-    api.post(`/teachers/notifications/${notificationId}/mark-read/`),
-};
 
+  // Performance
+  getClassPerformance:   (classId)   => api.get(`/teachers/class/${classId}/performance/`),
+  getStudentPerformance: (studentId) => api.get(`/teachers/students/${studentId}/performance/`),
+
+  // Profile
+  getProfile:    ()     => api.get('/teachers/profile/'),
+  updateProfile: (data) => api.put('/teachers/profile/', data),
+
+  // Notifications
+  getNotifications:     ()                => api.get('/teachers/notifications/'),
+  markNotificationRead: (notificationId)  =>
+    api.post(`/teachers/notifications/${notificationId}/mark-read/`),
+  markAllNotificationsRead: () => api.post('/teachers/notifications/mark-all-read/'),
+};
 // ============ ADMIN APIs ============
 
 

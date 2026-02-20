@@ -50,6 +50,11 @@ from .views import (
     DoubtListView,
     DoubtDetailView,
     DoubtReplyCreateView,
+    
+    # notifications
+    TeacherNotificationsView,
+    TeacherMarkNotificationReadView,
+    TeacherMarkAllReadView,
 )
 
 app_name = 'teachers'
@@ -126,6 +131,12 @@ urlpatterns = [
     path('teacher-assigned-subjects/', views_doubts.get_teacher_assigned_subjects, name='teacher-assigned-subjects'),
     path('teacher-doubts/', views_doubts.get_teacher_doubts, name='teacher-doubts-list'),
     path('teacher-doubts/<int:doubt_id>/reply/', views_doubts.reply_to_doubt, name='reply-to-doubt'),
+    
+    
+    # Notifications
+    path('notifications/', TeacherNotificationsView.as_view(), name='teacher-notifications'),
+    path('notifications/mark-all-read/', TeacherMarkAllReadView.as_view(), name='teacher-mark-all-read'),
+    path('notifications/<int:notification_id>/mark-read/', TeacherMarkNotificationReadView.as_view(), name='teacher-mark-read'),
 ]
 
 

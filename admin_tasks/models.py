@@ -157,6 +157,23 @@ class Notification(models.Model):
         if self.user:
             return f"To {self.user.username}: {self.title}"
         return f"To {self.get_recipient_type_display()}: {self.title}"
+    
+    
+    # ── Notification Helper ───────────────────────────────────────────────────────
+def send_notification(recipient_user, title, message, created_by=None):
+    """
+    Auto-create a notification for any user.
+    Call this from any view — doubt created, reply posted, etc.
+    Always wrapped in try/except so it never breaks the main action.
+    """
+    Notification.objects.create(
+        recipient_type='individual',
+        user=recipient_user,
+        title=title,
+        message=message,
+        created_by=created_by,
+        is_read=False,
+    )
 
 
 class FeePayment(models.Model):

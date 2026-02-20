@@ -75,16 +75,21 @@ const TeacherDoubts = () => {
       return;
     }
 
-    const fetchSubjectsForClass = async () => {
-      try {
-        console.log(`🔄 Fetching subjects for class ${selectedClass}...`);
-        const response = await teacherAPI.getClassSubjects(selectedClass);
-        console.log('✅ Subjects response:', response.data);
-        setSubjects(Array.isArray(response.data) ? response.data : []);
-      } catch (error) {
-        console.error('❌ Failed to load subjects:', error?.response?.status, error?.message);
-        setSubjects([]);
-      }
+    // const fetchSubjectsForClass = async () => {
+    //   try {
+    //     console.log(`🔄 Fetching subjects for class ${selectedClass}...`);
+    //     const response = await teacherAPI.getClassSubjects(selectedClass);
+    //     console.log('✅ Subjects response:', response.data);
+    //     setSubjects(Array.isArray(response.data) ? response.data : []);
+    //   } catch (error) {
+    //     console.error('❌ Failed to load subjects:', error?.response?.status, error?.message);
+    //     setSubjects([]);
+    //   }
+    // };
+    const fetchSubjectsForClass = () => {
+  // No API call needed — subjects are already inside classes data
+    const selectedClassData = classes.find(c => String(c.id) === String(selectedClass));
+    setSubjects(selectedClassData?.subjects || []);
     };
 
     const fetchDoubtsForSelection = async () => {
@@ -129,8 +134,9 @@ const TeacherDoubts = () => {
     try {
       setReplySubmitting(true);
       const formData = new FormData();
-      formData.append('text', replyText.trim());
-      if (replyImage) formData.append('image', replyImage);
+      formData.append('reply_text', replyText.trim());
+      // if (replyImage) formData.append('image', replyImage);
+      if (replyImage) formData.append('reply_image', replyImage);
 
       await teacherAPI.replyToDoubt(doubtId, formData);
       toast.success('Reply posted successfully!');
@@ -293,11 +299,11 @@ const TeacherDoubts = () => {
                         )}
                       </p>
 
-                      <p className="text-gray-700 dark:text-gray-300 mb-3">{doubt.text}</p>
+                      <p className="text-gray-700 dark:text-gray-300 mb-3">{doubt.doubt_text}</p>
 
                       {doubt.image_url && (
                         <img
-                          src={doubt.image_url}
+                          src={doubt.doubt_image}
                           alt="Doubt attachment"
                           className="max-w-sm h-auto rounded-lg mb-3 border border-gray-200 dark:border-gray-700"
                         />
@@ -321,8 +327,8 @@ const TeacherDoubts = () => {
                           <HiReply className="w-5 h-5 text-blue-500 mt-1 flex-shrink-0" />
                           <div className="flex-1">
                             <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-                              {reply.user?.name}
-                              {reply.user?.role === 'teacher' && (
+                              {reply.replied_by_name}
+                              {reply.replied_by_role === 'teacher' && (
                                 <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 rounded text-xs">
                                   Teacher
                                 </span>
