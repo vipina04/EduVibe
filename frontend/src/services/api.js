@@ -231,18 +231,23 @@ export const teacherAPI = {
     api.get(`/teachers/class/${classId}/subject/${subjectId}/`),
 
   // ✅ FIXED — uses correct endpoints matching our backend logic
-  getClasses: async () => {
-    const response = await api.get('/teachers/teacher-assigned-classes/');
-    // Backend returns { success: true, classes: [...] }
-    const data = response.data?.classes || [];
-    return { data: Array.isArray(data) ? data : [] };
-  },
+  // getClasses: async () => {
+  //   const response = await api.get('/teachers/teacher-assigned-classes/');
+  //   // Backend returns { success: true, classes: [...] }
+  //   const data = response.data?.classes || [];
+  //   return { data: Array.isArray(data) ? data : [] };
+  // },
+  getClasses: () => api.get('/teachers/classes/'),
   getSubjects: (params) => api.get('/teachers/subjects/', { params }),
   getClassSubjects: (classId) => api.get(`/teachers/class/${classId}/subjects/`),
 
   // Students
   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
   getStudentProfile: (studentId) => api.get(`/teachers/students/${studentId}/profile/`),
+
+  // Chapters
+getChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),
+markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/complete/`),
 
   // Tests
   getMyTests:     ()              => api.get('/teachers/tests/'),

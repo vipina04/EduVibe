@@ -23,10 +23,22 @@ from datetime import date
 from django.db import transaction
 import traceback
 
+# from academics.models import AcademicClass as Class, Subject, ClassSubject, Chapter
+
+# from .models import (
+#     TeacherAssignment, Test, Question, Attendance, Assignment, Doubt, DoubtReply, Option
+# )
+
 from users.models import CustomUser
-from academics.models import AcademicClass as Class, Subject, ClassSubject, Chapter
+from academics.models import (
+    AcademicClass as Class,
+    Subject,
+    ClassSubject,
+    Chapter,
+    TeacherAssignment,   # ✅ Real assignments saved by admin
+)
 from .models import (
-    TeacherAssignment, Test, Question, Attendance, Assignment, Doubt, DoubtReply, Option
+    Test, Question, Attendance, Assignment, Doubt, DoubtReply, Option
 )
 from students.models import TestAttempt, StudentAnswer
 
@@ -291,34 +303,96 @@ def create_test(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+# @api_view(['GET'])
+# @permission_classes([IsAuthenticated])
+# def get_assigned_classes(request):
+#     """Get all classes assigned to the teacher"""
+#     try:
+#         classes = Class.objects.all()
+
+#         classes_data = []
+#         for cls in classes:
+#             classes_data.append({
+#                 'id': cls.id,
+#                 'name': cls.name,
+#                 'subjects': [],
+#                 'student_count': 0
+#             })
+
+#         return Response({
+#             'classes': classes_data,
+#             'total_classes': len(classes_data)
+#         }, status=status.HTTP_200_OK)
+
+#     except Exception as e:
+#         print("Error fetching assigned classes:", str(e))
+#         print("Traceback:", traceback.format_exc())
+#         return Response({
+#             'error': 'Failed to fetch assigned classes',
+#             'details': str(e)
+#         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_assigned_classes(request):
-    """Get all classes assigned to the teacher"""
+    """
+    Get all classes+subjects+chapters assigned to this teacher
+    via academics.TeacherAssignment → ClassSubject
+    """
     try:
-        classes = Class.objects.all()
+        from academics.models import TeacherAssignment as AcTA, Chapter as AcChapter
 
-        classes_data = []
-        for cls in classes:
-            classes_data.append({
-                'id': cls.id,
-                'name': cls.name,
-                'subjects': [],
-                'student_count': 0
+        assignments = AcTA.objects.filter(
+            teacher=request.user
+        ).select_related(
+            'class_subject__academic_class',
+            'class_subject__subject',
+        )
+
+        # Group by class
+        classes_map = {}
+        for a in assignments:
+            cls   = a.class_subject.academic_class
+            subj  = a.class_subject.subject
+            cs    = a.class_subject
+
+            if cls.id not in classes_map:
+                classes_map[cls.id] = {
+                    'id':       cls.id,
+                    'name':     cls.name,
+                    'subjects': []
+                }
+
+            # Get chapters for this class_subject
+            chapters = AcChapter.objects.filter(
+                class_subject=cs
+            ).order_by('order', 'name')
+
+            chapters_data = [{
+                'id':           ch.id,
+                'name':         ch.name,
+                'order':        ch.order,
+                'is_completed': getattr(ch, 'is_completed', False),
+            } for ch in chapters]
+
+            classes_map[cls.id]['subjects'].append({
+                'id':               subj.id,
+                'name':             subj.name,
+                'class_subject_id': cs.id,
+                'assignment_id':    a.id,
+                'chapters':         chapters_data,
             })
 
         return Response({
-            'classes': classes_data,
-            'total_classes': len(classes_data)
-        }, status=status.HTTP_200_OK)
+            'classes': list(classes_map.values()),
+            'total_classes': len(classes_map)
+        }, status=200)
 
     except Exception as e:
-        print("Error fetching assigned classes:", str(e))
-        print("Traceback:", traceback.format_exc())
+        import traceback
         return Response({
-            'error': 'Failed to fetch assigned classes',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            'error': str(e),
+            'details': traceback.format_exc()
+        }, status=500)
 
 # ═══════════════════════════════════════════════════════════
 #  TEACHER DASHBOARD & CORE LISTS
@@ -411,22 +485,84 @@ class TeacherHomeView(APIView):
         })
 
 
+# class TeacherClassesListView(APIView):
+#     """Get all classes assigned to teacher with statistics"""
+#     permission_classes = [IsTeacherRole]
+
+#     # def get(self, request):
+#     #     assignments = TeacherAssignment.objects.filter(
+#     #         teacher=request.user
+#     #     ).select_related('class_subject__academic_class').values(
+#     #         'class_subject__academic_class__id',
+#     #         'class_subject__academic_class__name'
+#     #     ).distinct()
+
+#     #     classes_data = []
+#     #     for assignment in assignments:
+#     #         class_id = assignment['class_subject__academic_class__id']
+#     #         class_name = assignment['class_subject__academic_class__name']
+#     def get(self, request):
+#     # Get unique class IDs only — prevents duplicate cards
+#         unique_class_ids = TeacherAssignment.objects.filter(
+#             teacher=request.user
+#         ).values_list(
+#             'class_subject__academic_class__id', flat=True
+#         ).distinct()
+
+#         classes_data = []
+#         for class_id in unique_class_ids:
+#             cls = Class.objects.get(id=class_id)
+#             class_name = cls.name
+
+#             subjects_count = TeacherAssignment.objects.filter(
+#                 teacher=request.user,
+#                 class_subject__academic_class_id=class_id
+#             ).values('class_subject__subject').distinct().count()
+
+#             students_count = CustomUser.objects.filter(
+#                 role='student',
+#                 class_assigned_id=class_id,
+#                 is_approved=True
+#             ).count()
+
+#             tests_count = Test.objects.filter(
+#                 created_by=request.user,
+#                 chapter__class_subject__academic_class_id=class_id
+#             ).count()
+
+#             classes_data.append({
+#                 'id': class_id,
+#                 'name': class_name,
+#                 'subjects_count': subjects_count,
+#                 'students_count': students_count,
+#                 'tests_count': tests_count
+#             })
+
+#         return Response(classes_data)
 class TeacherClassesListView(APIView):
     """Get all classes assigned to teacher with statistics"""
     permission_classes = [IsTeacherRole]
 
     def get(self, request):
-        assignments = TeacherAssignment.objects.filter(
-            teacher=request.user
-        ).select_related('class_subject__academic_class').values(
-            'class_subject__academic_class__id',
-            'class_subject__academic_class__name'
-        ).distinct()
+        # Get unique class IDs — prevents duplicate cards
+        # unique_class_ids = list(
+        #     TeacherAssignment.objects.filter(
+        #         teacher=request.user
+        #     ).values_list(
+        #         'class_subject__academic_class__id', flat=True
+        #     ).distinct()
+        # )
+        unique_class_ids = list(set(
+            TeacherAssignment.objects.filter(
+                teacher=request.user
+            ).values_list(
+                'class_subject__academic_class__id', flat=True
+            )
+        ))
 
         classes_data = []
-        for assignment in assignments:
-            class_id = assignment['class_subject__academic_class__id']
-            class_name = assignment['class_subject__academic_class__name']
+        for class_id in unique_class_ids:
+            cls = Class.objects.get(id=class_id)
 
             subjects_count = TeacherAssignment.objects.filter(
                 teacher=request.user,
@@ -446,14 +582,13 @@ class TeacherClassesListView(APIView):
 
             classes_data.append({
                 'id': class_id,
-                'name': class_name,
+                'name': cls.name,
                 'subjects_count': subjects_count,
                 'students_count': students_count,
                 'tests_count': tests_count
             })
 
         return Response(classes_data)
-
 
 class TeacherSubjectsListView(APIView):
     """Get subjects assigned to teacher, optionally filtered by class"""

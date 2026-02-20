@@ -13,7 +13,13 @@ export default function NotificationBell() {
   const dropdownRef = useRef();
   const navigate = useNavigate();
 
-  const api = user?.role === 'teacher' ? teacherAPI : studentAPI;
+//   const api = user?.role === 'teacher' ? teacherAPI : studentAPI;
+const getAPI = () => {
+  if (user?.role === 'teacher') return teacherAPI;
+  if (user?.role === 'student') return studentAPI;
+  return null;
+};
+const api = getAPI();
 
   // Fetch on mount + every 30 seconds
   useEffect(() => {
