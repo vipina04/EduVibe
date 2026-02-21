@@ -8,7 +8,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here-change-me')
 
-DEBUG = True
+# DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.192.225.212','eduvibe-backend.onrender.com']
 
@@ -73,15 +74,22 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 #         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'eduvibe',
+#         'USER': 'postgres',
+#         'PASSWORD': 'postgres123',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
+import dj_database_url
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'eduvibe',
-        'USER': 'postgres',
-        'PASSWORD': 'postgres123',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    'default': dj_database_url.config(
+        default='postgresql://postgres:postgres123@localhost:5432/eduvibe'
+    )
 }
 
 AUTH_PASSWORD_VALIDATORS = [
