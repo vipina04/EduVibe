@@ -101,18 +101,30 @@ const TeacherTestSelection = () => {
   };
 
   // ── Step 3: Chapter selected → go to CreateTest ───────────
+  // const handleChapterSelect = (chapter) => {
+  //   navigate(`/teacher/chapter/${chapter.id}/test/create`, {
+  //     state: {
+  //       chapterId: chapter.id,
+  //       chapterName: chapter.name,
+  //       subjectId: selectedSubject.id,
+  //       subjectName: selectedSubject.name,
+  //       classId: selectedClass.id,
+  //       className: selectedClass.name,
+  //     }
+  //   });
+  // };
   const handleChapterSelect = (chapter) => {
-    navigate(`/teacher/chapter/${chapter.id}/test/create`, {
-      state: {
-        chapterId: chapter.id,
-        chapterName: chapter.name,
-        subjectId: selectedSubject.id,
-        subjectName: selectedSubject.name,
-        classId: selectedClass.id,
-        className: selectedClass.name,
-      }
-    });
-  };
+  navigate('/teacher/test/new', {
+    state: {
+      preselectedChapterId: chapter.id,
+      preselectedChapterName: chapter.name,
+      preselectedSubjectId: selectedSubject.id,
+      preselectedSubjectName: selectedSubject.name,
+      preselectedClassId: selectedClass.id,
+      preselectedClassName: selectedClass.name,
+    }
+  });
+};
 
   // ── Breadcrumb / back navigation ──────────────────────────
   const goBack = () => {

@@ -97,9 +97,11 @@ export const studentAPI = {
   getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
   
   // Tests
+  getChapters: (subjectId) => api.get(`/students/subjects/${subjectId}/chapters/`),
   getChapterTests: (chapterId) => api.get(`/students/chapters/${chapterId}/tests/`),
   startTest: (testId) => api.get(`/students/tests/${testId}/start/`),
-  submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+  // submitTest: (attemptId, answers) => api.post(`/students/test-attempts/${attemptId}/submit/`, { answers }),
+  submitTest: (testId, answers) => api.post(`/students/test-attempts/${testId}/submit/`, { answers }),
   getTestResult: (attemptId) => api.get(`/students/test-attempts/${attemptId}/result/`),
   getMyAttempts: () => api.get('/students/my-test-attempts/'),
   
@@ -257,7 +259,10 @@ markChapterComplete: (chapterId) => api.post(`/teachers/chapters/${chapterId}/co
   deleteTest:     (testId)        => api.delete(`/teachers/tests/${testId}/`),
   getTestResults: (testId)        => api.get(`/teachers/tests/${testId}/results/`),
   getSubjectClasses: (subjectId) => api.get('/teachers/subject-classes/', { params: { subject_id: subjectId } }),
-  getClassChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),   
+  getClassChapters: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/chapters/`),  
+  // ADD these two lines inside the teacherAPI object:
+  getAllTests: () => api.get('/teachers/tests/all/'),
+  getAttendanceHistory: (params) => api.get('/teachers/attendance/history/', { params }), 
 
   // Questions
   addQuestion:    (testId, data)      => api.post(`/teachers/tests/${testId}/add-question/`, data),

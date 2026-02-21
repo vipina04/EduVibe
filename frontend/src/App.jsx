@@ -117,7 +117,8 @@ function App() {
       <Route path="/teacher/class/:classId/subject/:subjectId/attendance/history"   element={<ProtectedRoute allowedRoles={['teacher']}><AttendanceHistory /></ProtectedRoute>} />
 
       {/* Teacher — Create test flow */}
-      <Route path="/teacher/test/create"           element={<ProtectedRoute allowedRoles={['teacher']}><TeacherTestSelection /></ProtectedRoute>} />
+      <Route path="/teacher/test/create" element={<ProtectedRoute allowedRoles={['teacher']}><TeacherTestSelection /></ProtectedRoute>} />
+      <Route path="/teacher/test/new" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} />
       <Route path="/teacher/test/select-chapter"   element={<ProtectedRoute allowedRoles={['teacher']}><TeacherChapterSelection /></ProtectedRoute>} />
       <Route path="/teacher/test/create/:chapterId" element={<ProtectedRoute allowedRoles={['teacher']}><CreateTest /></ProtectedRoute>} />
       <Route path="/teacher/test/:testId/manage"   element={<ProtectedRoute allowedRoles={['teacher']}><TestManagement /></ProtectedRoute>} />
