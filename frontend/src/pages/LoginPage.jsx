@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { HiMail, HiLockClosed, HiSun, HiMoon } from 'react-icons/hi';
+// import { HiMail, HiLockClosed, HiSun, HiMoon } from 'react-icons/hi';
 import { useTheme } from '../context/ThemeContext';
 import GoogleAuthButton from '../components/common/GoogleAuthButton';
+import { HiMail, HiLockClosed, HiSun, HiMoon, HiHome } from 'react-icons/hi';
 
 const LoginPage = () => {
   const { login } = useAuth();
@@ -61,13 +62,13 @@ const LoginPage = () => {
       {/* Transparent Navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-white/30 dark:bg-black/30 border-b border-white/10 dark:border-white/5">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          {/* Logo */}
-          <Link to="/" className="flex items-center space-x-3">
-            <span className="text-2xl font-bold bg-gradient-to-r from-teal-500 to-cyan-500 bg-clip-text text-transparent">
-              EduVibe
-            </span>
+          
+          {/* Home icon */}
+          <Link to="/" title="Go to Home"className="p-2 rounded-lg bg-white/20 dark:bg-black/30 hover:bg-white/30 dark:hover:bg-black/40 transition-all duration-200 backdrop-blur-sm border border-white/10">
+           <HiHome className={`w-5 h-5 ${theme === 'dark' ? 'text-white' : 'text-slate-700'}`} />
           </Link>
-
+          
+  
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
@@ -90,7 +91,7 @@ const LoginPage = () => {
           <div className="text-center space-y-4">
             {/* EduVibe Logo */}
             <div className="flex justify-center mb-3">
-              <span className="text-4xl font-bold bg-gradient-to-r from-teal-500 to-cyan-500 bg-clip-text text-transparent">
+              <span className="text-4xl font-bold bg-gradient-to-r from-purple-500 to-cyan-500 bg-clip-text text-transparent">
                 EduVibe
               </span>
             </div>
@@ -186,7 +187,7 @@ const LoginPage = () => {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-medium text-lg shadow-lg hover:shadow-xl hover:from-teal-600 hover:to-cyan-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 focus:ring-offset-gray-50 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-[1.02]"
+                className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-purple-500 to-cyan-600 text-white font-medium text-lg shadow-lg hover:shadow-xl hover:from-purple-600 hover:to-cyan-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-50 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-[1.02]"
               >
                 {isSubmitting ? (
                   <span className="flex items-center justify-center">
