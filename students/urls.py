@@ -2,108 +2,97 @@
 """
 Student Module URL Configuration
 EduVibe Platform - 2026
-COMPLETE WORKING VERSION
 """
 
 from django.urls import path
 from .views import (
     # Home & Navigation
     StudentHomeView,
+    StudentDashboardView,
+    StudentSubjectsView,
     SubjectDetailView,
     ChapterTestsView,
-    StudentSubjectsView,
-    
-    
+    StudentSubjectChaptersView,
+
     # Test Taking
     TestStartView,
     TestSubmitView,
     TestResultView,
     MyTestAttemptsView,
     SubjectTestsView,
-    StudentSubjectChaptersView,
-    
+
     # Attendance & Fees
     MyAttendanceView,
     MyFeePaymentsView,
     StudentAttendanceView,
-    
+
     # Assignments
     MyAssignmentsView,
-    
+
     # Doubts
     DoubtCreateView,
     EnrolledSubjectsView,
-    
+
     # Notifications
     MyNotificationsView,
-    
-    # Search
-    StudentSearchView,
-    DiagnosticView,
-    StudentDashboardView,
-    
-    # Notifications
     StudentNotificationsView,
     StudentMarkNotificationReadView,
     StudentMarkAllReadView,
+
+    # Search
+    StudentSearchView,
+    DiagnosticView,
 )
 
-# Import doubt views from separate file
-from .views_doubts import StudentDoubtListView, StudentDoubtReplyView,StudentCreateDoubtView
+from .views_doubts import StudentDoubtListView, StudentDoubtReplyView, StudentCreateDoubtView
 
 app_name = 'students'
 
 urlpatterns = [
+
     # ═══════════════════════════════════════════════════════════
-    #  HOME & NAVIGATION
+    #  HOME & DASHBOARD
     # ═══════════════════════════════════════════════════════════
     path('home/', StudentHomeView.as_view(), name='student-home'),
-    # path('subjects/<int:subject_id>/', SubjectDetailView.as_view(), name='subject-detail'),
+    path('dashboard/', StudentDashboardView.as_view(), name='student-dashboard'),
+
+    # ═══════════════════════════════════════════════════════════
+    #  SUBJECTS & CHAPTERS
+    #  ⚠️ ORDER MATTERS: specific paths before generic /<id>/
+    # ═══════════════════════════════════════════════════════════
+    path('subjects/', StudentSubjectsView.as_view(), name='student-subjects'),
+    path('subjects/<int:subject_id>/chapters/', StudentSubjectChaptersView.as_view(), name='subject-chapters'),  # specific first ✅
+    path('subjects/<int:subject_id>/tests/', SubjectTestsView.as_view(), name='subject-tests'),                  # specific first ✅
+    path('subjects/<int:subject_id>/', SubjectDetailView.as_view(), name='subject-detail'),                      # generic last  ✅
     path('chapters/<int:chapter_id>/tests/', ChapterTestsView.as_view(), name='chapter-tests'),
-    
+
     # ═══════════════════════════════════════════════════════════
     #  TEST TAKING
     # ═══════════════════════════════════════════════════════════
     path('tests/<int:test_id>/start/', TestStartView.as_view(), name='test-start'),
-    # path('test-attempts/<int:attempt_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
     path('test-attempts/<int:test_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
     path('test-attempts/<int:attempt_id>/result/', TestResultView.as_view(), name='test-result'),
     path('my-test-attempts/', MyTestAttemptsView.as_view(), name='my-test-attempts'),
-    path('subjects/<int:subject_id>/tests/', SubjectTestsView.as_view(), name='subject-tests'),
-    # path('subjects/<int:subject_id>/chapters/', StudentSubjectChaptersView.as_view(), name='subject-chapters'),
-    
-    path('home/', StudentHomeView.as_view(), name='student-home'),
-    path('subjects/<int:subject_id>/chapters/', StudentSubjectChaptersView.as_view(), name='subject-chapters'),  # ✅ specific first
-    path('subjects/<int:subject_id>/tests/', SubjectTestsView.as_view(), name='subject-tests'),                  # ✅ specific first  
-    path('subjects/<int:subject_id>/', SubjectDetailView.as_view(), name='subject-detail'),                      # ✅ generic last
-    path('chapters/<int:chapter_id>/tests/', ChapterTestsView.as_view(), name='chapter-tests'),
-    
+
     # ═══════════════════════════════════════════════════════════
     #  ATTENDANCE & FEES
     # ═══════════════════════════════════════════════════════════
     path('my-attendance/', MyAttendanceView.as_view(), name='my-attendance'),
     path('my-fee-payments/', MyFeePaymentsView.as_view(), name='my-fee-payments'),
-    path('dashboard/', StudentDashboardView.as_view(), name='student-dashboard'),
-    path('home/', StudentDashboardView.as_view(), name='student-home'),
-    path('subjects/', StudentSubjectsView.as_view(), name='student-subjects'),
-    path('my-attendance/', StudentAttendanceView.as_view(), name='student-attendance'),
+    path('attendance/', StudentAttendanceView.as_view(), name='student-attendance'),
 
-    
     # ═══════════════════════════════════════════════════════════
     #  ASSIGNMENTS
     # ═══════════════════════════════════════════════════════════
     path('my-assignments/', MyAssignmentsView.as_view(), name='my-assignments'),
-    
+
     # ═══════════════════════════════════════════════════════════
     #  DOUBTS
     # ═══════════════════════════════════════════════════════════
-    path('subjects/', EnrolledSubjectsView.as_view(), name='enrolled-subjects'),
-    # path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
     path('doubts/create/', StudentCreateDoubtView.as_view(), name='doubt-create'),
     path('doubts/', StudentDoubtListView.as_view(), name='doubt-list'),
-    
     path('doubts/<int:doubt_id>/reply/', StudentDoubtReplyView.as_view(), name='doubt-reply'),
-    
+
     # ═══════════════════════════════════════════════════════════
     #  NOTIFICATIONS
     # ═══════════════════════════════════════════════════════════
@@ -111,17 +100,78 @@ urlpatterns = [
     path('notifications/', StudentNotificationsView.as_view(), name='student-notifications'),
     path('notifications/mark-all-read/', StudentMarkAllReadView.as_view(), name='student-mark-all-read'),
     path('notifications/<int:notification_id>/mark-read/', StudentMarkNotificationReadView.as_view(), name='student-mark-read'),
-    
+
     # ═══════════════════════════════════════════════════════════
-    #  SEARCH
+    #  SEARCH & MISC
     # ═══════════════════════════════════════════════════════════
     path('search/', StudentSearchView.as_view(), name='search'),
     path('diagnostic/', DiagnosticView.as_view(), name='diagnostic'),
-
-    path('dashboard/', StudentDashboardView.as_view(), name='student-dashboard'),
-    path('home/', StudentDashboardView.as_view(), name='student-home'),  # Alias
-    
 ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -160,6 +210,7 @@ urlpatterns = [
 #     StudentHomeView,
 #     SubjectDetailView,
 #     ChapterTestsView,
+#     StudentSubjectsView,
     
     
 #     # Test Taking
@@ -168,10 +219,12 @@ urlpatterns = [
 #     TestResultView,
 #     MyTestAttemptsView,
 #     SubjectTestsView,
+#     StudentSubjectChaptersView,
     
 #     # Attendance & Fees
 #     MyAttendanceView,
 #     MyFeePaymentsView,
+#     StudentAttendanceView,
     
 #     # Assignments
 #     MyAssignmentsView,
@@ -186,10 +239,16 @@ urlpatterns = [
 #     # Search
 #     StudentSearchView,
 #     DiagnosticView,
+#     StudentDashboardView,
+    
+#     # Notifications
+#     StudentNotificationsView,
+#     StudentMarkNotificationReadView,
+#     StudentMarkAllReadView,
 # )
 
 # # Import doubt views from separate file
-# from .views_doubts import StudentDoubtListView, StudentDoubtReplyView
+# from .views_doubts import StudentDoubtListView, StudentDoubtReplyView,StudentCreateDoubtView
 
 # app_name = 'students'
 
@@ -198,23 +257,36 @@ urlpatterns = [
 #     #  HOME & NAVIGATION
 #     # ═══════════════════════════════════════════════════════════
 #     path('home/', StudentHomeView.as_view(), name='student-home'),
-#     path('subjects/<int:subject_id>/', SubjectDetailView.as_view(), name='subject-detail'),
+#     # path('subjects/<int:subject_id>/', SubjectDetailView.as_view(), name='subject-detail'),
 #     path('chapters/<int:chapter_id>/tests/', ChapterTestsView.as_view(), name='chapter-tests'),
     
 #     # ═══════════════════════════════════════════════════════════
 #     #  TEST TAKING
 #     # ═══════════════════════════════════════════════════════════
 #     path('tests/<int:test_id>/start/', TestStartView.as_view(), name='test-start'),
-#     path('test-attempts/<int:attempt_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
+#     # path('test-attempts/<int:attempt_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
+#     path('test-attempts/<int:test_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
 #     path('test-attempts/<int:attempt_id>/result/', TestResultView.as_view(), name='test-result'),
 #     path('my-test-attempts/', MyTestAttemptsView.as_view(), name='my-test-attempts'),
 #     path('subjects/<int:subject_id>/tests/', SubjectTestsView.as_view(), name='subject-tests'),
+#     # path('subjects/<int:subject_id>/chapters/', StudentSubjectChaptersView.as_view(), name='subject-chapters'),
+    
+#     path('home/', StudentHomeView.as_view(), name='student-home'),
+#     path('subjects/<int:subject_id>/chapters/', StudentSubjectChaptersView.as_view(), name='subject-chapters'),  # ✅ specific first
+#     path('subjects/<int:subject_id>/tests/', SubjectTestsView.as_view(), name='subject-tests'),                  # ✅ specific first  
+#     path('subjects/<int:subject_id>/', SubjectDetailView.as_view(), name='subject-detail'),                      # ✅ generic last
+#     path('chapters/<int:chapter_id>/tests/', ChapterTestsView.as_view(), name='chapter-tests'),
     
 #     # ═══════════════════════════════════════════════════════════
 #     #  ATTENDANCE & FEES
 #     # ═══════════════════════════════════════════════════════════
 #     path('my-attendance/', MyAttendanceView.as_view(), name='my-attendance'),
 #     path('my-fee-payments/', MyFeePaymentsView.as_view(), name='my-fee-payments'),
+#     path('dashboard/', StudentDashboardView.as_view(), name='student-dashboard'),
+#     path('home/', StudentDashboardView.as_view(), name='student-home'),
+#     path('subjects/', StudentSubjectsView.as_view(), name='student-subjects'),
+#     path('my-attendance/', StudentAttendanceView.as_view(), name='student-attendance'),
+
     
 #     # ═══════════════════════════════════════════════════════════
 #     #  ASSIGNMENTS
@@ -225,30 +297,30 @@ urlpatterns = [
 #     #  DOUBTS
 #     # ═══════════════════════════════════════════════════════════
 #     path('subjects/', EnrolledSubjectsView.as_view(), name='enrolled-subjects'),
-#     path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
+#     # path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
+#     path('doubts/create/', StudentCreateDoubtView.as_view(), name='doubt-create'),
 #     path('doubts/', StudentDoubtListView.as_view(), name='doubt-list'),
+    
 #     path('doubts/<int:doubt_id>/reply/', StudentDoubtReplyView.as_view(), name='doubt-reply'),
     
 #     # ═══════════════════════════════════════════════════════════
 #     #  NOTIFICATIONS
 #     # ═══════════════════════════════════════════════════════════
 #     path('my-notifications/', MyNotificationsView.as_view(), name='my-notifications'),
+#     path('notifications/', StudentNotificationsView.as_view(), name='student-notifications'),
+#     path('notifications/mark-all-read/', StudentMarkAllReadView.as_view(), name='student-mark-all-read'),
+#     path('notifications/<int:notification_id>/mark-read/', StudentMarkNotificationReadView.as_view(), name='student-mark-read'),
     
 #     # ═══════════════════════════════════════════════════════════
 #     #  SEARCH
 #     # ═══════════════════════════════════════════════════════════
 #     path('search/', StudentSearchView.as_view(), name='search'),
 #     path('diagnostic/', DiagnosticView.as_view(), name='diagnostic'),
+
+#     path('dashboard/', StudentDashboardView.as_view(), name='student-dashboard'),
+#     path('home/', StudentDashboardView.as_view(), name='student-home'),  # Alias
+    
 # ]
-
-
-
-
-
-
-
-
-
 
 
 
@@ -278,7 +350,7 @@ urlpatterns = [
 # # """
 # # Student Module URL Configuration
 # # EduVibe Platform - 2026
-# # *** FIXED - Removed non-existent views_doubts import ***
+# # COMPLETE WORKING VERSION
 # # """
 
 # # from django.urls import path
@@ -288,11 +360,13 @@ urlpatterns = [
 # #     SubjectDetailView,
 # #     ChapterTestsView,
     
+    
 # #     # Test Taking
 # #     TestStartView,
 # #     TestSubmitView,
 # #     TestResultView,
 # #     MyTestAttemptsView,
+# #     SubjectTestsView,
     
 # #     # Attendance & Fees
 # #     MyAttendanceView,
@@ -310,7 +384,11 @@ urlpatterns = [
     
 # #     # Search
 # #     StudentSearchView,
+# #     DiagnosticView,
 # # )
+
+# # # Import doubt views from separate file
+# # from .views_doubts import StudentDoubtListView, StudentDoubtReplyView
 
 # # app_name = 'students'
 
@@ -329,6 +407,7 @@ urlpatterns = [
 # #     path('test-attempts/<int:attempt_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
 # #     path('test-attempts/<int:attempt_id>/result/', TestResultView.as_view(), name='test-result'),
 # #     path('my-test-attempts/', MyTestAttemptsView.as_view(), name='my-test-attempts'),
+# #     path('subjects/<int:subject_id>/tests/', SubjectTestsView.as_view(), name='subject-tests'),
     
 # #     # ═══════════════════════════════════════════════════════════
 # #     #  ATTENDANCE & FEES
@@ -346,7 +425,8 @@ urlpatterns = [
 # #     # ═══════════════════════════════════════════════════════════
 # #     path('subjects/', EnrolledSubjectsView.as_view(), name='enrolled-subjects'),
 # #     path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
-# #     # NOTE: Doubt list and reply views removed temporarily - will add back when views_doubts.py is created
+# #     path('doubts/', StudentDoubtListView.as_view(), name='doubt-list'),
+# #     path('doubts/<int:doubt_id>/reply/', StudentDoubtReplyView.as_view(), name='doubt-reply'),
     
 # #     # ═══════════════════════════════════════════════════════════
 # #     #  NOTIFICATIONS
@@ -357,7 +437,21 @@ urlpatterns = [
 # #     #  SEARCH
 # #     # ═══════════════════════════════════════════════════════════
 # #     path('search/', StudentSearchView.as_view(), name='search'),
+# #     path('diagnostic/', DiagnosticView.as_view(), name='diagnostic'),
 # # ]
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -383,7 +477,7 @@ urlpatterns = [
 # # # """
 # # # Student Module URL Configuration
 # # # EduVibe Platform - 2026
-# # # *** FIXED VERSION - ALL IMPORTS CORRECTED ***
+# # # *** FIXED - Removed non-existent views_doubts import ***
 # # # """
 
 # # # from django.urls import path
@@ -451,6 +545,7 @@ urlpatterns = [
 # # #     # ═══════════════════════════════════════════════════════════
 # # #     path('subjects/', EnrolledSubjectsView.as_view(), name='enrolled-subjects'),
 # # #     path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
+# # #     # NOTE: Doubt list and reply views removed temporarily - will add back when views_doubts.py is created
     
 # # #     # ═══════════════════════════════════════════════════════════
 # # #     #  NOTIFICATIONS
@@ -475,15 +570,21 @@ urlpatterns = [
 
 
 
+
+
+
+
+
+
+
+
 # # # # # students/urls.py
 # # # # """
 # # # # Student Module URL Configuration
 # # # # EduVibe Platform - 2026
-
+# # # # *** FIXED VERSION - ALL IMPORTS CORRECTED ***
 # # # # """
 
-
-# # # # from .views_doubts import StudentDoubtListView, StudentDoubtReplyView
 # # # # from django.urls import path
 # # # # from .views import (
 # # # #     # Home & Navigation
@@ -532,8 +633,6 @@ urlpatterns = [
 # # # #     path('test-attempts/<int:attempt_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
 # # # #     path('test-attempts/<int:attempt_id>/result/', TestResultView.as_view(), name='test-result'),
 # # # #     path('my-test-attempts/', MyTestAttemptsView.as_view(), name='my-test-attempts'),
-# # # #     path('enrolled-subjects/', EnrolledSubjectsView.as_view(), name='enrolled-subjects'),
-# # # #     path('subjects/<int:subject_id>/tests/', SubjectTestsView.as_view(), name='subject-tests'),
     
 # # # #     # ═══════════════════════════════════════════════════════════
 # # # #     #  ATTENDANCE & FEES
@@ -551,8 +650,7 @@ urlpatterns = [
 # # # #     # ═══════════════════════════════════════════════════════════
 # # # #     path('subjects/', EnrolledSubjectsView.as_view(), name='enrolled-subjects'),
 # # # #     path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
-# # # #     path('doubts/', StudentDoubtListView.as_view(), name='doubt-list'),
-# # # #     path('doubts/<int:doubt_id>/reply/', StudentDoubtReplyView.as_view(), name='doubt-reply'),
+    
 # # # #     # ═══════════════════════════════════════════════════════════
 # # # #     #  NOTIFICATIONS
 # # # #     # ═══════════════════════════════════════════════════════════
@@ -576,22 +674,14 @@ urlpatterns = [
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 # # # # # # students/urls.py
 # # # # # """
 # # # # # Student Module URL Configuration
 # # # # # EduVibe Platform - 2026
+
 # # # # # """
+
+
 # # # # # from .views_doubts import StudentDoubtListView, StudentDoubtReplyView
 # # # # # from django.urls import path
 # # # # # from .views import (
@@ -615,6 +705,7 @@ urlpatterns = [
     
 # # # # #     # Doubts
 # # # # #     DoubtCreateView,
+# # # # #     EnrolledSubjectsView,
     
 # # # # #     # Notifications
 # # # # #     MyNotificationsView,
@@ -640,6 +731,8 @@ urlpatterns = [
 # # # # #     path('test-attempts/<int:attempt_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
 # # # # #     path('test-attempts/<int:attempt_id>/result/', TestResultView.as_view(), name='test-result'),
 # # # # #     path('my-test-attempts/', MyTestAttemptsView.as_view(), name='my-test-attempts'),
+# # # # #     path('enrolled-subjects/', EnrolledSubjectsView.as_view(), name='enrolled-subjects'),
+# # # # #     path('subjects/<int:subject_id>/tests/', SubjectTestsView.as_view(), name='subject-tests'),
     
 # # # # #     # ═══════════════════════════════════════════════════════════
 # # # # #     #  ATTENDANCE & FEES
@@ -655,6 +748,7 @@ urlpatterns = [
 # # # # #     # ═══════════════════════════════════════════════════════════
 # # # # #     #  DOUBTS
 # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # #     path('subjects/', EnrolledSubjectsView.as_view(), name='enrolled-subjects'),
 # # # # #     path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
 # # # # #     path('doubts/', StudentDoubtListView.as_view(), name='doubt-list'),
 # # # # #     path('doubts/<int:doubt_id>/reply/', StudentDoubtReplyView.as_view(), name='doubt-reply'),
@@ -668,3 +762,108 @@ urlpatterns = [
 # # # # #     # ═══════════════════════════════════════════════════════════
 # # # # #     path('search/', StudentSearchView.as_view(), name='search'),
 # # # # # ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # # # # # # students/urls.py
+# # # # # # """
+# # # # # # Student Module URL Configuration
+# # # # # # EduVibe Platform - 2026
+# # # # # # """
+# # # # # # from .views_doubts import StudentDoubtListView, StudentDoubtReplyView
+# # # # # # from django.urls import path
+# # # # # # from .views import (
+# # # # # #     # Home & Navigation
+# # # # # #     StudentHomeView,
+# # # # # #     SubjectDetailView,
+# # # # # #     ChapterTestsView,
+    
+# # # # # #     # Test Taking
+# # # # # #     TestStartView,
+# # # # # #     TestSubmitView,
+# # # # # #     TestResultView,
+# # # # # #     MyTestAttemptsView,
+    
+# # # # # #     # Attendance & Fees
+# # # # # #     MyAttendanceView,
+# # # # # #     MyFeePaymentsView,
+    
+# # # # # #     # Assignments
+# # # # # #     MyAssignmentsView,
+    
+# # # # # #     # Doubts
+# # # # # #     DoubtCreateView,
+    
+# # # # # #     # Notifications
+# # # # # #     MyNotificationsView,
+    
+# # # # # #     # Search
+# # # # # #     StudentSearchView,
+# # # # # # )
+
+# # # # # # app_name = 'students'
+
+# # # # # # urlpatterns = [
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     #  HOME & NAVIGATION
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     path('home/', StudentHomeView.as_view(), name='student-home'),
+# # # # # #     path('subjects/<int:subject_id>/', SubjectDetailView.as_view(), name='subject-detail'),
+# # # # # #     path('chapters/<int:chapter_id>/tests/', ChapterTestsView.as_view(), name='chapter-tests'),
+    
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     #  TEST TAKING
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     path('tests/<int:test_id>/start/', TestStartView.as_view(), name='test-start'),
+# # # # # #     path('test-attempts/<int:attempt_id>/submit/', TestSubmitView.as_view(), name='test-submit'),
+# # # # # #     path('test-attempts/<int:attempt_id>/result/', TestResultView.as_view(), name='test-result'),
+# # # # # #     path('my-test-attempts/', MyTestAttemptsView.as_view(), name='my-test-attempts'),
+    
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     #  ATTENDANCE & FEES
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     path('my-attendance/', MyAttendanceView.as_view(), name='my-attendance'),
+# # # # # #     path('my-fee-payments/', MyFeePaymentsView.as_view(), name='my-fee-payments'),
+    
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     #  ASSIGNMENTS
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     path('my-assignments/', MyAssignmentsView.as_view(), name='my-assignments'),
+    
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     #  DOUBTS
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     path('doubts/create/', DoubtCreateView.as_view(), name='doubt-create'),
+# # # # # #     path('doubts/', StudentDoubtListView.as_view(), name='doubt-list'),
+# # # # # #     path('doubts/<int:doubt_id>/reply/', StudentDoubtReplyView.as_view(), name='doubt-reply'),
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     #  NOTIFICATIONS
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     path('my-notifications/', MyNotificationsView.as_view(), name='my-notifications'),
+    
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     #  SEARCH
+# # # # # #     # ═══════════════════════════════════════════════════════════
+# # # # # #     path('search/', StudentSearchView.as_view(), name='search'),
+# # # # # # ]

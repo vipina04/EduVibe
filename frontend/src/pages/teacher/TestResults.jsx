@@ -19,7 +19,7 @@ const TestResults = () => {
     if (testId) {
       fetchTestResults();
     }
-  }, [testId]); // ✅ FIXED: Added testId dependency
+  }, [testId]); 
 
   const fetchTestResults = async () => {
     try {

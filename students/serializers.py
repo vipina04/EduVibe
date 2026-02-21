@@ -1,9 +1,5 @@
 # students/serializers.py
-"""
-Professional DRF Serializers for Student Functionality
-Built for EduVibe - Educational Platform
-Version: 2.0 (2026)
-"""
+"
 
 from rest_framework import serializers
 from django.db.models import Count, Avg, Sum, Q
