@@ -10,7 +10,8 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here-change-me')
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.192.225.212']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.192.225.212','eduvibe-backend.onrender.com']
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
