@@ -55,7 +55,7 @@ const GoogleAuthButton = ({ role = 'student' }) => {
               text: 'continue_with',
               shape: 'rectangular',
               logo_alignment: 'left',
-              width: Math.min(400, window.innerWidth - 17),
+              width: Math.min(400, window.innerWidth - 14),
             }
           );
         }
