@@ -26,6 +26,7 @@ from .views import (
     # Utility
     GetClassListView,
     GetSubjectListView,
+    debug_db,
 )
 
 app_name = 'users'
@@ -43,7 +44,8 @@ urlpatterns = [
     name='resend-registration-otp'
 ),
 
-    
+     path('debug-db/', debug_db),
+
     # ═══════════════════════════════════════════════════════════
     #  LOGIN & LOGOUT
     # ═══════════════════════════════════════════════════════════
