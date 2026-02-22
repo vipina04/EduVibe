@@ -479,16 +479,15 @@ from django.db import connection
 
 def debug_db(request):
     with connection.cursor() as cursor:
-        # Check actual column size in PostgreSQL
         cursor.execute("""
             SELECT column_name, character_maximum_length 
             FROM information_schema.columns 
-            WHERE table_name = 'users_customuser' 
-            AND column_name = 'unique_id'
+            WHERE table_name = 'users_customuser'
+            AND data_type = 'character varying'
+            ORDER BY column_name
         """)
-        col = cursor.fetchone()
+        cols = cursor.fetchall()
         
-        # Check applied migrations
         cursor.execute("""
             SELECT name FROM django_migrations 
             WHERE app = 'users' 
@@ -497,6 +496,6 @@ def debug_db(request):
         migrations = cursor.fetchall()
         
     return JsonResponse({
-        'unique_id_max_length': col,
+        'all_varchar_columns': [{'column': c[0], 'max_length': c[1]} for c in cols],
         'applied_migrations': [m[0] for m in migrations]
     })
