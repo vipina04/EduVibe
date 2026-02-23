@@ -8,7 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 
-const GoogleAuthButton = ({ role = 'student' }) => {
+// const GoogleAuthButton = ({ role = 'student' }) => {
+const GoogleAuthButton = ({ role = 'student', theme = 'light' }) => {  
   const navigate = useNavigate();
   const auth = useAuth();
   const [isLoading, setIsLoading] = useState(false);
@@ -49,13 +50,14 @@ const GoogleAuthButton = ({ role = 'student' }) => {
           window.google.accounts.id.renderButton(
             buttonDiv,
             {
-              type: 'standard',
-              theme: 'outline',
+              type: 'standard', 
+              // theme: 'outline',
+              theme: theme === 'dark' ? 'filled_black' : 'outline',
               size: 'large',
               text: 'continue_with',
               shape: 'rectangular',
               logo_alignment: 'left',
-              width: Math.min(400, window.innerWidth - 10),
+              width: Math.min(400, window.innerWidth - 64),
             }
           );
         }
@@ -71,7 +73,8 @@ const GoogleAuthButton = ({ role = 'student' }) => {
         buttonDiv.innerHTML = '';
       }
     };
-  }, []);
+  // }, []);
+  }, [theme]);
 
   const handleCredentialResponse = async (response) => {
     setIsLoading(true);
@@ -156,12 +159,31 @@ const GoogleAuthButton = ({ role = 'student' }) => {
 
   return (
     <div className="w-full">
+       <style>{`
+      .google-btn-dark-fix > div,
+      .google-btn-dark-fix iframe {
+        border-radius: 8px !important;
+        overflow: hidden !important;
+      }
+      .dark .google-btn-dark-fix > div {
+        filter: invert(0%) !important;
+      }
+      .dark #google-signin-button > div {
+        background: transparent !important;
+        border: 1px solid rgba(255,255,255,0.15) !important;
+        border-radius: 8px !important;
+        overflow: hidden !important;
+      }
+    `}</style>
       {/* Google Sign-In Button Container */}
-      <div 
+      {/* <div 
         id="google-signin-button" 
         className={`w-full flex justify-center ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
-      />
-      
+      /> */}
+    <div 
+      id="google-signin-button" 
+      className={`w-full flex justify-center google-btn-dark-fix ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
+        />  
       {/* Loading State */}
       {isLoading && (
         <div className="flex items-center justify-center mt-3">
