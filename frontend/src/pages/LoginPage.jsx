@@ -127,8 +127,8 @@ const LoginPage = () => {
                       errors.email 
                         ? 'border-red-500 focus:ring-red-500' 
                         : theme === 'dark'
-                          ? 'border-white/20 focus:border-teal-500 focus:ring-teal-500'
-                          : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
+                          ? 'border-white/20 focus:border-teal-500 focus:ring-purple-500'
+                          : 'border-gray-300 focus:border-teal-500 focus:ring-indigo-500'
                     } bg-white/60 dark:bg-black/30 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 transition-all duration-200`}
                     placeholder="Email"
                   />
@@ -160,8 +160,8 @@ const LoginPage = () => {
                       errors.password 
                         ? 'border-red-500 focus:ring-red-500' 
                         : theme === 'dark'
-                          ? 'border-white/20 focus:border-teal-500 focus:ring-teal-500'
-                          : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
+                          ? 'border-white/20 focus:border-teal-500 focus:ring-purple-500'
+                          : 'border-gray-300 focus:border-teal-500 focus:ring-indigo-500'
                     } bg-white/60 dark:bg-black/30 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 transition-all duration-200`}
                     placeholder="••••••••"
                   />
