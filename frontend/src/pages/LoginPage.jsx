@@ -242,7 +242,8 @@ const LoginPage = () => {
   </div> */}
 
   {/* Google button — role doesn't matter on login (user already exists) */}
-  <GoogleAuthButton role="student" />
+  {/* <GoogleAuthButton role="student" /> */}
+  <GoogleAuthButton role="student" theme={theme} />
 
 </div>
 
