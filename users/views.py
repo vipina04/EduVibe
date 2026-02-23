@@ -24,7 +24,31 @@ import os
 from .models import CustomUser
 from academics.models import AcademicClass as Class, Subject as AcademicSubject, ClassSubject
 
+import requests as http_requests
 
+def send_otp_email(to_email, subject, body):
+    """Send email via Brevo HTTP API — works on Render free tier"""
+    api_key = os.getenv('BREVO_API_KEY')
+    sender_email = os.getenv('EMAIL_HOST_USER')
+    
+    response = http_requests.post(
+        'https://api.brevo.com/v3/smtp/email',
+        headers={
+            'api-key': api_key,
+            'Content-Type': 'application/json'
+        },
+        json={
+            'sender': {'email': sender_email, 'name': 'EduVibe'},
+            'to': [{'email': to_email}],
+            'subject': subject,
+            'textContent': body
+        }
+    )
+    
+    if response.status_code not in [200, 201]:
+        raise Exception(f"Brevo API error: {response.text}")
+    
+    return True
 # ═══════════════════════════════════════════════════════════
 #  REGISTRATION & OTP VERIFICATION
 # ═══════════════════════════════════════════════════════════
@@ -99,13 +123,18 @@ class RegisterView(APIView):
 
             # Send OTP email — if fails, delete user cleanly and return error
             try:
-                send_mail(
-                    'EduVibe - Verify Email',
-                    f'Hello {first_name},\n\nYour OTP is: {otp}\nValid for 5 minutes.\n\nDo not share this OTP with anyone.',
-                    settings.EMAIL_HOST_USER,
-                    [email],
-                    fail_silently=False,
-                )
+                # send_mail(
+                #     'EduVibe - Verify Email',
+                #     f'Hello {first_name},\n\nYour OTP is: {otp}\nValid for 5 minutes.\n\nDo not share this OTP with anyone.',
+                #     settings.EMAIL_HOST_USER,
+                #     [email],
+                #     fail_silently=False,
+                # )
+                send_otp_email(
+                 email,
+                'EduVibe - Verify Email',
+                f'Hello {first_name},\n\nYour OTP is: {otp}\nValid for 5 minutes.'
+                 )
             except Exception as email_error:
                 print(f"Email send failed: {email_error}")
                 user.delete()  # Clean up — don't leave broken incomplete user
@@ -172,13 +201,18 @@ class ResendOTPView(APIView):
             user.save()
 
             try:
-                send_mail(
-                    'EduVibe - OTP Resent',
-                    f'Your new OTP is: {otp}\nValid for 5 minutes.',
-                    settings.EMAIL_HOST_USER,
-                    [email],
-                    fail_silently=False,
-                )
+                # send_mail(
+                #     'EduVibe - OTP Resent',
+                #     f'Your new OTP is: {otp}\nValid for 5 minutes.',
+                #     settings.EMAIL_HOST_USER,
+                #     [email],
+                #     fail_silently=False,
+                # )
+                send_otp_email(
+                email,
+               'EduVibe - Verify Email',
+               f'Hello {first_name},\n\nYour OTP is: {otp}\nValid for 5 minutes.'
+               )
             except Exception as email_error:
                 print(f"Resend OTP email failed: {email_error}")
                 return Response(
@@ -261,12 +295,17 @@ class ForgotPasswordView(APIView):
             user.save()
 
             try:
-                send_mail(
-                    'EduVibe - Password Reset',
-                    f'Your password reset OTP is: {otp}\nValid for 5 minutes.\n\nIf you did not request this, ignore this email.',
-                    settings.EMAIL_HOST_USER,
-                    [email],
-                    fail_silently=False,
+                # send_mail(
+                #     'EduVibe - Password Reset',
+                #     f'Your password reset OTP is: {otp}\nValid for 5 minutes.\n\nIf you did not request this, ignore this email.',
+                #     settings.EMAIL_HOST_USER,
+                #     [email],
+                #     fail_silently=False,
+                # )
+                send_otp_email(
+                email,
+                'EduVibe - Verify Email',
+                f'Hello {first_name},\n\nYour OTP is: {otp}\nValid for 5 minutes.'
                 )
             except Exception as email_error:
                 print(f"Forgot password email failed: {email_error}")
