@@ -144,7 +144,8 @@ class CustomUserAdmin(BaseUserAdmin):
         failed_emails = []
         
         for user in queryset:
-            if not user.is_approved:
+            # if not user.is_approved:
+            if not user.is_approved and user.is_active:
                 user.is_approved = True
                 user.save()  # This auto-generates unique_id
                 updated += 1
