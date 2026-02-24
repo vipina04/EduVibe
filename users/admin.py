@@ -272,7 +272,7 @@ EduVibe Team''',
     def get_queryset(self, request):
         """Optimize queries"""
         qs = super().get_queryset(request)
-        return qs.select_related('class_assigned').prefetch_related('subjects')
+        return qs.filter(is_active=True).select_related('class_assigned').prefetch_related('subjects')
 
 
 
