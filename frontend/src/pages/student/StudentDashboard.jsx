@@ -130,9 +130,10 @@ const StudentDashboard = () => {
         {/* Welcome Header */}
         <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 rounded-xl p-8 text-white shadow-lg relative overflow-hidden group">
           <div className="relative z-10">
-            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-              Welcome back, {user?.full_name || user?.first_name || 'Student'}! 👋
-            </h1>
+            <h3 className="text-3xl md:text-4xl font-extrabold tracking-tight">
+              {/* Welcome , {user?.full_name || user?.first_name || 'Student'}! 👋 */}
+                Welcome, {StudentName || user?.first_name || 'Student'} 👋
+            </h3>
             <p className="mt-2 text-indigo-100 text-lg opacity-90">
               Track your progress, complete assignments & ace your tests.
             </p>
