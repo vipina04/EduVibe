@@ -52,6 +52,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+
+
 ROOT_URLCONF = 'backend.urls'
 
 TEMPLATES = [
@@ -113,7 +115,15 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
+     "https://edu-vibe-ten.vercel.app",
 ]
+
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://edu-vibe-ten.vercel.app",
+    "https://eduvibe-backend.onrender.com",
+]
+
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",    # allows ALL *.vercel.app subdomains
     r"^https://.*\.onrender\.com$",  # allows ALL *.onrender.com subdomains
