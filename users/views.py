@@ -96,7 +96,8 @@ class RegisterView(APIView):
                 last_name=last_name,
                 dob=dob,
                 role=role,
-                is_approved=False
+                is_approved=False,
+                is_active=False
             )
             user.set_password(password)
 
@@ -175,6 +176,7 @@ class VerifyRegistrationOTPView(APIView):
             user.otp = None
             user.otp_created = None
             user.otp_purpose = None
+            user.is_active = True
             user.save()
 
             return Response({'message': 'Email verified. Await approval.'})
