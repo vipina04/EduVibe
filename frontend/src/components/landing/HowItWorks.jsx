@@ -9,21 +9,21 @@ const HowItWorks = () => {
     {
       icon: HiUserAdd,
       title: 'Sign Up',
-      description: 'Create your EduVibe account in minutes. Choose your plan and get started.',
+      description: 'Create your EduVibe account and get approved in minutes.',
       color: 'text-blue-600',
       bgColor: 'bg-blue-100 dark:bg-blue-900/20',
     },
     {
       icon: HiCog,
-      title: 'Setup Classes',
-      description: 'Add students, teachers, subjects, and create your class schedules easily.',
+      title: 'Login',
+      description: 'Login to your account to access digital features of tution',
       color: 'text-purple-600',
       bgColor: 'bg-purple-100 dark:bg-purple-900/20',
     },
     {
       icon: HiLightningBolt,
-      title: 'Start Teaching',
-      description: 'Manage tuition efficiently, track progress, and grow your institution.',
+      title: 'Start Teaching/Learning',
+      description: 'Manage tuition efficiently, track Attendance, Classes, Progress, etc.',
       color: 'text-green-600',
       bgColor: 'bg-green-100 dark:bg-green-900/20',
     },
@@ -60,7 +60,8 @@ const HowItWorks = () => {
                 transition={{ delay: index * 0.2 }}
                 className="relative"
               >
-                <div className="glass-light dark:glass-dark rounded-2xl p-8 text-center">
+                {/* <div className="glass-light dark:glass-dark rounded-2xl p-8 text-center"> */}
+                  <div className="bg-white dark:bg-black border border-gray-100 dark:border-white/10 rounded-2xl p-8 text-center shadow-xl transition-all">
                   {/* Step Number */}
                   <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-8 h-8 bg-gradient-to-r from-purple-600 to-cyan-600 rounded-full flex items-center justify-center text-white font-bold z-10">
                     {index + 1}

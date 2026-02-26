@@ -60,7 +60,6 @@ def send_otp_email(to_email, subject, body):
 # ═══════════════════════════════════════════════════════════
 #  REGISTRATION & OTP VERIFICATION
 # ═══════════════════════════════════════════════════════════
-
 class RegisterView(APIView):
     """User Registration with OTP verification"""
 
@@ -77,8 +76,6 @@ class RegisterView(APIView):
             if role not in ['student', 'teacher']:
                 return Response({'error': 'Invalid role.'}, status=400)
 
-            # Clean phone number - remove spaces, dashes, +91, + prefix
-            phone = phone.replace(' ', '').replace('-', '').replace('+91', '').replace('+', '')
             if not phone.isdigit() or len(phone) != 10:
                 return Response({'error': 'Phone must be 10 digits.'}, status=400)
 
@@ -97,7 +94,7 @@ class RegisterView(APIView):
                 dob=dob,
                 role=role,
                 is_approved=False,
-                is_active=False
+                is_active=False,  # ✅ HIDDEN from admin until OTP verified
             )
             user.set_password(password)
 
@@ -118,37 +115,123 @@ class RegisterView(APIView):
                 if subjects.count() != len(subject_ids):
                     return Response({'error': 'Invalid subjects.'}, status=400)
 
-            user.save()
-
-            if role == 'teacher':
-                user.subjects.set(subject_ids)
-
-            # Generate OTP
+            # Generate OTP BEFORE saving
             otp = str(random.randint(100000, 999999))
             user.otp = otp
             user.otp_created = timezone.now()
             user.otp_purpose = 'registration'
-            user.save()
 
-            # Send OTP email — if fails, delete user cleanly and return error
+            user.save()  # Save only once after all fields set
+
+            if role == 'teacher':
+                user.subjects.set(subject_ids)
+
+            # Send OTP email
             try:
-                send_otp_email(
-                    email,
+                send_mail(
                     'EduVibe - Verify Email',
-                    f'Hello {first_name},\n\nYour OTP is: {otp}\nValid for 5 minutes.\n\nDo not share this OTP with anyone.'
+                    f'Hello {first_name},\n\nYour OTP to verify your email is: {otp}\n\nValid for 5 minutes.\n\nDo not share this OTP with anyone.\n\nEduVibe Team',
+                    settings.EMAIL_HOST_USER,
+                    [email],
+                    fail_silently=False,
                 )
             except Exception as email_error:
-                print(f"Email send failed: {email_error}")
-                user.delete()  # Clean up — don't leave broken incomplete user
-                return Response(
-                    {'error': 'Could not send OTP email. Please check your email address and try again.'},
-                    status=500
-                )
+                # If email fails, delete the user and return error
+                user.delete()
+                return Response({'error': 'Could not send OTP email. Please check your email address and try again.'}, status=500)
 
-            return Response({'message': 'Registration successful. Verify OTP.'}, status=201)
+            return Response({'message': 'OTP sent to your email. Please verify to complete registration.'}, status=201)
 
         except Exception as e:
             return Response({'error': str(e)}, status=500)
+# class RegisterView(APIView):
+#     """User Registration with OTP verification"""
+
+#     def post(self, request):
+#         try:
+#             role = request.data.get('role', '').lower()
+#             email = request.data.get('email', '').strip()
+#             phone = request.data.get('phone', '').strip()
+#             password = request.data.get('password')
+#             first_name = request.data.get('first_name', '').strip()
+#             last_name = request.data.get('last_name', '').strip()
+#             dob = request.data.get('dob')
+
+#             if role not in ['student', 'teacher']:
+#                 return Response({'error': 'Invalid role.'}, status=400)
+
+#             # Clean phone number - remove spaces, dashes, +91, + prefix
+#             phone = phone.replace(' ', '').replace('-', '').replace('+91', '').replace('+', '')
+#             if not phone.isdigit() or len(phone) != 10:
+#                 return Response({'error': 'Phone must be 10 digits.'}, status=400)
+
+#             if CustomUser.objects.filter(email=email).exists():
+#                 return Response({'error': 'Email already exists.'}, status=400)
+
+#             if CustomUser.objects.filter(phone=phone).exists():
+#                 return Response({'error': 'Phone already exists.'}, status=400)
+
+#             user = CustomUser(
+#                 username=email,
+#                 email=email,
+#                 phone=phone,
+#                 first_name=first_name,
+#                 last_name=last_name,
+#                 dob=dob,
+#                 role=role,
+#                 is_approved=False,
+#                 is_active=False
+#             )
+#             user.set_password(password)
+
+#             if role == 'student':
+#                 class_id = request.data.get('class_id')
+#                 if not class_id:
+#                     return Response({'error': 'Class required.'}, status=400)
+#                 try:
+#                     user.class_assigned = Class.objects.get(id=class_id)
+#                 except Class.DoesNotExist:
+#                     return Response({'error': 'Invalid class.'}, status=400)
+
+#             elif role == 'teacher':
+#                 subject_ids = request.data.get('subject_ids', [])
+#                 if not subject_ids or len(subject_ids) > 3:
+#                     return Response({'error': 'Select 1–3 subjects.'}, status=400)
+#                 subjects = AcademicSubject.objects.filter(id__in=subject_ids)
+#                 if subjects.count() != len(subject_ids):
+#                     return Response({'error': 'Invalid subjects.'}, status=400)
+
+#             user.save()
+
+#             if role == 'teacher':
+#                 user.subjects.set(subject_ids)
+
+#             # Generate OTP
+#             otp = str(random.randint(100000, 999999))
+#             user.otp = otp
+#             user.otp_created = timezone.now()
+#             user.otp_purpose = 'registration'
+#             user.save()
+
+#             # Send OTP email — if fails, delete user cleanly and return error
+#             try:
+#                 send_otp_email(
+#                     email,
+#                     'EduVibe - Verify Email',
+#                     f'Hello {first_name},\n\nYour OTP is: {otp}\nValid for 5 minutes.\n\nDo not share this OTP with anyone.'
+#                 )
+#             except Exception as email_error:
+#                 print(f"Email send failed: {email_error}")
+#                 user.delete()  # Clean up — don't leave broken incomplete user
+#                 return Response(
+#                     {'error': 'Could not send OTP email. Please check your email address and try again.'},
+#                     status=500
+#                 )
+
+#             return Response({'message': 'Registration successful. Verify OTP.'}, status=201)
+
+#         except Exception as e:
+#             return Response({'error': str(e)}, status=500)
 
 
 class VerifyRegistrationOTPView(APIView):
@@ -173,13 +256,19 @@ class VerifyRegistrationOTPView(APIView):
             if (timezone.now() - user.otp_created).total_seconds() > 300:
                 return Response({'error': 'OTP expired.'}, status=400)
 
+           
             user.otp = None
             user.otp_created = None
             user.otp_purpose = None
-            user.is_active = True
+            user.is_active = True 
             user.save()
 
             return Response({'message': 'Email verified. Await approval.'})
+
+        
+        
+        
+        
 
         except CustomUser.DoesNotExist:
             return Response({'error': 'User not found.'}, status=404)

@@ -13,14 +13,14 @@ const Features = () => {
     {
       icon: HiUserGroup,
       title: 'Student Management',
-      description: 'Organize student profiles, track attendance, and monitor performance effortlessly.',
+      description: '"Every student. Every detail. Always within reach."',
       color: 'text-blue-600',
       bgColor: 'bg-blue-100 dark:bg-blue-900/20',
     },
     {
       icon: HiAcademicCap,
       title: 'Teacher Management',
-      description: 'Assign classes, track performance, and manage payroll seamlessly.',
+      description: '"Give your teachers the power to focus on what matters .',
       color: 'text-purple-600',
       bgColor: 'bg-purple-100 dark:bg-purple-900/20',
     },
@@ -33,22 +33,22 @@ const Features = () => {
     },
     {
       icon: HiCurrencyDollar,
-      title: 'Payment Tracking',
-      description: 'Track fees, generate invoices, and get detailed financial insights.',
+      title: 'Fee Payment',
+      description: '"Fee payments recorded, tracked and transparent. No more follow-ups."',
       color: 'text-yellow-600',
       bgColor: 'bg-yellow-100 dark:bg-yellow-900/20',
     },
     {
       icon: HiChartBar,
       title: 'Analytics & Reports',
-      description: 'Comprehensive dashboards with real-time data and insights.',
+      description: 'See every students growth at a glance. Data that actually means something.',
       color: 'text-red-600',
       bgColor: 'bg-red-100 dark:bg-red-900/20',
     },
     {
       icon: HiBell,
       title: 'Smart Notifications',
-      description: 'Stay updated with automated alerts for classes, tests, and announcements.',
+      description: 'Important updates reach every student and teacher — instantly.',
       color: 'text-indigo-600',
       bgColor: 'bg-indigo-100 dark:bg-indigo-900/20',
     },
@@ -64,9 +64,9 @@ const Features = () => {
           className="text-center mb-16"
           ref={ref}
         >
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
-            Why Choose <span className="text-blue-600">EduVibe?</span>
-          </h2>
+          <h3 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+            Where our classrooms go digital <span className="text-blue-600">smarter & faster.</span>
+          </h3>
           <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
             Everything you need to run a successful tuition center, all in one place.
           </p>

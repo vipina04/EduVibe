@@ -307,25 +307,25 @@ const RegisterPage = () => {
                     <div>
                       <label className={`block text-sm font-medium mb-2 ${labelText}`}>First Name *</label>
                       <input type="text" name="firstName" value={formData.firstName} onChange={handleChange}
-                        className={inputClass} placeholder="John" required />
+                        className={inputClass} required />
                     </div>
                     <div>
                       <label className={`block text-sm font-medium mb-2 ${labelText}`}>Last Name *</label>
                       <input type="text" name="lastName" value={formData.lastName} onChange={handleChange}
-                        className={inputClass} placeholder="Doe" required />
+                        className={inputClass} required />
                     </div>
                   </div>
 
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${labelText}`}>Email *</label>
                     <input type="email" name="email" value={formData.email} onChange={handleChange}
-                      className={inputClass} placeholder="your.email@example.com" required />
+                      className={inputClass} required />
                   </div>
 
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${labelText}`}>Phone (10 digits) *</label>
                     <input type="tel" name="phone" value={formData.phone} onChange={handleChange}
-                      maxLength="10" className={inputClass} placeholder="9876543210" required />
+                      maxLength="10" className={inputClass} required />
                   </div>
 
                   <div>
