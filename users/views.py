@@ -263,6 +263,49 @@ class VerifyRegistrationOTPView(APIView):
 #         except CustomUser.DoesNotExist:
 #             return Response({'error': 'User not found.'}, status=404)
 
+# class ResendOTPView(APIView):
+#     """Resend registration OTP"""
+
+#     def post(self, request):
+#         email = request.data.get('email')
+
+#         if not email:
+#             return Response({'error': 'Email is required.'}, status=400)
+
+#         try:
+#             # Use filter().first() instead of .get() — works even when is_active=False
+#             user = CustomUser.objects.filter(email=email).first()
+
+#             if not user:
+#                 return Response({'error': 'User not found. Please register again.'}, status=404)
+
+#             if user.is_active:
+#                 return Response({'error': 'Email already verified. Please login.'}, status=400)
+
+#             if user.otp_created and (timezone.now() - user.otp_created).total_seconds() < 60:
+#                 seconds_left = int(60 - (timezone.now() - user.otp_created).total_seconds())
+#                 return Response({'error': f'Please wait {seconds_left} seconds before requesting a new OTP.'}, status=429)
+
+#             otp = str(random.randint(100000, 999999))
+#             user.otp = otp
+#             user.otp_created = timezone.now()
+#             user.otp_purpose = 'registration'
+#             user.save()
+
+#             try:
+#                 send_otp_email(
+#                     email,
+#                     'EduVibe - OTP Resent',
+#                     f'Hello {user.first_name},\n\nYour new OTP is: {otp}\n\nValid for 5 minutes.\n\nDo not share this OTP with anyone.\n\nEduVibe Team'
+#                 )
+#             except Exception as email_error:
+#                 print(f"Resend OTP email failed: {email_error}")
+#                 return Response({'error': 'Could not send OTP email. Please try again.'}, status=500)
+
+#             return Response({'message': 'OTP resent successfully.'})
+
+#         except Exception as e:
+#             return Response({'error': str(e)}, status=500)
 class ResendOTPView(APIView):
     """Resend registration OTP"""
 
@@ -273,7 +316,7 @@ class ResendOTPView(APIView):
             return Response({'error': 'Email is required.'}, status=400)
 
         try:
-            # Use filter().first() instead of .get() — works even when is_active=False
+            # IMPORTANT: use filter().first() — .get() skips is_active=False users
             user = CustomUser.objects.filter(email=email).first()
 
             if not user:
@@ -284,7 +327,10 @@ class ResendOTPView(APIView):
 
             if user.otp_created and (timezone.now() - user.otp_created).total_seconds() < 60:
                 seconds_left = int(60 - (timezone.now() - user.otp_created).total_seconds())
-                return Response({'error': f'Please wait {seconds_left} seconds before requesting a new OTP.'}, status=429)
+                return Response(
+                    {'error': f'Please wait {seconds_left} seconds before requesting a new OTP.'},
+                    status=429
+                )
 
             otp = str(random.randint(100000, 999999))
             user.otp = otp
