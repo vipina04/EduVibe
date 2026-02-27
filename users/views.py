@@ -139,6 +139,15 @@ class RegisterView(APIView):
                 user.subjects.set(subject_ids)
                 
                 
+                # try:
+                #     send_otp_email(
+                #     email,
+                #     'EduVibe - Verify Email',
+                #     f'Hello {first_name},\n\nYour OTP to verify your email is: {otp}\n\nValid for 5 minutes.\n\nDo not share this OTP with anyone.\n\nEduVibe Team'
+                # )
+                # except Exception as email_error:
+                #        user.delete()
+                # return Response({'error': 'Could not send OTP email. Please check your email address and try again.'}, status=500)
                 try:
                     send_otp_email(
                     email,
@@ -148,6 +157,7 @@ class RegisterView(APIView):
                 except Exception as email_error:
                        user.delete()
                 return Response({'error': 'Could not send OTP email. Please check your email address and try again.'}, status=500)
+
             return Response({'message': 'OTP sent to your email. Please verify to complete registration.'}, status=201)
 
         except Exception as e:
