@@ -54,6 +54,49 @@ class PendingUsersView(APIView):
         return Response(list(pending_users), status=200)
 
 
+# class ApproveUserView(APIView):
+#     """POST: Approve a pending user"""
+#     permission_classes = [IsAuthenticated]
+
+#     def post(self, request):
+#         if not is_admin(request.user):
+#             return Response({'error': 'Admin access required'}, status=403)
+
+#         user_id = request.data.get('user_id')
+
+#         try:
+#             user = CustomUser.objects.get(id=user_id, is_approved=False)
+#             user.is_approved = True
+
+#             # Generate unique ID
+#             user.unique_id = f"{user.role.upper()}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
+#             user.save()
+
+#             # Send approval email
+#             try:
+#                 send_mail(
+#                     subject='Account Approved - EduVibe',
+#                     message=f'Your account has been approved!\n\nYour Unique ID: {user.unique_id}\nEmail: {user.email}\n\nYou can now login.',
+#                     from_email=settings.DEFAULT_FROM_EMAIL,
+#                     recipient_list=[user.email],
+#                     fail_silently=True,
+#                 )
+#             except Exception as e:
+#                 print(f"Email send failed: {e}")
+
+#             return Response({
+#                 'message': 'User approved successfully',
+#                 'user': {
+#                     'id': user.id,
+#                     'username': user.username,
+#                     'unique_id': user.unique_id,
+#                     'role': user.role
+#                 }
+#             }, status=200)
+
+#         except CustomUser.DoesNotExist:
+#             return Response({'error': 'User not found'}, status=404)
+
 class ApproveUserView(APIView):
     """POST: Approve a pending user"""
     permission_classes = [IsAuthenticated]
@@ -65,24 +108,40 @@ class ApproveUserView(APIView):
         user_id = request.data.get('user_id')
 
         try:
-            user = CustomUser.objects.get(id=user_id, is_approved=False)
-            user.is_approved = True
+            # Use filter().first() to avoid crashes
+            user = CustomUser.objects.filter(id=user_id, is_approved=False).first()
+            
+            if not user:
+                return Response({'error': 'User not found or already approved'}, status=404)
 
-            # Generate unique ID
+            user.is_approved = True
             user.unique_id = f"{user.role.upper()}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
             user.save()
 
-            # Send approval email
+            # Send approval email using Brevo (not send_mail)
             try:
-                send_mail(
-                    subject='Account Approved - EduVibe',
-                    message=f'Your account has been approved!\n\nYour Unique ID: {user.unique_id}\nEmail: {user.email}\n\nYou can now login.',
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[user.email],
-                    fail_silently=True,
+                from users.views import send_otp_email
+                send_otp_email(
+                    user.email,
+                    '🎉 EduVibe - Account Approved!',
+                    f'''Hello {user.first_name or user.username},
+
+Congratulations! Your EduVibe account has been approved!
+
+YOUR LOGIN CREDENTIALS:
+Email:     {user.email}
+Unique ID: {user.unique_id}
+Role:      {user.role.title()}
+
+You can login using your email or unique ID at:
+https://edu-vibe-ten.vercel.app/login
+
+Welcome to EduVibe!
+EduVibe Team'''
                 )
             except Exception as e:
-                print(f"Email send failed: {e}")
+                print(f"Approval email failed: {e}")
+                # Don't fail the approval if email fails
 
             return Response({
                 'message': 'User approved successfully',
@@ -94,8 +153,9 @@ class ApproveUserView(APIView):
                 }
             }, status=200)
 
-        except CustomUser.DoesNotExist:
-            return Response({'error': 'User not found'}, status=404)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
 
 
 class RejectUserView(APIView):
