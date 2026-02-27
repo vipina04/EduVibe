@@ -236,21 +236,50 @@ def reply_to_doubt(request, doubt_id):
         doubt.save()
 
         # ── Notify student ────────────────────────────────────────
+        # try:
+        #     from admin_tasks.models import send_notification
+        #     send_notification(
+        #         recipient_user=doubt.student,
+        #         title='✅ Teacher Replied to Your Doubt',
+        #         message=(
+        #             f"Teacher {request.user.get_full_name() or request.user.username} "
+        #             f"answered your doubt in "
+        #             f"{doubt.class_subject.subject.name} "
+        #             f"({doubt.class_subject.academic_class.name}): "
+        #             f'"{reply_text[:100]}{"..." if len(reply_text) > 100 else ""}"'
+        #         ),
+        #         created_by=request.user,
+        #     )
+        # except Exception:
+        # ── DB Notification + Real-time WebSocket Push ────────────────
         try:
             from admin_tasks.models import send_notification
+            from notifications.utils import push_notification_to_user
+
+            notif_message = (
+                f"Teacher {request.user.get_full_name() or request.user.username} "
+                f"answered your doubt in "
+                f"{doubt.class_subject.subject.name} "
+                f"({doubt.class_subject.academic_class.name})"
+            )
+
+            # Save to DB
             send_notification(
                 recipient_user=doubt.student,
                 title='✅ Teacher Replied to Your Doubt',
-                message=(
-                    f"Teacher {request.user.get_full_name() or request.user.username} "
-                    f"answered your doubt in "
-                    f"{doubt.class_subject.subject.name} "
-                    f"({doubt.class_subject.academic_class.name}): "
-                    f'"{reply_text[:100]}{"..." if len(reply_text) > 100 else ""}"'
-                ),
+                message=notif_message,
                 created_by=request.user,
             )
-        except Exception:
+
+            # Push real-time to student's browser instantly
+            push_notification_to_user(
+                user_id=doubt.student.id,
+                title='✅ Teacher Replied to Your Doubt',
+                message=notif_message,
+            )
+        except Exception as ws_err:
+            print(f"[WS Push] Doubt reply push failed (non-critical): {ws_err}")
+        # ─────────────────────────────────────────────────────────────
             pass
         # ─────────────────────────────────────────────────────────
         

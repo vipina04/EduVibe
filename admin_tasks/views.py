@@ -117,6 +117,18 @@ class ApproveUserView(APIView):
             user.is_approved = True
             user.unique_id = f"{user.role.upper()}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
             user.save()
+            # ── Real-time WebSocket Push ──────────────────────────────
+            try:
+                from notifications.utils import push_notification_to_user
+                push_notification_to_user(
+                    user_id=user.id,
+                    title='🎉 Account Approved!',
+                    message=f'Welcome to EduVibe! Your Unique ID is: {user.unique_id}. You can now login.',
+                    notification_id=None,
+                )
+            except Exception as ws_err:
+                print(f"[WS Push] Approval push failed (non-critical): {ws_err}")
+            # ─────────────────────────────────────────────────────────
 
             # Send approval email using Brevo (not send_mail)
             try:
