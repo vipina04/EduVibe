@@ -140,88 +140,8 @@ export const studentAPI = {
 };
 
 // ============ TEACHER APIs ============
-// export const teacherAPI = {
-//   // Dashboard
-//   getDashboard: () => api.get('/teachers/home/'),
 
-//   // Classes & Subjects — RESTORED from original working version
-//   getMyClasses: () => api.get('/teachers/my-classes/'),
-//   getMySubjects: () => api.get('/teachers/my-subjects/'),
-//   getClassSubject: (classId, subjectId) => 
-//     api.get(`/teachers/class/${classId}/subject/${subjectId}/`),
 
-//   // ✅ NEW — correct endpoints used by TeacherDoubts, TeacherClasses etc.
-//   getClasses: () => api.get('/teachers/classes/'),
-//   getSubjects: (params) => api.get('/teachers/subjects/', { params }),
-//   getClassSubjects: (classId) => api.get(`/teachers/class/${classId}/subjects/`),
-  
-//   // Students
-//   getClassStudents: (classId) => api.get(`/teachers/class/${classId}/students/`),
-//   getStudentProfile: (studentId) => api.get(`/teachers/students/${studentId}/profile/`),
-  
-//   // Tests
-//   getMyTests: () => api.get('/teachers/tests/'),
-//   createTest: (data) => api.post('/teachers/tests/create/', data),
-//   getTestDetails: (testId) => api.get(`/teachers/tests/${testId}/`),
-//   updateTest: (testId, data) => api.put(`/teachers/tests/${testId}/`, data),
-//   deleteTest: (testId) => api.delete(`/teachers/tests/${testId}/`),
-//   getTestResults: (testId) => api.get(`/teachers/tests/${testId}/results/`),
-  
-//   // Questions
-//   addQuestion: (testId, data) => api.post(`/teachers/tests/${testId}/add-question/`, data),
-//   updateQuestion: (questionId, data) => api.put(`/teachers/questions/${questionId}/`, data),
-//   deleteQuestion: (questionId) => api.delete(`/teachers/questions/${questionId}/`),
-  
-//   // Notes
-//   createNote: (data) => api.post('/teachers/notes/create/', data),
-//   getMyNotes: () => api.get('/teachers/notes/'),
-//   updateNote: (noteId, data) => api.put(`/teachers/notes/${noteId}/`, data),
-//   deleteNote: (noteId) => api.delete(`/teachers/notes/${noteId}/`),
-  
-//   // Assignments
-//   createAssignment: (data) => api.post('/teachers/assignments/create/', data),
-//   getAssignments: () => api.get('/teachers/assignments/'),    // ✅ ADDED — was missing
-//   getMyAssignments: () => api.get('/teachers/assignments/'),  // alias
-//   getAssignmentSubmissions: (assignmentId) => 
-//     api.get(`/teachers/assignments/${assignmentId}/submissions/`),
-//   gradeSubmission: (submissionId, data) => 
-//     api.post(`/teachers/submissions/${submissionId}/grade/`, data),
-  
-//   // Doubts — RESTORED original async pattern that returned response.data
-//   // (kept for any code that relied on the old pattern)
-//   getDoubts: async (params) => {
-//     const response = await api.get('/teachers/doubts/', { params });
-//     return response;   // returns full response so .data works on callers
-//   },
-//   replyToDoubt: async (doubtId, formData) => {
-//     const response = await api.post(`/teachers/doubts/${doubtId}/reply/`, formData, {
-//       headers: { 'Content-Type': 'multipart/form-data' },
-//     });
-//     return response;
-//   },
-
-//   // Old doubts endpoints (keeping for compatibility)
-//   replyDoubt: (doubtId, data) => api.post(`/teachers/doubts/${doubtId}/reply/`, data),
-  
-//   // Attendance
-//   markAttendance: (data) => api.post('/teachers/attendance/mark/', data),
-//   getAttendance: (classId, date) => 
-//     api.get(`/teachers/class/${classId}/attendance/`, { params: { date } }),
-  
-//   // Performance
-//   getClassPerformance: (classId) => api.get(`/teachers/class/${classId}/performance/`),
-//   getStudentPerformance: (studentId) => 
-//     api.get(`/teachers/students/${studentId}/performance/`),
-  
-//   // Profile
-//   getProfile: () => api.get('/teachers/profile/'),
-//   updateProfile: (data) => api.put('/teachers/profile/', data),
-  
-//   // Notifications
-//   getNotifications: () => api.get('/teachers/notifications/'),
-//   markNotificationRead: (notificationId) => 
-//     api.post(`/teachers/notifications/${notificationId}/mark-read/`),
-// };
 export const teacherAPI = {
   // Dashboard
   getDashboard: () => api.get('/teachers/home/'),
@@ -229,16 +149,8 @@ export const teacherAPI = {
   // Classes & Subjects
   getMyClasses: () => api.get('/teachers/my-classes/'),
   getMySubjects: () => api.get('/teachers/my-subjects/'),
-  getClassSubject: (classId, subjectId) =>
-    api.get(`/teachers/class/${classId}/subject/${subjectId}/`),
+  getClassSubject: (classId, subjectId) => api.get(`/teachers/class/${classId}/subject/${subjectId}/`),
 
-  // ✅ FIXED — uses correct endpoints matching our backend logic
-  // getClasses: async () => {
-  //   const response = await api.get('/teachers/teacher-assigned-classes/');
-  //   // Backend returns { success: true, classes: [...] }
-  //   const data = response.data?.classes || [];
-  //   return { data: Array.isArray(data) ? data : [] };
-  // },
   getClasses: () => api.get('/teachers/classes/'),
   getSubjects: (params) => api.get('/teachers/subjects/', { params }),
   getClassSubjects: (classId) => api.get(`/teachers/class/${classId}/subjects/`),
@@ -329,12 +241,6 @@ export const adminAPI = {
   getDashboardStats: () => api.get('/admin/dashboard/stats/'),
   
   // User Management
-//   getPendingUsers: () => api.get('/admin/pending-users/'),
-//   approveUser: (userId) => api.post(`/admin/users/${userId}/approve/`),
-//   rejectUser: (userId) => api.post(`/admin/users/${userId}/reject/`),
-//   getAllUsers: () => api.get('/admin/users/'),
-//   getUserDetails: (userId) => api.get(`/admin/users/${userId}/`),
-
 
   getPendingUsers:  ()               => api.get('/admin/users/pending/'),
   getAllUsers:       (role)           => api.get(`/admin/users/all/${role ? `?role=${role}` : ''}`),
@@ -342,22 +248,9 @@ export const adminAPI = {
   rejectUser:       (userId)         => api.post('/admin/users/reject/',  { user_id: userId }),
   deleteUser:       (userId)         => api.delete(`/admin/users/${userId}/delete/`),
   updateUser:       (userId, data)   => api.patch(`/admin/users/${userId}/update/`, data),
-
-
-
-
-
-
-
-
   
   // Class Management
 
-//  getClasses:    ()               => api.get('/admin/classes/'),
-//  getAllClasses: ()               => api.get('/admin/classes/'),
-//   createClass:   (data)           => api.post('/admin/classes/', data),
-//   updateClass:   (id, data)       => api.patch(`/admin/classes/${id}/`, data),
-//   deleteClass:   (id)             => api.delete(`/admin/classes/${id}/`),
   getClasses:             ()               => api.get('/admin/classes/'),
   getAllClasses:           ()               => api.get('/admin/classes/'),
   getClassDetail:         (id)             => api.get(`/admin/classes/${id}/`),
@@ -370,26 +263,15 @@ export const adminAPI = {
   updateAcademicSubject:  (id, data)       => api.patch(`/admin/academic-subjects/${id}/`, data),
   deleteAcademicSubject:  (id)             => api.delete(`/admin/academic-subjects/${id}/`),
 
-
-
-
-//   createClass: (data) => api.post('/admin/classes/create/', data),
-  
-//   getClassDetails: (classId) => api.get(`/admin/classes/${classId}/`),
-//   updateClass: (classId, data) => api.put(`/admin/classes/${classId}/`, data),
-//   deleteClass: (classId) => api.delete(`/admin/classes/${classId}/`),
   
   // Subject Management
   getSubjects:   ()               => api.get('/admin/subjects/'),
   createSubject: (data)           => api.post('/admin/subjects/create/', data),
   updateSubject: (id, data)       => api.patch(`/admin/subjects/${id}/`, data),
   deleteSubject: (id)             => api.delete(`/admin/subjects/${id}/`),
-//   createSubject: (data) => api.post('/admin/subjects/create/', data),
+
    getAllSubjects: () => api.get('/admin/subjects/'),
-//   getSubjectDetails: (subjectId) => api.get(`/admin/subjects/${subjectId}/`),
-//   updateSubject: (subjectId, data) => api.put(`/admin/subjects/${subjectId}/`, data),
-//   deleteSubject: (subjectId) => api.delete(`/admin/subjects/${subjectId}/`),
-  
+
   // Chapter Management
 
   getChapters:   ()               => api.get('/admin/chapters/'),
@@ -397,15 +279,8 @@ export const adminAPI = {
   updateChapter: (id, data)       => api.patch(`/admin/chapters/${id}/`, data),
   deleteChapter: (id)             => api.delete(`/admin/chapters/${id}/`),
 
-
-
-
-//   createChapter: (data) => api.post('/admin/chapters/create/', data),
    getAllChapters: () => api.get('/admin/chapters/'),
-//   getChapterDetails: (chapterId) => api.get(`/admin/chapters/${chapterId}/`),
-//   updateChapter: (chapterId, data) => api.put(`/admin/chapters/${chapterId}/`, data),
-//   deleteChapter: (chapterId) => api.delete(`/admin/chapters/${chapterId}/`),
-  
+
   // Fee Management
   recordFeePayment: (data) => api.post('/admin/fees/record-payment/', data),
   getFeePayments: () => api.get('/admin/fees/payments/'),
