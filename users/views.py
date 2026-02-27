@@ -134,31 +134,48 @@ class RegisterView(APIView):
             user.otp_purpose = 'registration'
 
             user.save()  # Save only once after all fields set
-
+            
+            
             if role == 'teacher':
                 user.subjects.set(subject_ids)
-                
-                
-                # try:
-                #     send_otp_email(
-                #     email,
-                #     'EduVibe - Verify Email',
-                #     f'Hello {first_name},\n\nYour OTP to verify your email is: {otp}\n\nValid for 5 minutes.\n\nDo not share this OTP with anyone.\n\nEduVibe Team'
-                # )
-                # except Exception as email_error:
-                #        user.delete()
-                # return Response({'error': 'Could not send OTP email. Please check your email address and try again.'}, status=500)
-                try:
-                    send_otp_email(
+
+            # Send OTP email — works for BOTH student and teacher
+            try:
+                send_otp_email(
                     email,
                     'EduVibe - Verify Email',
                     f'Hello {first_name},\n\nYour OTP to verify your email is: {otp}\n\nValid for 5 minutes.\n\nDo not share this OTP with anyone.\n\nEduVibe Team'
                 )
-                except Exception as email_error:
-                       user.delete()
+            except Exception as email_error:
+                user.delete()
                 return Response({'error': 'Could not send OTP email. Please check your email address and try again.'}, status=500)
 
             return Response({'message': 'OTP sent to your email. Please verify to complete registration.'}, status=201)
+
+            # if role == 'teacher':
+            #     user.subjects.set(subject_ids)
+                
+                
+            #     # try:
+            #     #     send_otp_email(
+            #     #     email,
+            #     #     'EduVibe - Verify Email',
+            #     #     f'Hello {first_name},\n\nYour OTP to verify your email is: {otp}\n\nValid for 5 minutes.\n\nDo not share this OTP with anyone.\n\nEduVibe Team'
+            #     # )
+            #     # except Exception as email_error:
+            #     #        user.delete()
+            #     # return Response({'error': 'Could not send OTP email. Please check your email address and try again.'}, status=500)
+            #     try:
+            #         send_otp_email(
+            #         email,
+            #         'EduVibe - Verify Email',
+            #         f'Hello {first_name},\n\nYour OTP to verify your email is: {otp}\n\nValid for 5 minutes.\n\nDo not share this OTP with anyone.\n\nEduVibe Team'
+            #     )
+            #     except Exception as email_error:
+            #            user.delete()
+            #     return Response({'error': 'Could not send OTP email. Please check your email address and try again.'}, status=500)
+
+            # return Response({'message': 'OTP sent to your email. Please verify to complete registration.'}, status=201)
 
         except Exception as e:
             return Response({'error': str(e)}, status=500)
