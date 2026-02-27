@@ -135,8 +135,10 @@ function App() {
       
 
       <Route path="/admin/dashboard" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
-      <Route path="/admin/users" element={<AdminUsers />} />
-      <Route path="/admin/users"     element={<ProtectedRoute allowedRoles={['admin']}><ManageUsers /></ProtectedRoute>} />
+      <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><AdminUsers /></ProtectedRoute>} />
+      {/* <Route path="/admin/users" element={<AdminUsers />} /> */}
+      {/* <Route path="/admin/users"     element={<ProtectedRoute allowedRoles={['admin']}><ManageUsers /></ProtectedRoute>} /> */}
+
       <Route path="/admin/classes"   element={<ProtectedRoute allowedRoles={['admin']}><ManageClasses /></ProtectedRoute>} />
       <Route path="/admin/subjects"  element={<ProtectedRoute allowedRoles={['admin']}><ManageSubjects /></ProtectedRoute>} />
       <Route path="/admin/chapters"  element={<ProtectedRoute allowedRoles={['admin']}><ManageChapters /></ProtectedRoute>} />
