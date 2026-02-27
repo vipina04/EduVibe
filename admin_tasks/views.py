@@ -133,7 +133,7 @@ Email:     {user.email}
 Unique ID: {user.unique_id}
 Role:      {user.role.title()}
 
-You can login using your email or unique ID at:
+You can login using your email and password at:
 https://edu-vibe-ten.vercel.app/login
 
 Welcome to EduVibe!
