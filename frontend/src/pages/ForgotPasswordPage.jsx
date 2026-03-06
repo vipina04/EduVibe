@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../context/ThemeContext';
 import toast from 'react-hot-toast';
 import api from '../services/api';
+import { HiSun, HiMoon, HiArrowLeft } from 'react-icons/hi';
+
 
 // ─── Password Strength Helper ────────────────────────────────────────────────
 const getStrength = (pw) => {
@@ -124,7 +126,7 @@ const StepIndicator = ({ current }) => (
 // ─── Main Component ──────────────────────────────────────────────────────────
 const ForgotPasswordPage = () => {
   const navigate = useNavigate();
-  const { theme } = useTheme();
+  const { theme, toggleTheme } = useTheme();  // ← added toggleTheme
 
   // Step 1: email, Step 2: OTP, Step 3: new password
   const [step, setStep] = useState(1);
@@ -177,8 +179,6 @@ const ForgotPasswordPage = () => {
     if (otp.length < 6) { setOtpErr('Enter the complete 6-digit OTP'); return; }
     setOtpErr('');
     setLoading(true);
-    // We just move to step 3 — actual OTP verify happens with password reset
-    // But to validate OTP earlier, we can call verify endpoint first:
     setLoading(false);
     setStep(3);
   };
@@ -275,6 +275,35 @@ const ForgotPasswordPage = () => {
         ? 'bg-gray-950'
         : 'bg-gradient-to-br from-teal-50 via-cyan-50 to-indigo-50'
     }`}>
+
+      {/* ── TOP NAV: Back arrow + Dark/Light toggle ── ADDED ── */}
+      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-white/30 dark:bg-black/30 border-b border-white/10 dark:border-white/5">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          {/* Back arrow → goes to previous page */}
+          <button
+            onClick={() => navigate(-1)}
+            title="Go Back"
+            className="p-2 rounded-lg bg-white/20 dark:bg-black/30 hover:bg-white/30 dark:hover:bg-black/40 transition-all duration-200 backdrop-blur-sm border border-white/10"
+          >
+            <HiArrowLeft className={`w-5 h-5 ${theme === 'dark' ? 'text-white' : 'text-slate-700'}`} />
+          </button>
+
+          {/* Dark / Light toggle */}
+          <button
+            onClick={toggleTheme}
+            title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            className="p-2.5 rounded-full bg-white/20 dark:bg-black/30 hover:bg-white/30 dark:hover:bg-black/40 transition-all duration-200 backdrop-blur-sm border border-white/10 dark:border-white/5"
+            aria-label="Toggle dark mode"
+          >
+            {theme === 'dark'
+              ? <HiSun className="w-5 h-5 text-yellow-400" />
+              : <HiMoon className="w-5 h-5 text-slate-700" />
+            }
+          </button>
+        </div>
+      </nav>
+      {/* ── END TOP NAV ── */}
+
       {/* Background blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-teal-400/10 blur-3xl" />
@@ -353,12 +382,12 @@ const ForgotPasswordPage = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3.5 rounded-xl font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 active:scale-[0.98] transition-all duration-200 shadow-lg shadow-teal-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full py-3.5 rounded-xl font-semibold text-white bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 active:scale-[0.98] transition-all duration-200 shadow-lg shadow-teal-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <><span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Sending...</>
                   ) : (
-                    <>'Send OTP <span>→</span></>
+                    <>Send OTP <span>→</span></>
                   )}
                 </button>
               </motion.form>
@@ -414,7 +443,7 @@ const ForgotPasswordPage = () => {
                   <button
                     type="submit"
                     disabled={otp.length < 6 || loading}
-                    className="flex-[2] py-3.5 rounded-xl font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 active:scale-[0.98] transition-all shadow-lg shadow-teal-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="flex-[2] py-3.5 rounded-xl font-semibold text-white bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 active:scale-[0.98] transition-all shadow-lg shadow-teal-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {loading ? <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : 'Verify OTP →'}
                   </button>
@@ -507,7 +536,7 @@ const ForgotPasswordPage = () => {
                   <button
                     type="submit"
                     disabled={loading || !newPw || !confirmPw || newPw !== confirmPw}
-                    className="flex-[2] py-3.5 rounded-xl font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 active:scale-[0.98] transition-all shadow-lg shadow-teal-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="flex-[2] py-3.5 rounded-xl font-semibold text-white bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 active:scale-[0.98] transition-all shadow-lg shadow-teal-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {loading ? (
                       <><span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Resetting...</>
@@ -539,172 +568,3 @@ export default ForgotPasswordPage;
 
 
 
-
-
-
-
-
-
-
-
-// import { useState } from 'react';
-// import { Link } from 'react-router-dom';
-// import { useForm } from 'react-hook-form';
-// import { HiMail, HiLockClosed } from 'react-icons/hi';
-// import { motion } from 'framer-motion';
-// import { useTheme } from '../context/ThemeContext';
-// import Input from '../components/common/Input';
-// import Button from '../components/common/Button';
-// import Modal from '../components/common/Modal';
-// import toast from 'react-hot-toast';
-// import api from '../services/api';
-
-// const ForgotPasswordPage = () => {
-//   const [step, setStep] = useState(1);
-//   const [email, setEmail] = useState('');
-//   const [otp, setOtp] = useState('');
-//   const [newPassword, setNewPassword] = useState('');
-//   const [confirmPassword, setConfirmPassword] = useState('');
-//   const [loading, setLoading] = useState(false);
-//   const { theme } = useTheme();
-
-//   const { register, handleSubmit, formState: { errors } } = useForm();
-
-//   const handleSendOTP = async (data) => {
-//     setLoading(true);
-//     try {
-//       await api.post('/api/users/forgot-password/', { email: data.email });
-//       setEmail(data.email);
-//       setStep(2);
-//       toast.success('OTP sent to your email!');
-//     } catch (error) {
-//       toast.error(error.response?.data?.error || 'Failed to send OTP');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const handleResetPassword = async () => {
-//     if (!otp || !newPassword || !confirmPassword) {
-//       toast.error('Please fill all fields');
-//       return;
-//     }
-
-//     if (newPassword !== confirmPassword) {
-//       toast.error('Passwords do not match');
-//       return;
-//     }
-
-//     if (newPassword.length < 6) {
-//       toast.error('Password must be at least 6 characters');
-//       return;
-//     }
-
-//     setLoading(true);
-//     try {
-//       await api.post('/api/users/verify-otp-reset-password/', {
-//         email,
-//         otp,
-//         new_password: newPassword,
-//       });
-
-//       toast.success('Password reset successful!');
-//       setTimeout(() => window.location.href = '/login', 2000);
-//     } catch (error) {
-//       toast.error(error.response?.data?.error || 'Password reset failed');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   return (
-//     <div className={`min-h-screen flex items-center justify-center p-4 ${
-//       theme === 'light' ? 'hero-bg-light' : 'hero-bg-dark'
-//     }`}>
-//       <motion.div
-//         initial={{ opacity: 0, y: 20 }}
-//         animate={{ opacity: 1, y: 0 }}
-//         className="w-full max-w-md"
-//       >
-//         <div className="glass-light dark:glass-dark rounded-2xl p-8 shadow-2xl">
-//           <div className="text-center mb-8">
-//             <Link to="/" className="inline-block">
-//               <img src="/images/logo.png" alt="EduVibe" className="h-12 mx-auto mb-4" />
-//             </Link>
-//             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-//               Reset Password
-//             </h1>
-//             <p className="text-gray-600 dark:text-gray-400">
-//               {step === 1 ? 'Enter your email to receive OTP' : 'Enter OTP and new password'}
-//             </p>
-//           </div>
-
-//           {step === 1 ? (
-//             <form onSubmit={handleSubmit(handleSendOTP)} className="space-y-6">
-//               <Input
-//                 label="Email Address"
-//                 type="email"
-//                 placeholder="your.email@example.com"
-//                 icon={<HiMail className="w-5 h-5 text-gray-400" />}
-//                 error={errors.email?.message}
-//                 {...register('email', {
-//                   required: 'Email is required',
-//                   pattern: {
-//                     value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-//                     message: 'Invalid email',
-//                   },
-//                 })}
-//               />
-
-//               <Button type="submit" className="w-full" size="lg" loading={loading}>
-//                 Send OTP
-//               </Button>
-//             </form>
-//           ) : (
-//             <div className="space-y-6">
-//               <Input
-//                 label="OTP"
-//                 type="text"
-//                 maxLength={6}
-//                 placeholder="000000"
-//                 value={otp}
-//                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-//               />
-
-//               <Input
-//                 label="New Password"
-//                 type="password"
-//                 placeholder="Minimum 6 characters"
-//                 icon={<HiLockClosed className="w-5 h-5 text-gray-400" />}
-//                 value={newPassword}
-//                 onChange={(e) => setNewPassword(e.target.value)}
-//               />
-
-//               <Input
-//                 label="Confirm Password"
-//                 type="password"
-//                 placeholder="Re-enter password"
-//                 icon={<HiLockClosed className="w-5 h-5 text-gray-400" />}
-//                 value={confirmPassword}
-//                 onChange={(e) => setConfirmPassword(e.target.value)}
-//               />
-
-//               <Button onClick={handleResetPassword} className="w-full" size="lg" loading={loading}>
-//                 Reset Password
-//               </Button>
-//             </div>
-//           )}
-
-//           <p className="mt-6 text-center text-gray-600 dark:text-gray-400">
-//             Remember your password?{' '}
-//             <Link to="/login" className="text-blue-600 dark:text-blue-400 font-medium hover:underline">
-//               Sign in
-//             </Link>
-//           </p>
-//         </div>
-//       </motion.div>
-//     </div>
-//   );
-// };
-
-// export default ForgotPasswordPage;
