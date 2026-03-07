@@ -301,7 +301,8 @@ const TeacherDoubts = () => {
 
                       <p className="text-gray-700 dark:text-gray-300 mb-3">{doubt.doubt_text}</p>
 
-                      {doubt.image_url && (
+                      {/* {doubt.image_url && ( */}
+                      {doubt.doubt_image && (  
                         <img
                           src={doubt.doubt_image}
                           alt="Doubt attachment"
@@ -335,7 +336,8 @@ const TeacherDoubts = () => {
                               )}
                             </p>
                             <p className="text-gray-700 dark:text-gray-300">{reply.text}</p>
-                            {reply.image_url && (
+                            {/* {reply.image_url && ( */}
+                            {reply.reply_image && (  
                               <img
                                 src={reply.image_url}
                                 alt="Reply attachment"

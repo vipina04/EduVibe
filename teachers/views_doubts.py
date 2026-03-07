@@ -484,7 +484,7 @@ class DoubtReplyCreateView(APIView):
 
             reply_text  = request.data.get('reply_text', '').strip()
             reply_image = request.FILES.get('reply_image')
-
+            
             if not reply_text and not reply_image:
                 return Response({'error': 'reply_text or reply_image required'}, status=400)
 
@@ -498,7 +498,7 @@ class DoubtReplyCreateView(APIView):
             doubt.status = 'answered'
             doubt.save()
 
-            # ── Notify student ────────────────────────────────────────
+            # Notify student
             try:
                 from admin_tasks.models import send_notification
                 send_notification(
@@ -515,7 +515,6 @@ class DoubtReplyCreateView(APIView):
                 )
             except Exception:
                 pass
-            # ─────────────────────────────────────────────────────────
 
             return Response({
                 'message': 'Reply added successfully!',
@@ -529,6 +528,91 @@ class DoubtReplyCreateView(APIView):
 
         except Doubt.DoesNotExist:
             return Response({'error': 'Doubt not found'}, status=404)
+
+        #     if not reply_text and not reply_image:
+        #         return Response({'error': 'reply_text or reply_image required'}, status=400)
+
+        # #     reply = DoubtReply.objects.create(
+        # #         doubt=doubt,
+        # #         replied_by=request.user,
+        # #         reply_text=reply_text,
+        # #         reply_image=reply_image or None,
+        # #     )
+
+        # #     doubt.status = 'answered'
+        # #     doubt.save()
+
+        # #     # ── Notify student ────────────────────────────────────────
+        # #     try:
+        # #         from admin_tasks.models import send_notification
+        # #         send_notification(
+        # #             recipient_user=doubt.student,
+        # #             title='✅ Teacher Replied to Your Doubt',
+        # #             message=(
+        # #                 f"Teacher {request.user.get_full_name() or request.user.username} "
+        # #                 f"answered your doubt in "
+        # #                 f"{doubt.class_subject.subject.name} "
+        # #                 f"({doubt.class_subject.academic_class.name}): "
+        # #                 f'"{reply_text[:100]}{"..." if len(reply_text) > 100 else ""}"'
+        # #             ),
+        # #             created_by=request.user,
+        # #         )
+        # #     except Exception:
+        # #         pass
+        # #     # ─────────────────────────────────────────────────────────
+
+        # #     return Response({
+        # #         'message': 'Reply added successfully!',
+        # #         'reply': {
+        # #             'id':         reply.id,
+        # #             'reply_text': reply.reply_text,
+        # #             'replied_by': request.user.get_full_name() or request.user.username,
+        # #             'created_at': reply.created_at.strftime('%Y-%m-%d %H:%M'),
+        # #         }
+        # #     }, status=201)
+
+        # # except Doubt.DoesNotExist:
+        # #     return Response({'error': 'Doubt not found'}, status=404)
+        # reply = DoubtReply.objects.create(
+        #         doubt=doubt,
+        #         replied_by=request.user,
+        #         reply_text=reply_text,
+        #         reply_image=reply_image or None,
+        #     )
+
+        #     doubt.status = 'answered'
+        #     doubt.save()
+
+        #     # Notify student
+        #     try:
+        #         from admin_tasks.models import send_notification
+        #         send_notification(
+        #             recipient_user=doubt.student,
+        #             title='✅ Teacher Replied to Your Doubt',
+        #             message=(
+        #                 f"Teacher {request.user.get_full_name() or request.user.username} "
+        #                 f"answered your doubt in "
+        #                 f"{doubt.class_subject.subject.name} "
+        #                 f"({doubt.class_subject.academic_class.name}): "
+        #                 f'"{reply_text[:100]}{"..." if len(reply_text) > 100 else ""}"'
+        #             ),
+        #             created_by=request.user,
+        #         )
+        #     except Exception:
+        #         pass
+
+        #     return Response({
+        #         'message': 'Reply added successfully!',
+        #         'reply': {
+        #             'id':         reply.id,
+        #             'reply_text': reply.reply_text,
+        #             'replied_by': request.user.get_full_name() or request.user.username,
+        #             'created_at': reply.created_at.strftime('%Y-%m-%d %H:%M'),
+        #         }
+        #     }, status=201)
+
+        # except Doubt.DoesNotExist:
+        #     return Response({'error': 'Doubt not found'}, status=404)
 
 
 
