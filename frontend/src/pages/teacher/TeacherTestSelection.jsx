@@ -113,18 +113,21 @@ const TeacherTestSelection = () => {
   //     }
   //   });
   // };
-  const handleChapterSelect = (chapter) => {
-  navigate('/teacher/test/new', {
-    state: {
-      preselectedChapterId: chapter.id,
-      preselectedChapterName: chapter.name,
-      preselectedSubjectId: selectedSubject.id,
-      preselectedSubjectName: selectedSubject.name,
-      preselectedClassId: selectedClass.id,
-      preselectedClassName: selectedClass.name,
-    }
-  });
-};
+//   const handleChapterSelect = (chapter) => {
+//   navigate('/teacher/test/new', {
+//     state: {
+//       preselectedChapterId: chapter.id,
+//       preselectedChapterName: chapter.name,
+//       preselectedSubjectId: selectedSubject.id,
+//       preselectedSubjectName: selectedSubject.name,
+//       preselectedClassId: selectedClass.id,
+//       preselectedClassName: selectedClass.name,
+//     }
+//   });
+// };
+const handleChapterSelect = (chapter) => {
+  navigate(`/teacher/chapter/${chapter.id}/test/create`);
+  };
 
   // ── Breadcrumb / back navigation ──────────────────────────
   const goBack = () => {
