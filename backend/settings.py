@@ -11,7 +11,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here-change-me')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 # ✅ CHANGE 1: Added '.onrender.com' wildcard
-ALLOWED_HOSTS = [
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',') + [
     'localhost',
     '127.0.0.1',
     '10.192.225.212',
@@ -132,6 +132,8 @@ CORS_ALLOWED_ORIGINS = [
 
 
 CSRF_TRUSTED_ORIGINS = [
+    "http://35.175.223.247",
+    "https://eduvibe.ddns.net",
     "https://edu-vibe-ten.vercel.app",
     "https://eduvibe-backend.onrender.com",
 ]
@@ -205,7 +207,7 @@ CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 # # DEBUG = True
 # DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-# ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.192.225.212','eduvibe-backend.onrender.com']
+# ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',') + ['localhost', '127.0.0.1', '10.192.225.212','eduvibe-backend.onrender.com']
 
 
 # INSTALLED_APPS = [
@@ -366,3 +368,19 @@ CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 
 
 
+
+# AWS deployment - disable CSRF for API
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+}
+
+# AWS S3 Storage
+AWS_STORAGE_BUCKET_NAME = 'eduvibe-media-storage'
+AWS_S3_REGION_NAME = 'us-east-1'
+AWS_S3_FILE_OVERWRITE = False
+AWS_DEFAULT_ACL = 'public-read'
+DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
+MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
