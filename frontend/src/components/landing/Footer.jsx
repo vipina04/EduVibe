@@ -1,119 +1,166 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { HiMail, HiPhone, HiLocationMarker } from 'react-icons/hi';
-import { FaTwitter, FaLinkedin, FaInstagram, FaYoutube } from 'react-icons/fa';
-<section id="features" className="py-20"> ... </section>
+import { useTheme } from '../../context/ThemeContext';
 
 const Footer = () => {
-  const currentYear = new Date().getFullYear();
-  
-  // State to track if button should be visible
-  const [isVisible, setIsVisible] = useState(false);
+  const [showTop, setShowTop] = useState(false);
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
-  // Effect to handle scroll event
   useEffect(() => {
-    const toggleVisibility = () => {
-      if (window.pageYOffset > 300) {
-        setIsVisible(true);
-      } else {
-        setIsVisible(false);
-      }
-    };
-
-    window.addEventListener('scroll', toggleVisibility);
-    return () => window.removeEventListener('scroll', toggleVisibility);
+    const fn = () => setShowTop(window.scrollY > 400);
+    window.addEventListener('scroll', fn);
+    return () => window.removeEventListener('scroll', fn);
   }, []);
 
   return (
-    <footer className="bg-gray-900 text-gray-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          {/* Company Info */}
-          <div className="col-span-1 md:col-span-2">
-            <div className="flex items-center space-x-3 mb-4">
-              <img src="/images/logo.png" alt="EduVibe" className="h-8 w-auto" />
-              <span className="text-2xl font-bold text-white">EduVibe</span>
+    <footer style={{
+      background: isDark ? '#05050e' : '#1a1a2e',
+      borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(255,255,255,0.10)',
+      padding: '72px 24px 40px',
+      fontFamily: "'Sora', sans-serif",
+      transition: 'background 0.5s ease',
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&display=swap');
+        .footer-link {
+          color: rgba(255,255,255,0.40);
+          text-decoration: none;
+          font-size: 14px;
+          transition: color 0.2s;
+        }
+        .footer-link:hover { color: rgba(255,255,255,0.90); }
+        .back-top {
+          position: fixed; bottom: 28px; right: 28px;
+          width: 44px; height: 44px;
+          background: linear-gradient(135deg, #581c87, #4f46e5, #0d9488);
+          border: none; border-radius: 50%;
+          color: white; font-size: 18px;
+          cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          transition: all 0.3s;
+          backdrop-filter: blur(10px);
+          z-index: 999;
+          box-shadow: 0 4px 20px rgba(79,70,229,0.35);
+        }
+        .back-top:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 10px 30px rgba(79,70,229,0.5);
+        }
+        @media (max-width: 768px) {
+          .footer-grid { grid-template-columns: 1fr 1fr !important; }
+        }
+      `}</style>
+
+      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+
+        {/* Top row */}
+        <div
+          className="footer-grid"
+          style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 48, marginBottom: 60 }}
+        >
+          {/* Brand */}
+          <div>
+            {/* Logo + name */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <img src="/images/nav-logo.png" alt="EduVibe" style={{ height: 36, width: 'auto' }} />
+              <span style={{
+                fontSize: 24, fontWeight: 800,
+                background: 'linear-gradient(135deg, #541ee7, #2bbcdd)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                letterSpacing: '-0.5px',
+              }}>
+                EduVibe
+              </span>
             </div>
-            <p className="text-gray-400 mb-4">
-              Empowering education through innovative tuition management solutions.
-              Simplify your workflow and focus on what matters most - teaching.
+            <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.38)', lineHeight: 1.75, maxWidth: 280 }}>
+              A smart platform built for offline tuition centers — bringing digital tools to real classrooms.
             </p>
-            <div className="flex space-x-4">
-              <a href="#" className="hover:text-blue-400 transition-colors">
-                <FaTwitter className="w-5 h-5" />
-              </a>
-              <a href="#" className="hover:text-blue-400 transition-colors">
-                <FaLinkedin className="w-5 h-5" />
-              </a>
-              <a href="#" className="hover:text-blue-400 transition-colors">
-                <FaInstagram className="w-5 h-5" />
-              </a>
-              <a href="#" className="hover:text-blue-400 transition-colors">
-                <FaYoutube className="w-5 h-5" />
-              </a>
+            <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+              {['📧', '📞', '📍'].map((icon, i) => (
+                <div key={i} style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 16, cursor: 'default',
+                }}>
+                  {icon}
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Quick Links */}
+          {/* Platform */}
           <div>
-            <h3 className="text-white font-bold mb-4">Quick Links</h3>
-            <ul className="space-y-2">
-              <li><a href="#home" className="hover:text-white transition-colors">Home</a></li>
-              <li><a href="#about" className="hover:text-white transition-colors">About</a></li>
-              <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
-              {/* <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li> */}
-              <li><Link to="/login" className="hover:text-white transition-colors">Login</Link></li>
-            </ul>
+            <h4 style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.70)', marginBottom: 20, letterSpacing: 1, textTransform: 'uppercase' }}>
+              Platform
+            </h4>
+            {[
+              { label: 'Login', to: '/login' },
+              { label: 'Register', to: '/register' },
+              { label: 'Features', to: '/#features' },
+            ].map(l => (
+              <div key={l.label} style={{ marginBottom: 12 }}>
+                <Link to={l.to} className="footer-link">{l.label}</Link>
+              </div>
+            ))}
+          </div>
+
+          {/* Modules */}
+          <div>
+            <h4 style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.70)', marginBottom: 20, letterSpacing: 1, textTransform: 'uppercase' }}>
+              Modules
+            </h4>
+            {['Student Portal', 'Teacher Portal', 'Admin Control', 'Fee Management'].map(l => (
+              <div key={l} style={{ marginBottom: 12 }}>
+                <span className="footer-link" style={{ cursor: 'default' }}>{l}</span>
+              </div>
+            ))}
           </div>
 
           {/* Contact */}
           <div>
-            <h3 className="text-white font-bold mb-4">Contact Us</h3>
-            <ul className="space-y-3">
-              <li className="flex items-start space-x-3">
-                <HiMail className="w-5 h-5 mt-0.5 text-blue-400" />
-                <span>support@eduvibe.com</span>
-              </li>
-              <li className="flex items-start space-x-3">
-                <HiPhone className="w-5 h-5 mt-0.5 text-blue-400" />
-                <span>+91-XXXXXXXXXX</span>
-              </li>
-              <li className="flex items-start space-x-3">
-                <HiLocationMarker className="w-5 h-5 mt-0.5 text-blue-400" />
-                <span>Kerala, India</span>
-              </li>
-            </ul>
+            <h4 style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.70)', marginBottom: 20, letterSpacing: 1, textTransform: 'uppercase' }}>
+              Contact
+            </h4>
+            <div style={{ marginBottom: 12 }}>
+              <a href="mailto:support@eduvibe.com" className="footer-link">support@eduvibe.com</a>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <span className="footer-link" style={{ cursor: 'default' }}>Kerala, India</span>
+            </div>
           </div>
         </div>
 
-        {/* Bottom Bar */}
-        <div className="border-t border-gray-800 mt-8 pt-8 flex flex-col md:flex-row justify-between items-center">
-          <p className="text-sm text-gray-400">
-            © {currentYear} EduVibe. All rights reserved.
+        {/* Bottom row */}
+        <div style={{
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          paddingTop: 28,
+          display: 'flex', justifyContent: 'space-between',
+          alignItems: 'center', flexWrap: 'wrap', gap: 16,
+        }}>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)' }}>
+            © {new Date().getFullYear()} EduVibe. All rights reserved.
           </p>
-          <div className="flex space-x-6 mt-4 md:mt-0">
-            <Link to="/privacy" className="text-sm hover:text-white transition-colors">
-              Privacy Policy
-            </Link>
-            <Link to="/terms" className="text-sm hover:text-white transition-colors">
-              Terms of Service
-            </Link>
+          <div style={{ display: 'flex', gap: 24 }}>
+            {['Privacy Policy', 'Terms of Service'].map(t => (
+              <Link key={t} to="#" className="footer-link" style={{ fontSize: 13 }}>{t}</Link>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Back to Top Button - Now conditional and with fixed classes */}
-      <button
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className={`fixed bottom-8 right-8 bg-gradient-to-r from-purple-800 via-indigo-600 to-sky-400 text-white p-3 rounded-full shadow-lg transition-all duration-300 z-50 hover:scale-110 active:scale-95 ${
-          isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'
-        }`}
-        aria-label="Back to top"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-        </svg>
-      </button>
+      {/* Back to top */}
+      {showTop && (
+        <button
+          className="back-top"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="Back to top"
+        >
+          ↑
+        </button>
+      )}
     </footer>
   );
 };
@@ -123,128 +170,3 @@ export default Footer;
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import { Link } from 'react-router-dom';
-// import { HiMail, HiPhone, HiLocationMarker } from 'react-icons/hi';
-// import { FaTwitter, FaLinkedin, FaInstagram, FaYoutube } from 'react-icons/fa';
-
-// const Footer = () => {
-//   const currentYear = new Date().getFullYear();
-
-//   return (
-//     <footer className="bg-gray-900 text-gray-300">
-//       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-//         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-//           {/* Company Info */}
-//           <div className="col-span-1 md:col-span-2">
-//             <div className="flex items-center space-x-3 mb-4">
-//               <img src="/images/logo.png" alt="EduVibe" className="h-8 w-auto" />
-//               <span className="text-2xl font-bold text-white">EduVibe</span>
-//             </div>
-//             <p className="text-gray-400 mb-4">
-//               Empowering education through innovative tuition management solutions.
-//               Simplify your workflow and focus on what matters most - teaching.
-//             </p>
-//             <div className="flex space-x-4">
-//               <a href="#" className="hover:text-blue-400 transition-colors">
-//                 <FaTwitter className="w-5 h-5" />
-//               </a>
-//               <a href="#" className="hover:text-blue-400 transition-colors">
-//                 <FaLinkedin className="w-5 h-5" />
-//               </a>
-//               <a href="#" className="hover:text-blue-400 transition-colors">
-//                 <FaInstagram className="w-5 h-5" />
-//               </a>
-//               <a href="#" className="hover:text-blue-400 transition-colors">
-//                 <FaYoutube className="w-5 h-5" />
-//               </a>
-//             </div>
-//           </div>
-
-//           {/* Quick Links */}
-//           <div>
-//             <h3 className="text-white font-bold mb-4">Quick Links</h3>
-//             <ul className="space-y-2">
-//               <li><a href="#home" className="hover:text-white transition-colors">Home</a></li>
-//               <li><a href="#about" className="hover:text-white transition-colors">About</a></li>
-//               <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
-//               <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li>
-//               <li><Link to="/login" className="hover:text-white transition-colors">Login</Link></li>
-//             </ul>
-//           </div>
-
-//           {/* Contact */}
-//           <div>
-//             <h3 className="text-white font-bold mb-4">Contact Us</h3>
-//             <ul className="space-y-3">
-//               <li className="flex items-start space-x-3">
-//                 <HiMail className="w-5 h-5 mt-0.5 text-blue-400" />
-//                 <span>support@eduvibe.com</span>
-//               </li>
-//               <li className="flex items-start space-x-3">
-//                 <HiPhone className="w-5 h-5 mt-0.5 text-blue-400" />
-//                 <span>+91-XXXXXXXXXX</span>
-//               </li>
-//               <li className="flex items-start space-x-3">
-//                 <HiLocationMarker className="w-5 h-5 mt-0.5 text-blue-400" />
-//                 <span>Kerala, India</span>
-//               </li>
-//             </ul>
-//           </div>
-//         </div>
-
-//         {/* Bottom Bar */}
-//         <div className="border-t border-gray-800 mt-8 pt-8 flex flex-col md:flex-row justify-between items-center">
-//           <p className="text-sm text-gray-400">
-//             © {currentYear} EduVibe. All rights reserved.
-//           </p>
-//           <div className="flex space-x-6 mt-4 md:mt-0">
-//             <Link to="/privacy" className="text-sm hover:text-white transition-colors">
-//               Privacy Policy
-//             </Link>
-//             <Link to="/terms" className="text-sm hover:text-white transition-colors">
-//               Terms of Service
-//             </Link>
-//           </div>
-//         </div>
-//       </div>
-
-//       {/* Back to Top Button */}
-//       <button
-//         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-//         className="fixed bottom-8 right-8 bg-gradient-to-r from-purple-800 via-indigo-600 to cyan-00 text-white p-3 rounded-full shadow-lg hover:bg-teal-700 transition-colors z-50"
-//         aria-label="Back to top"
-//       >
-
-
-
-
-        
-        
-//         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-//           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-//         </svg>
-//       </button>
-//     </footer>
-//   );
-// };
-
-// export default Footer;
